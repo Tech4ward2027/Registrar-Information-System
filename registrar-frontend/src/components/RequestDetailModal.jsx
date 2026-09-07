@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDownIcon, XCircleIcon, ArrowRightIcon, PrinterIcon } from '@heroicons/react/24/solid';
-import { getDocumentTypes, getDocumentRequest, updateRequestDocumentStatus, updateRequestCertificateStatus } from "../services/api";
+import { getDocumentTypes, getDocumentRequest, updateRequestDocumentStatus, updateRequestCertificateStatus, withdrawDocumentRequest, issueDeficiencyNotice, clearDeficiencyNotice, voidDeficiencyNotice, closeRequestUnableToProcess } from "../services/api";
 import { PROGRESS_MAP } from '../utils/constants';
 import { useTheme } from '../context/ThemeContext';
 import { useReferenceData } from '../context/ReferenceDataContext';
 import { hasModuleAction } from '../utils/policy';
 import ClaimTicket from './ClaimTicket';
+import DropDown from './DropDown';
+import InputGroup from './InputGroup';
+import ErrorToast from './ErrorToast';
+import SuccessToast from './SuccessToast';
 
 /**
  * Item-level "next action" for a single request_document/request_certificate
@@ -33,12 +37,56 @@ const ITEM_NEXT_ACTIONS = {
   2:  [{ label: 'Mark Completed',         target: 3, requiredAction: 'Complete' }], // ReadyToClaim -> Completed
 };
 
-const RequestDetailsModal = ({ request, onClose, user, onGenerateCert }) => {
+const WITHDRAWAL_REASONS = [
+  ['wrong_item_paid', 'Wrong item paid'],
+  ['duplicate_submission', 'Duplicate submission'],
+  ['student_no_longer_needs', 'Student no longer needs it'],
+  ['other', 'Other'],
+];
+
+const DEFICIENCY_ITEMS = [
+  ['missing_signature', 'Missing signature'],
+  ['missing_valid_id', 'Missing valid ID'],
+  ['other', 'Other'],
+];
+
+const CLOSURE_REASONS = [
+  ['requestor_deceased', 'Requestor deceased'],
+  ['requestor_incapacitated', 'Requestor permanently unable to respond'],
+  ['other', 'Other'],
+];
+
+const STALE_NOTICE_DAYS = 14;
+
+const isWithdrawnRequest = (request) => (
+  Number(request?.status_id ?? request?.statusId) === 13 ||
+  String(request?.status?.status_name ?? request?.statusName ?? request?.status ?? '').toLowerCase() === 'withdrawn'
+);
+
+const isTerminalRequest = (request) => (
+  isWithdrawnRequest(request) || Number(request?.status_id ?? request?.statusId) === 14 ||
+  String(request?.status?.status_name ?? request?.statusName ?? request?.status ?? '').toLowerCase() === 'closed - unable to process'
+);
+
+const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequestUpdated }) => {
   const { docTypeName, purposeName, certName, statusConfig } = useReferenceData();
   const [docTypes, setDocTypes] = useState([]);
   const [liveRequest, setLiveRequest] = useState(request);
   const [updatingItemKey, setUpdatingItemKey] = useState(null);
   const [itemError, setItemError] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [actionSuccess, setActionSuccess] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [withdrawalReason, setWithdrawalReason] = useState('wrong_item_paid');
+  const [withdrawalDetail, setWithdrawalDetail] = useState('');
+  const [supersededByRequestId, setSupersededByRequestId] = useState('');
+  const [deficiencyItem, setDeficiencyItem] = useState('missing_signature');
+  const [deficiencyDetail, setDeficiencyDetail] = useState('');
+  const [voidReason, setVoidReason] = useState('');
+  const [showWithdrawForm, setShowWithdrawForm] = useState(false);
+  const [closureReason, setClosureReason] = useState('requestor_deceased');
+  const [closureDetail, setClosureDetail] = useState('');
+  const [closureProofReference, setClosureProofReference] = useState('');
   const { isDark } = useTheme();
 
   const canProcess  = hasModuleAction(user, 'dashboard', 'Process');
@@ -63,6 +111,18 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert }) => {
   useEffect(() => {
     setLiveRequest(request);
     setItemError(null);
+    setActionError(null);
+    setActionSuccess(null);
+    setShowWithdrawForm(false);
+    setWithdrawalReason('wrong_item_paid');
+    setWithdrawalDetail('');
+    setSupersededByRequestId('');
+    setDeficiencyItem('missing_signature');
+    setDeficiencyDetail('');
+    setVoidReason('');
+    setClosureReason('requestor_deceased');
+    setClosureDetail('');
+    setClosureProofReference('');
   }, [request]);
 
   useEffect(() => {
@@ -99,12 +159,15 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert }) => {
   };
 
   const advanceDocumentItem = async (item, targetStatusId) => {
+    if (isTerminalRequest(activeRequest)) return;
     const key = `doc-${item.request_document_id}`;
     setUpdatingItemKey(key);
     setItemError(null);
+    setActionError(null);
     try {
       await updateRequestDocumentStatus(activeRequest.request_id, item.request_document_id, targetStatusId);
       await refreshRequest();
+      setActionSuccess("Document status updated successfully.");
     } catch (err) {
       setItemError(err.response?.data?.message ?? 'Failed to update this item\'s status.');
     } finally {
@@ -113,12 +176,15 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert }) => {
   };
 
   const advanceCertificateItem = async (item, targetStatusId) => {
+    if (isTerminalRequest(activeRequest)) return;
     const key = `cert-${item.request_certificate_id}`;
     setUpdatingItemKey(key);
     setItemError(null);
+    setActionError(null);
     try {
       await updateRequestCertificateStatus(activeRequest.request_id, item.request_certificate_id, targetStatusId);
       await refreshRequest();
+      setActionSuccess("Certificate status updated successfully.");
     } catch (err) {
       setItemError(err.response?.data?.message ?? 'Failed to update this item\'s status.');
     } finally {
@@ -137,17 +203,134 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert }) => {
   };
 
   const displayStatus = activeRequest.status?.status_name || activeRequest.status || 'N/A';
+  const statusId = Number(activeRequest.status_id ?? request?.statusId);
+  const openNotice = activeRequest.open_deficiency_notice ?? activeRequest.openDeficiencyNotice;
+  const isWithdrawn = statusId === 13 || String(displayStatus).toLowerCase() === 'withdrawn';
+  const isClosedUnableToProcess = statusId === 14 || String(displayStatus).toLowerCase() === 'closed - unable to process';
+  const isTerminal = isWithdrawn || isClosedUnableToProcess;
+  const canWithdraw = canProcess && !activeRequest.is_archived && [1, 6, 12].includes(statusId) && !isTerminal;
+  const canManageNotice = canProcess && !activeRequest.is_archived && !isTerminal;
+  const noticeIsStale = openNotice?.issued_at
+    ? Date.now() - new Date(openNotice.issued_at).getTime() >= STALE_NOTICE_DAYS * 24 * 60 * 60 * 1000
+    : false;
+  const noticeIsEscalated = Boolean(openNotice?.escalated_at || openNotice?.is_escalated);
   const releaseGroups = activeRequest.release_groups ?? [];
   const hasReleaseGroups = releaseGroups.length > 0;
 
-  return createPortal(
-    <div className="fixed inset-0 z-99999 flex items-center justify-center p-4">
-      <div
-        className={`absolute inset-0 backdrop-blur-sm ${isDark ? 'bg-black/70' : 'bg-black/50'}`}
-        onClick={onClose}
-      />
-      <div className={`relative rounded-2xl shadow-2xl w-full max-w-2xl lg:max-w-4xl max-h-[calc(100vh-64px)] overflow-hidden flex flex-col print:w-full print:max-w-none print:shadow-none print:rounded-none ${isDark ? 'bg-[#242526] border border-[#3e4042]' : 'bg-white'}`}>
+  const updateRequestFromResponse = (response) => {
+    const updatedRequest = response?.data ?? response;
+    if (updatedRequest?.request_id) setLiveRequest(updatedRequest);
+    onRequestUpdated?.(updatedRequest);
+  };
 
+  const handleWithdraw = async (event) => {
+    event.preventDefault();
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const response = await withdrawDocumentRequest(activeRequest.request_id, {
+        withdrawal_reason: withdrawalReason,
+        withdrawal_detail: withdrawalReason === 'other' ? withdrawalDetail.trim() : undefined,
+        superseded_by_request_id: supersededByRequestId ? Number(supersededByRequestId) : undefined,
+      });
+      updateRequestFromResponse(response);
+      setShowWithdrawForm(false);
+      setActionSuccess("Request withdrawn successfully.");
+    } catch (err) {
+      setActionError(err.response?.data?.message || Object.values(err.response?.data?.errors ?? {}).flat().join(' ') || 'Unable to withdraw this request.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleIssueNotice = async (event) => {
+    event.preventDefault();
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const response = await issueDeficiencyNotice(activeRequest.request_id, {
+        item_key: deficiencyItem,
+        detail: deficiencyItem === 'other' ? deficiencyDetail.trim() : undefined,
+      });
+      const updatedRequest = { ...activeRequest, open_deficiency_notice: response.data };
+      setLiveRequest(updatedRequest);
+      onRequestUpdated?.(updatedRequest);
+      setDeficiencyDetail('');
+      setActionSuccess("Deficiency notice issued successfully.");
+    } catch (err) {
+      setActionError(err.response?.data?.message || Object.values(err.response?.data?.errors ?? {}).flat().join(' ') || 'Unable to issue the deficiency notice.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleClearNotice = async () => {
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      await clearDeficiencyNotice(openNotice.remark_id);
+      const updatedRequest = { ...activeRequest, open_deficiency_notice: null };
+      setLiveRequest(updatedRequest);
+      onRequestUpdated?.(updatedRequest);
+      setActionSuccess("Deficiency notice cleared successfully.");
+    } catch (err) {
+      setActionError(err.response?.data?.message || 'Unable to clear the deficiency notice.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleVoidNotice = async (event) => {
+    event.preventDefault();
+    if (!voidReason.trim()) return;
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      await voidDeficiencyNotice(openNotice.remark_id, voidReason.trim());
+      const updatedRequest = { ...activeRequest, open_deficiency_notice: null };
+      setLiveRequest(updatedRequest);
+      onRequestUpdated?.(updatedRequest);
+      setVoidReason('');
+      if (canWithdraw) setShowWithdrawForm(true);
+      setActionSuccess("Deficiency notice voided successfully.");
+    } catch (err) {
+      setActionError(err.response?.data?.message || 'Unable to void the deficiency notice.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCloseUnableToProcess = async (event) => {
+    event.preventDefault();
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const response = await closeRequestUnableToProcess(activeRequest.request_id, {
+        closure_reason: closureReason,
+        closure_detail: closureReason === 'other' ? closureDetail.trim() : undefined,
+        closure_proof_reference: closureProofReference.trim(),
+      });
+      updateRequestFromResponse(response);
+      setClosureDetail('');
+      setClosureProofReference('');
+      setActionSuccess('Request closed as unable to process.');
+    } catch (err) {
+      setActionError(err.response?.data?.message || Object.values(err.response?.data?.errors ?? {}).flat().join(' ') || 'Unable to close this request.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  return createPortal(
+    <>
+      <ErrorToast message={actionError || itemError} onClose={() => { setActionError(null); setItemError(null); }} />
+      <SuccessToast message={actionSuccess} onClose={() => setActionSuccess(null)} />
+      <div className="fixed inset-0 z-99999 flex items-center justify-center p-4">
+        <div
+          className={`absolute inset-0 backdrop-blur-sm ${isDark ? 'bg-black/70' : 'bg-black/50'}`}
+          onClick={onClose}
+        />
+        <div className={`relative rounded-2xl shadow-2xl w-full max-w-2xl lg:max-w-4xl max-h-[calc(100vh-64px)] overflow-hidden flex flex-col print:w-full print:max-w-none print:shadow-none print:rounded-none ${isDark ? 'bg-[#242526] border border-[#3e4042]' : 'bg-white'}`}>
 
         {/* Header */}
         <div className={`relative px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center shrink-0 ${isDark ? 'bg-[#3a3b3c]' : 'bg-pup-maroon'}`}>
@@ -181,7 +364,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert }) => {
                 
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 mt-2">
                 <p className={`font-bold text-sm sm:text-md wrap-break-word ${isDark ? 'text-white' : 'text-pup-maroon'}`}>
-                    {getProgressLabel(progress)}
+                    {getProgressLabel(progress, isWithdrawn)}
                 </p>
                 <span className={`text-xs sm:text-sm font-semibold ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'}`}>
                     {progress}%
@@ -276,6 +459,226 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert }) => {
             </Section>
           )}
 
+            {(openNotice || canManageNotice || isWithdrawn || isClosedUnableToProcess) && (
+              <Section title="Request Resolution" isDark={isDark}>
+                <div className="space-y-3">
+                  {isWithdrawn && (
+                    <div className={`rounded-lg border p-3 ${isDark ? 'border-red-800 bg-red-950/30' : 'border-red-200 bg-red-50'}`}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-red-700 dark:text-red-300">Withdrawn</span>
+                        {activeRequest.withdrawal_reason && (
+                          <span className="text-xs font-semibold uppercase tracking-wide opacity-75">
+                            {WITHDRAWAL_REASONS.find(([value]) => value === activeRequest.withdrawal_reason)?.[1] ?? activeRequest.withdrawal_reason}
+                          </span>
+                        )}
+                      </div>
+                      {activeRequest.withdrawal_detail && <p className="mt-1 wrap-break-word">{activeRequest.withdrawal_detail}</p>}
+                      {activeRequest.superseded_by_request_id && (
+                        <p className="mt-1 text-xs">Superseded by request #{activeRequest.superseded_by_request_id}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {isClosedUnableToProcess && (
+                    <div className={`rounded-lg border p-3 ${isDark ? 'border-red-800 bg-red-950/30' : 'border-red-200 bg-red-50'}`}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-red-700 dark:text-red-300">Closed - Unable to Process</span>
+                        {activeRequest.closure_reason && (
+                          <span className="text-xs font-semibold uppercase tracking-wide opacity-75">
+                            {CLOSURE_REASONS.find(([value]) => value === activeRequest.closure_reason)?.[1] ?? activeRequest.closure_reason}
+                          </span>
+                        )}
+                      </div>
+                      {activeRequest.closure_detail && <p className="mt-1 wrap-break-word">{activeRequest.closure_detail}</p>}
+                      {activeRequest.closure_proof_reference && <p className="mt-1 text-xs wrap-break-word">Proof: {activeRequest.closure_proof_reference}</p>}
+                    </div>
+                  )}
+
+                  {openNotice ? (
+                    <div className={`rounded-lg border p-3 ${noticeIsStale ? (isDark ? 'border-orange-700 bg-orange-950/30' : 'border-orange-300 bg-orange-50') : (isDark ? 'border-yellow-700 bg-yellow-950/30' : 'border-yellow-300 bg-yellow-50')}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="font-bold">Deficiency Notice: {openNotice.item_label ?? openNotice.item_key}</p>
+                          {openNotice.detail && <p className="mt-1 wrap-break-word text-sm">{openNotice.detail}</p>}
+                        </div>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${noticeIsEscalated ? 'border-red-400 text-red-700 dark:text-red-300' : noticeIsStale ? 'border-orange-400 text-orange-700 dark:text-orange-300' : 'border-yellow-400 text-yellow-700 dark:text-yellow-300'}`}>
+                          {noticeIsEscalated ? 'Escalated' : noticeIsStale ? 'Stale: 14+ days' : 'Open'}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs opacity-70">
+                        Issued {openNotice.issued_at ? new Date(openNotice.issued_at).toLocaleDateString() : 'recently'}
+                        {openNotice.issued_by_user?.name ? ` by ${openNotice.issued_by_user.name}` : ''}
+                      </p>
+
+                      {canManageNotice && (
+                        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+                          <button type="button" disabled={actionLoading} onClick={handleClearNotice} className="rounded-lg bg-green-600 px-4 py-3 text-xs font-bold text-white transition hover:bg-green-700 disabled:opacity-50 shrink-0 cursor-pointer">
+                            Clear Notice
+                          </button>
+                          <form onSubmit={handleVoidNotice} className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-end">
+                            <div className="flex-1 min-w-0 w-full">
+                              <InputGroup
+                                label="Reason for Voiding"
+                                name="voidReason"
+                                value={voidReason}
+                                onChange={(event) => setVoidReason(event.target.value)}
+                                placeholder="Reason for voiding"
+                                required
+                                labelColor="text-gray-700"
+                                voiceEnabled={false}
+                              />
+                            </div>
+                            <button type="submit" disabled={actionLoading || !voidReason.trim()} className="rounded-lg border border-red-300 px-4 py-3 text-xs font-bold text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition disabled:opacity-50 shrink-0 cursor-pointer">
+                              Void Notice
+                            </button>
+                          </form>
+                        </div>
+                      )}
+                      {canWithdraw && (
+                        <button type="button" onClick={() => setShowWithdrawForm(true)} className="mt-3 text-xs font-bold text-pup-maroon underline dark:text-yellow-300 cursor-pointer">
+                          Withdraw this request
+                        </button>
+                      )}
+                    </div>
+                  ) : canManageNotice && !isTerminal && !showWithdrawForm ? (
+                    <form onSubmit={handleIssueNotice} className={`rounded-lg border p-3 ${isDark ? 'border-[#3e4042]' : 'border-gray-200'}`}>
+                      <p className="mb-2 font-bold">Issue Deficiency Notice</p>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                        <div className="flex-1 min-w-50">
+                          <DropDown
+                            label="Deficiency Item"
+                            name="deficiencyItem"
+                            value={DEFICIENCY_ITEMS.find(([val]) => val === deficiencyItem)?.[1] || deficiencyItem}
+                            onChange={(e) => {
+                              const found = DEFICIENCY_ITEMS.find(([, label]) => label === e.target.value);
+                              setDeficiencyItem(found ? found[0] : e.target.value);
+                            }}
+                            options={DEFICIENCY_ITEMS.map(([, label]) => label)}
+                            required
+                            labelColor="text-gray-700"
+                          />
+                        </div>
+                        {deficiencyItem === 'other' && (
+                          <div className="flex-1 min-w-0">
+                            <InputGroup
+                              label="Missing Item Detail"
+                              name="deficiencyDetail"
+                              value={deficiencyDetail}
+                              onChange={(event) => setDeficiencyDetail(event.target.value)}
+                              placeholder="Specify missing item"
+                              required
+                              labelColor="text-gray-700"
+                              voiceEnabled={false}
+                            />
+                          </div>
+                        )}
+                        <button type="submit" disabled={actionLoading} className="rounded-lg bg-yellow-500 px-4 py-3 text-xs font-bold text-gray-900 transition hover:bg-yellow-400 disabled:opacity-50 shrink-0 cursor-pointer">
+                          Issue Notice
+                        </button>
+                      </div>
+                    </form>
+                  ) : null}
+
+                  {showWithdrawForm && canWithdraw && (
+                    <form onSubmit={handleWithdraw} className={`rounded-lg border p-3 ${isDark ? 'border-red-800' : 'border-red-200'}`}>
+                      <p className="mb-2 font-bold">Withdraw Request</p>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <DropDown
+                          label="Withdrawal Reason"
+                          name="withdrawalReason"
+                          value={WITHDRAWAL_REASONS.find(([val]) => val === withdrawalReason)?.[1] || withdrawalReason}
+                          onChange={(e) => {
+                            const found = WITHDRAWAL_REASONS.find(([, label]) => label === e.target.value);
+                            setWithdrawalReason(found ? found[0] : e.target.value);
+                          }}
+                          options={WITHDRAWAL_REASONS.map(([, label]) => label)}
+                          required
+                          labelColor="text-gray-700"
+                        />
+                        <InputGroup
+                          label="Corrected Request ID (Optional)"
+                          name="supersededByRequestId"
+                          value={supersededByRequestId}
+                          onChange={(event) => setSupersededByRequestId(event.target.value.replace(/\D/g, ''))}
+                          placeholder="e.g. 12345"
+                          labelColor="text-gray-700"
+                          voiceEnabled={false}
+                        />
+                      </div>
+                      {withdrawalReason === 'other' && (
+                        <div className="mt-3">
+                          <InputGroup
+                            label="Withdrawal Reason Detail"
+                            name="withdrawalDetail"
+                            value={withdrawalDetail}
+                            onChange={(event) => setWithdrawalDetail(event.target.value)}
+                            placeholder="Reason for withdrawal"
+                            required
+                            labelColor="text-gray-700"
+                            voiceEnabled={false}
+                          />
+                        </div>
+                      )}
+                      <div className="mt-3 flex gap-2">
+                        <button type="submit" disabled={actionLoading} className="rounded-lg bg-red-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-red-700 disabled:opacity-50 cursor-pointer">
+                          Confirm Withdrawal
+                        </button>
+                        <button type="button" onClick={() => setShowWithdrawForm(false)} className={`rounded-lg border px-4 py-2.5 text-xs font-bold transition cursor-pointer ${isDark ? 'border-[#3e4042] text-[#e4e6eb] hover:bg-[#3a3b3c]' : 'border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {canManageNotice && openNotice && !isClosedUnableToProcess && (
+                    <form onSubmit={handleCloseUnableToProcess} className={`rounded-lg border p-3 ${isDark ? 'border-red-800' : 'border-red-200'}`}>
+                      <p className="mb-2 font-bold">Close - Unable to Process</p>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <DropDown
+                          label="Closure Reason"
+                          name="closureReason"
+                          value={CLOSURE_REASONS.find(([value]) => value === closureReason)?.[1] || closureReason}
+                          onChange={(event) => {
+                            const found = CLOSURE_REASONS.find(([, label]) => label === event.target.value);
+                            setClosureReason(found ? found[0] : event.target.value);
+                          }}
+                          options={CLOSURE_REASONS.map(([, label]) => label)}
+                          required
+                          labelColor="text-gray-700"
+                        />
+                        <InputGroup
+                          label="Proof Reference"
+                          name="closureProofReference"
+                          value={closureProofReference}
+                          onChange={(event) => setClosureProofReference(event.target.value)}
+                          placeholder="Describe the verified proof"
+                          required
+                          labelColor="text-gray-700"
+                          voiceEnabled={false}
+                        />
+                      </div>
+                      {closureReason === 'other' && (
+                        <div className="mt-3">
+                          <InputGroup
+                            label="Closure Detail"
+                            name="closureDetail"
+                            value={closureDetail}
+                            onChange={(event) => setClosureDetail(event.target.value)}
+                            placeholder="Explain why the request cannot be processed"
+                            required
+                            labelColor="text-gray-700"
+                            voiceEnabled={false}
+                          />
+                        </div>
+                      )}
+                      <button type="submit" disabled={actionLoading || !closureProofReference.trim() || (closureReason === 'other' && !closureDetail.trim())} className="mt-3 rounded-lg bg-red-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-red-700 disabled:opacity-50 cursor-pointer">
+                        Confirm Closure
+                      </button>
+                    </form>
+                  )}
+                </div>
+              </Section>
+            )}
 
           {/* Request Information */}
           <Section title="Request Information" isDark={isDark}>
@@ -340,10 +743,12 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert }) => {
         </div>
       </div>
     </div>
+    </>
   , document.body);
 };
 
-const getProgressLabel = (progress) => {
+const getProgressLabel = (progress, isWithdrawn = false) => {
+  if (isWithdrawn) return "Request was withdrawn";
   switch (progress) {
     case 0:   return "Request was forfeited";
     case 10:  return "Awaiting submission of source document";
@@ -359,11 +764,11 @@ const Section = ({ title, children, isDark }) => {
   const [open, setOpen] = useState(true);
 
   return (
-    <div className={`border rounded-lg overflow-hidden ${isDark ? 'border-[#3e4042]' : 'border-gray-200'}`}>
+    <div className={`border rounded-lg ${isDark ? 'border-[#3e4042]' : 'border-gray-200'}`}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className={`w-full flex justify-between items-center px-3 sm:px-4 py-3 font-bold text-sm ${isDark ? 'bg-[#3a3b3c] text-white' : 'bg-yellow-50 text-pup-maroon'}`}
+        className={`w-full flex justify-between items-center px-3 sm:px-4 py-3 font-bold text-sm ${open ? 'rounded-t-lg' : 'rounded-lg'} ${isDark ? 'bg-[#3a3b3c] text-white' : 'bg-yellow-50 text-pup-maroon'}`}
       >
         {title}
         <ChevronDownIcon
@@ -371,7 +776,7 @@ const Section = ({ title, children, isDark }) => {
         />
       </button>
 
-      {open && <div className={`p-3 sm:p-4 text-sm ${isDark ? 'bg-[#242526]' : 'bg-white'}`}>{children}</div>}
+      {open && <div className={`p-3 sm:p-4 text-sm rounded-b-lg ${isDark ? 'bg-[#242526]' : 'bg-white'}`}>{children}</div>}
     </div>
   );
 };

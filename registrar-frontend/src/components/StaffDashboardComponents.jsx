@@ -50,6 +50,7 @@ export const StatusBadge = ({ status }) => {
         completed: 'bg-gray-700/20 text-gray-300 border-gray-400',
         forfeited: 'bg-gray-700/20 text-gray-300 border-gray-400',
         cancelled: 'bg-gray-700/20 text-gray-300 border-gray-400',
+        withdrawn: 'bg-red-900/20 text-red-300 border-red-500',
       }
     : {
         pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
@@ -60,6 +61,7 @@ export const StatusBadge = ({ status }) => {
         completed: 'bg-gray-100 text-gray-700 border-gray-200',
         forfeited: 'bg-gray-100 text-gray-700 border-gray-200',
         cancelled: 'bg-gray-100 text-gray-700 border-gray-200',
+        withdrawn: 'bg-red-100 text-red-700 border-red-200',
       };
   return (
     <span className={`px-3 py-1 rounded-full text-xs font-bold border whitespace-nowrap ${styles[normalizedStatus] ?? (isDark ? 'bg-gray-700/20 text-gray-300 border-gray-400' : 'bg-gray-100 text-gray-600')}`}>
