@@ -34,6 +34,16 @@ import { getWorkflowStatusOptions } from '../utils/staffDashboardUtils';
 
 const ITEMS_PER_PAGE = 15;
 
+const isWithdrawnRequest = (request) => (
+  Number(request?.statusId ?? request?.status_id) === 13 ||
+  String(request?.statusName ?? request?.status?.status_name ?? '').toLowerCase() === 'withdrawn'
+);
+
+const isTerminalRequest = (request) => (
+  isWithdrawnRequest(request) || Number(request?.statusId ?? request?.status_id) === 14 ||
+  String(request?.statusName ?? request?.status?.status_name ?? '').toLowerCase() === 'closed - unable to process'
+);
+
 const RowActionsDropdown = ({
   req,
   viewMode,
@@ -315,6 +325,10 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
   };
 
   const getSummaryStatusPill = (req) => {
+    if (isTerminalRequest(req)) {
+      return <StatusBadge status={Number(req.statusId ?? req.status_id) === 14 ? 'Closed - Unable to Process' : 'Withdrawn'} />;
+    }
+
     const items = getSubItems(req);
 
     if (items.length === 0) {
@@ -739,6 +753,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                 const isExpanded = expandedRowIds.has(req.id);
                 const subItems = getSubItems(req);
                 const isMultiItem = subItems.length > 1;
+                const requestIsWithdrawn = isTerminalRequest(req);
 
                 return (
                   <React.Fragment key={req.id}>
@@ -804,7 +819,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
 
                             return (
                               <>
-                                {!isMultiItem && canProcess && !req.isArchived && effectiveStatusId === resolvedStatusIds.AWAITING_SUBMISSION && (
+                                {!requestIsWithdrawn && !isMultiItem && canProcess && !req.isArchived && effectiveStatusId === resolvedStatusIds.AWAITING_SUBMISSION && (
                                   <button
                                     disabled={updatingId === req.id}
                                     onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.PENDING) : handleStatusUpdate(req.id, resolvedStatusIds.PENDING)}
@@ -819,7 +834,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                     <span>Confirm Received</span>
                                   </button>
                                 )}
-                                {!isMultiItem && canProcess && !req.isArchived && effectiveStatusId === resolvedStatusIds.PENDING && (
+                                {!requestIsWithdrawn && !isMultiItem && canProcess && !req.isArchived && effectiveStatusId === resolvedStatusIds.PENDING && (
                                   <button
                                     disabled={updatingId === req.id}
                                     onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.PENDING_SIGNATURE) : handleStatusUpdate(req.id, resolvedStatusIds.PENDING_SIGNATURE)}
@@ -835,7 +850,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                     <span>Pending Signature</span>
                                   </button>
                                 )}
-                                {!isMultiItem && canProcess && (!req.isArchived && (effectiveStatusId === resolvedStatusIds.PENDING || effectiveStatusId === resolvedStatusIds.PENDING_SIGNATURE)) && (
+                                {!requestIsWithdrawn && !isMultiItem && canProcess && (!req.isArchived && (effectiveStatusId === resolvedStatusIds.PENDING || effectiveStatusId === resolvedStatusIds.PENDING_SIGNATURE)) && (
                                   <button
                                     disabled={updatingId === req.id}
                                     onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.READY) : handleStatusUpdate(req.id, resolvedStatusIds.READY)}
@@ -846,7 +861,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                     <CheckCircleIcon className="w-4 h-4" /> Ready
                                   </button>
                                 )}
-                                {!isMultiItem && canComplete && !req.isArchived && effectiveStatusId === resolvedStatusIds.READY && (
+                                {!requestIsWithdrawn && !isMultiItem && canComplete && !req.isArchived && effectiveStatusId === resolvedStatusIds.READY && (
                                   <button
                                     disabled={updatingId === req.id}
                                     onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.COMPLETED) : handleStatusUpdate(req.id, resolvedStatusIds.COMPLETED)}
@@ -877,7 +892,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                     </tr>
 
                     {/* Accordion Sub-Rows for Multi-Item Requests */}
-                    {isExpanded && isMultiItem && subItems.map((subItem) => {
+                    {isExpanded && isMultiItem && !requestIsWithdrawn && subItems.map((subItem) => {
                       const isItemAwaiting = subItem.statusId === resolvedStatusIds.AWAITING_SUBMISSION;
                       const isItemReady = subItem.statusId === resolvedStatusIds.READY;
                       const isItemDone = subItem.statusId === resolvedStatusIds.COMPLETED;
@@ -1040,6 +1055,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
         onClose={() => setSelectedRequest(null)}
         user={user}
         onGenerateCert={(req) => setCertRequest(req)}
+        onRequestUpdated={() => queryClient.invalidateQueries({ queryKey: ['documentRequests', viewMode] })}
       />
       <DeleteConfirmModal
         open={showDeleteConfirm}

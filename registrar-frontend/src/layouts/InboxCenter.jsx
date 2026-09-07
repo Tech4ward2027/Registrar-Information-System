@@ -69,6 +69,20 @@ const renderNotificationIcon = (mail) => {
       </div>
     );
   }
+  if (type === 'request_withdrawn' || title.includes('withdrawn') || type === 'deficiency_notice_voided' || type === 'deficiency_notice_escalated' || type === 'request_closed_unable_to_process' || title.includes('deficiency notice voided') || title.includes('unable to process')) {
+    return (
+      <div className="w-8 h-8 rounded-full bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400 border border-red-300/30 dark:border-red-800/40 flex items-center justify-center shrink-0">
+        <ExclamationTriangleIcon className="w-4 h-4" />
+      </div>
+    );
+  }
+  if (type === 'deficiency_notice_issued' || title.includes('deficiency notice')) {
+    return (
+      <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-300/30 dark:border-amber-800/40 flex items-center justify-center shrink-0">
+        <InformationCircleIcon className="w-4 h-4" />
+      </div>
+    );
+  }
   if (type === 'payment_verified' || title.includes('payment')) {
     return (
       <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-300/30 dark:border-emerald-800/40 flex items-center justify-center shrink-0">
@@ -100,9 +114,20 @@ const toMailItem = (n) => {
   let dotColor = null;
   if (
     type === 'request_forfeited' ||
-    title.toLowerCase().includes('forfeited')
+    title.toLowerCase().includes('forfeited') ||
+    type === 'request_withdrawn' ||
+    title.toLowerCase().includes('withdrawn') ||
+    type === 'deficiency_notice_voided' ||
+    type === 'deficiency_notice_escalated' ||
+    type === 'request_closed_unable_to_process' ||
+    title.toLowerCase().includes('deficiency notice voided')
   ) {
     dotColor = 'bg-red-500';
+  } else if (
+    type === 'deficiency_notice_issued' ||
+    title.toLowerCase().includes('deficiency notice')
+  ) {
+    dotColor = 'bg-amber-500';
   } else if (
     type.startsWith('reminder_') ||
     title.toLowerCase().includes('reminder')
@@ -138,7 +163,7 @@ const toMailItem = (n) => {
   }
   
 
-  return {
+  const mailItem = {
     id: n.id,
     from: n.title,
     email: 'no-reply@ris.local',
@@ -151,6 +176,83 @@ const toMailItem = (n) => {
     // Keep original for markAsRead and requirements checklist
     _raw: n,
   };
+
+  const lifecycleAlert = getLifecycleAlert(mailItem);
+  const isPendingSignature = n.type === 'pending_signature' || String(n.title || '').toLowerCase().includes('signature');
+  return {
+    ...mailItem,
+    preview: lifecycleAlert
+      ? `${lifecycleAlert.title} ${lifecycleAlert.message}`
+      : isPendingSignature
+        ? 'Pending signature. Your document is awaiting signature from the authorized signatory before it can be released to you.'
+      : mailItem.preview,
+  };
+};
+
+const getLifecycleAlert = (mail) => {
+  const type = mail?._raw?.type || '';
+  const title = (mail?.subject || mail?.from || '').toLowerCase();
+  const rawMessage = mail?._raw?.message || mail?.preview || '';
+
+  const valueAfter = (prefix) => {
+    const start = rawMessage.toLowerCase().indexOf(prefix.toLowerCase());
+    return start === -1 ? '' : rawMessage.slice(start + prefix.length).replace(/^\s*[:.-]\s*/, '').trim();
+  };
+
+  if (type === 'request_withdrawn' || title.includes('withdrawn')) {
+    const reason = mail?._raw?.withdrawal_reason || valueAfter('withdrawn:') || valueAfter('withdrawn');
+    return {
+      title: 'Withdrawn.',
+      message: reason ? `Reason: ${reason}` : 'This request has been withdrawn and will not be fulfilled.',
+      classes: 'bg-red-50 border-red-200 text-red-900 dark:bg-red-950/30 dark:border-red-700/50 dark:text-red-200',
+      titleClasses: 'text-red-700 dark:text-red-300',
+      iconClasses: 'text-red-600 dark:text-red-400',
+    };
+  }
+
+  if (type === 'deficiency_notice_voided' || title.includes('deficiency notice voided')) {
+    const reason = mail?._raw?.void_reason || valueAfter('voided:') || valueAfter('voided');
+    return {
+      title: 'Deficiency notice voided.',
+      message: reason ? `Reason: ${reason}` : 'The deficiency notice has been voided. Please contact the Registrar\'s Office if you need assistance.',
+      classes: 'bg-red-50 border-red-200 text-red-900 dark:bg-red-950/30 dark:border-red-700/50 dark:text-red-200',
+      titleClasses: 'text-red-700 dark:text-red-300',
+      iconClasses: 'text-red-600 dark:text-red-400',
+    };
+  }
+
+  if (type === 'deficiency_notice_escalated' || title.includes('deficiency notice escalated')) {
+    return {
+      title: 'Deficiency notice escalated.',
+      message: 'This notice has remained unresolved for 30+ days and requires Registrar review.',
+      classes: 'bg-red-50 border-red-200 text-red-900 dark:bg-red-950/30 dark:border-red-700/50 dark:text-red-200',
+      titleClasses: 'text-red-700 dark:text-red-300',
+      iconClasses: 'text-red-600 dark:text-red-400',
+    };
+  }
+
+  if (type === 'request_closed_unable_to_process' || title.includes('unable to process')) {
+    return {
+      title: 'Closed - Unable to Process.',
+      message: mail?._raw?.closure_reason ? `Reason: ${mail._raw.closure_reason}` : 'This request could not be completed and has been closed.',
+      classes: 'bg-red-50 border-red-200 text-red-900 dark:bg-red-950/30 dark:border-red-700/50 dark:text-red-200',
+      titleClasses: 'text-red-700 dark:text-red-300',
+      iconClasses: 'text-red-600 dark:text-red-400',
+    };
+  }
+
+  if (type === 'deficiency_notice_issued' || title.includes('deficiency notice')) {
+    const missingItem = mail?._raw?.item_label || valueAfter('on hold:') || valueAfter('deficiency notice:');
+    return {
+      title: 'Deficiency notice.',
+      message: missingItem ? `Missing: ${missingItem}` : 'Your request is on hold until the missing item is submitted to the Registrar\'s Office.',
+      classes: 'bg-amber-50 border-amber-200 text-amber-900 dark:bg-[#332200]/80 dark:border-amber-600/40 dark:text-amber-200',
+      titleClasses: 'text-amber-500',
+      iconClasses: 'text-amber-500',
+    };
+  }
+
+  return null;
 };
 
 const InboxCenter = () => {
@@ -257,6 +359,7 @@ const InboxCenter = () => {
   }, [hasMore, loadingMore, loadMore]);
 
   const progress = useMemo(() => getNotificationProgress(selectedMail), [selectedMail]);
+  const lifecycleAlert = useMemo(() => getLifecycleAlert(selectedMail), [selectedMail]);
 
   const flags = useMemo(() => getNotificationFlags(selectedMail, progress), [selectedMail, progress]);
   const { isClaiming, isCompleted, isPendingSignature } = flags;
@@ -433,10 +536,22 @@ const InboxCenter = () => {
                     <div className="space-y-4">
 
                       {/* ── Message Description / Body ── */}
-                      {(selectedMail.preview || selectedMail._raw?.message) && (
+                      {(selectedMail.preview || selectedMail._raw?.message) && !lifecycleAlert && !isPendingSignature && (
                         <div className={`rounded-xl border p-4 sm:p-5 ${isDark ? 'border-[#3e4042] bg-[#242526]' : 'border-gray-200 bg-white shadow-xs'}`}>
                           <p className={`text-sm sm:text-base leading-relaxed ${isDark ? 'text-[#e4e6eb]' : 'text-gray-800'}`}>
                             {selectedMail._raw?.message || selectedMail.preview}
+                          </p>
+                        </div>
+                      )}
+
+                      {lifecycleAlert && (
+                        <div className={`rounded-xl border p-4 sm:p-4.5 flex items-start gap-3.5 ${lifecycleAlert.classes}`}>
+                          <InformationCircleIcon className={`w-5 h-5 shrink-0 mt-0.5 ${lifecycleAlert.iconClasses}`} />
+                          <p className="text-xs sm:text-sm leading-relaxed">
+                            <strong className={`font-bold mr-1 ${lifecycleAlert.titleClasses}`}>
+                              {lifecycleAlert.title}
+                            </strong>
+                            {lifecycleAlert.message}
                           </p>
                         </div>
                       )}

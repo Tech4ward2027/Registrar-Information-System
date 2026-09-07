@@ -83,6 +83,10 @@ const STUDENT_REFETCH_TRIGGERS = new Set([
   'ready_to_claim',         // ready for pickup
   'request_completed',      // done
   'request_forfeited',      // forfeited / expired
+  'request_withdrawn',      // request closed by staff
+  'deficiency_notice_issued',
+  'deficiency_notice_cleared',
+  'deficiency_notice_voided',
 ]);
 
 // Hoist into a stable primitive so React's dep-array comparison is reliable.
@@ -281,6 +285,7 @@ useEffect(() => {
         request={selectedRequest}
         onClose={() => setSelectedRequest(null)}
         user={user}
+        onRequestUpdated={() => refetch()}
       />
     </main>
   );
