@@ -112,4 +112,15 @@ interface DocumentRequestServiceInterface
      *         an existing request.
      */
     public function withdraw(DocumentRequest $documentRequest, array $data): DocumentRequest;
+
+    /**
+     * Data Retention & Disposal Policy — Section 3.4. Closes a request
+     * as ClosedUnableToProcess — see DocumentRequestService::
+     * closeUnableToProcess() for full behavior.
+     *
+     * @throws \Illuminate\Http\Exceptions\HttpResponseException 422 if the
+     *         request is archived, its current status cannot transition
+     *         to ClosedUnableToProcess, or it has no open Deficiency Notice.
+     */
+    public function closeUnableToProcess(DocumentRequest $documentRequest, array $data): DocumentRequest;
 }

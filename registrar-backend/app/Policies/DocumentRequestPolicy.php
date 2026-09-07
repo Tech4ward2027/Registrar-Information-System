@@ -145,4 +145,26 @@ class DocumentRequestPolicy
     {
         return $user->isStaff() && $user->hasModuleAccess('dashboard', 'Process');
     }
+
+    // -------------------------------------------------------
+    // Close a request as "Closed — Unable to Process" (Data Retention &
+    // Disposal Policy §3.4). Same coarse tier as withdraw()/
+    // issueDeficiencyNotice() above — 'Process' module access — for
+    // consistency with every other admin status-write action on this
+    // resource. FLAG FOR FUTURE REVIEW: this action's real-world
+    // gravity (permanently closing a case on proof of a requestor's
+    // death or incapacity) may warrant a stricter capability than the
+    // same 'Process' tier that also covers routine actions like
+    // issuing a Deficiency Notice — e.g. requiring a distinct
+    // 'Close' action token, or restricting to Registrar Staff with a
+    // specific policy grant, or Super Admin only. Implemented at
+    // parity with the existing tier for now to avoid inventing a new
+    // permission primitive as a side effect of this feature; revisit
+    // with whoever owns the Policy/module-grant system if the
+    // Registrar's Office wants tighter gating here specifically.
+    // -------------------------------------------------------
+    public function closeUnableToProcess(SystemUser $user, DocumentRequest $request): bool
+    {
+        return $user->isStaff() && $user->hasModuleAccess('dashboard', 'Process');
+    }
 }

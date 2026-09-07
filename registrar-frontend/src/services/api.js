@@ -136,9 +136,7 @@ export const getPrograms = () => api.get("/programs");
 // DOCUMENT TYPES (read: all | write: Admin+)
 // -------------------------------------------------------
 export const getDocumentTypes  = (includeArchived = false) =>
-  api.get("/document-types", {
-    params: includeArchived ? { include_archived: 1 } : {},
-  });
+  api.get("/document-types", { params: includeArchived ? { include_archived: 1 } : {} });
 export const getDocumentType   = (id)        => api.get(`/document-types/${id}`);
 export const createDocumentType = (data)     => api.post("/document-types", data);
 export const updateDocumentType = (id, data) => api.put(`/document-types/${id}`, data);
@@ -173,9 +171,7 @@ export const deleteFulfillmentTrack = (id)       => api.delete(`/fulfillment-tra
 // CERTIFICATIONS (read: all | write: Admin+)
 // -------------------------------------------------------
 export const getCertifications         = (includeArchived = false) =>
-  api.get("/certifications", {
-    params: includeArchived ? { include_archived: 1 } : {},
-  });
+  api.get("/certifications", { params: includeArchived ? { include_archived: 1 } : {} });
 export const getCertification          = (id)        => api.get(`/certifications/${id}`);
 export const createCertification       = (data)      => api.post("/certifications", data);
 export const updateCertification       = (id, data)  => api.put(`/certifications/${id}`, data);
@@ -473,6 +469,22 @@ export const withdrawDocumentRequest = (id, data) =>
 // "on hold" banner + Clear/Void actions instead of an Issue button
 // whenever an open notice is already present.
 //
+// NOTE — the notice object also now carries two independent time-based
+// signals, not to be conflated:
+//   - is_stale (boolean): Phase 4's original 14-day cosmetic badge,
+//     purely computed — true once issued_at is 14+ days in the past
+//     and the notice is still open. No backend action ever happens
+//     because of this; it's a visual warning tier only.
+//   - escalated_at (timestamp | null): Data Retention & Disposal
+//     Policy §3.4's real 30-day compliance trigger. Set exactly once
+//     by a nightly scheduled job once issued_at is 30+ days in the
+//     past, and NEVER un-set by clearing/voiding after the fact — it's
+//     a historical record, not a live flag. A non-null escalated_at
+//     means Registrar Admins have already been notified this notice
+//     needs a decision (extend / Withdraw / Close — Unable to
+//     Process); render this as a visually STRONGER tier than the
+//     plain 14-day is_stale badge, not the same color at a later date.
+//
 // issueDeficiencyNotice(requestId, data) — data shape:
 //   {
 //     item_key: "missing_signature" | "missing_valid_id" | "other",
@@ -506,6 +518,45 @@ export const clearDeficiencyNotice = (noticeId) =>
   api.post(`/deficiency-notices/${noticeId}/clear`);
 export const voidDeficiencyNotice = (noticeId, voidReason) =>
   api.post(`/deficiency-notices/${noticeId}/void`, { void_reason: voidReason });
+
+// -------------------------------------------------------
+// CLOSED — UNABLE TO PROCESS (Data Retention & Disposal Policy §3.4) —
+// staff/admin only, same role:3 + module:dashboard,Process gate as
+// WITHDRAWN STATUS / DEFICIENCY NOTICE above. The policy's "worst-case
+// scenario" closure: a request whose open Deficiency Notice can never
+// be complied with because the requestor is deceased or otherwise
+// permanently unable to respond. Terminal — cannot transition again.
+//
+// GUARD (backend-enforced, will 422 otherwise): the target request
+// must currently have an OPEN Deficiency Notice
+// (request.open_deficiency_notice must be present — check this before
+// showing whatever UI action triggers this call; there is no reason to
+// offer "Close — Unable to Process" on a request with no open notice).
+// This is NOT an alternative to Withdraw — it always requires proof.
+//
+// data shape:
+//   {
+//     closure_reason: "requestor_deceased" | "requestor_incapacitated" | "other",
+//     closure_detail?: string,          // REQUIRED when closure_reason === "other",
+//                                        // max 2000 chars
+//     closure_proof_reference: string,  // ALWAYS required (regardless of reason),
+//                                        // max 500 chars — a text description of
+//                                        // what was verified, e.g. "Death
+//                                        // certificate submitted by [name],
+//                                        // verified [date]". This is a
+//                                        // reference/description only — there is
+//                                        // no file upload here; the actual
+//                                        // physical/scanned proof stays with the
+//                                        // Registrar's Office's own records.
+//   }
+//
+// On success returns the updated DocumentRequest. The request's
+// previously-open Deficiency Notice is auto-voided server-side as part
+// of this same call (same pattern as withdrawDocumentRequest() —
+// no separate voidDeficiencyNotice() call needed first).
+// -------------------------------------------------------
+export const closeRequestUnableToProcess = (id, data) =>
+  api.post(`/document-requests/${id}/close-unable-to-process`, data);
 
 // -------------------------------------------------------
 // BULK READY / BULK DONE (Multi-Item / Mixed-Status Batch rules) —

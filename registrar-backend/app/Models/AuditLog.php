@@ -81,6 +81,13 @@ class AuditLog extends Model
     public const ACTION_DEFICIENCY_NOTICE_ISSUED  = 'deficiency_notice_issued';
     public const ACTION_DEFICIENCY_NOTICE_CLEARED = 'deficiency_notice_cleared';
     public const ACTION_DEFICIENCY_NOTICE_VOIDED  = 'deficiency_notice_voided';
+    // Data Retention & Disposal Policy — Section 3.3/3.4. Logged
+    // unconditionally, same stance as every other status/notice action
+    // above — an escalation past the 30-day compliance window, and a
+    // permanent closure on proof of death/incapacity, are both
+    // maximally audit-sensitive events.
+    public const ACTION_DEFICIENCY_NOTICE_ESCALATED    = 'deficiency_notice_escalated';
+    public const ACTION_REQUEST_CLOSED_UNABLE_TO_PROCESS = 'request_closed_unable_to_process';
 
     // Document / certificate type management — archiving
     public const ACTION_DOCUMENT_TYPE_ARCHIVED    = 'document_type_archived';

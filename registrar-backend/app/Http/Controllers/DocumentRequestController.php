@@ -12,6 +12,7 @@ use App\Models\CashierOrOverride;
 use App\Contracts\DocumentRequestServiceInterface;
 use App\Http\Requests\DocumentRequest\BulkRequestIdsRequest;
 use App\Http\Requests\DocumentRequest\ClaimDocumentRequestRequest;
+use App\Http\Requests\DocumentRequest\CloseRequestUnableToProcessRequest;
 use App\Http\Requests\DocumentRequest\StoreDocumentRequestRequest;
 use App\Http\Requests\DocumentRequest\UpdateDocumentRequestRequest;
 use App\Http\Requests\DocumentRequest\VerifyOfficialReceiptRequest;
@@ -708,6 +709,45 @@ class DocumentRequestController extends Controller
             $this->auditLogger->log($request, $actor, AuditLog::ACTION_DEFICIENCY_NOTICE_VOIDED, [
                 'request_id'  => $documentRequest->request_id,
                 'remark_id'   => $autoVoidedRemarkId,
+                'auto_voided' => true,
+            ]);
+        }
+
+        return response()->json($documentRequest->load(self::RELATIONS), 200);
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /document-requests/{documentRequest}/close-unable-to-process
+    //
+    // Data Retention & Disposal Policy — Section 3.4. Closes a request
+    // whose open Deficiency Notice can never be complied with (deceased
+    // or permanently incapacitated requestor). Mirrors withdraw()'s
+    // controller shape exactly — see that method's comments for the
+    // reasoning behind the transient-attribute read and the second,
+    // distinct audit entry for the auto-voided notice.
+    // -------------------------------------------------------------------------
+    public function closeUnableToProcess(CloseRequestUnableToProcessRequest $request, DocumentRequest $documentRequest)
+    {
+        $validated = $request->validated();
+
+        /** @var SystemUser $actor */
+        $actor = Auth::user();
+
+        $documentRequest = $this->requestService->closeUnableToProcess($documentRequest, $validated);
+
+        $voidedRemarkId = $documentRequest->getAttribute('closed_deficiency_notice_id');
+
+        $this->auditLogger->log($request, $actor, AuditLog::ACTION_REQUEST_CLOSED_UNABLE_TO_PROCESS, [
+            'request_id'               => $documentRequest->request_id,
+            'closure_reason'           => $documentRequest->closure_reason,
+            'closure_proof_reference'  => $documentRequest->closure_proof_reference,
+            'voided_deficiency_notice_id' => $voidedRemarkId,
+        ]);
+
+        if ($voidedRemarkId) {
+            $this->auditLogger->log($request, $actor, AuditLog::ACTION_DEFICIENCY_NOTICE_VOIDED, [
+                'request_id'  => $documentRequest->request_id,
+                'remark_id'   => $voidedRemarkId,
                 'auto_voided' => true,
             ]);
         }

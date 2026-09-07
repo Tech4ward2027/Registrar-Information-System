@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\ClosureReasonEnum;
 use App\Enums\RequestChannelEnum;
 use App\Enums\RequestStatusEnum;
 use App\Enums\WithdrawalReasonEnum;
@@ -874,6 +875,195 @@ class DocumentRequestService implements DocumentRequestServiceInterface
 
         return $reason === WithdrawalReasonEnum::Other
             ? ($withdrawalDetail ?: $reason->label())
+            : $reason->label();
+    }
+
+    /**
+     * Data Retention & Disposal Policy — Section 3.4 ("Requests That
+     * Can Never Be Resolved (e.g., Death of Requestor)").
+     *
+     * Closes a request as ClosedUnableToProcess: the policy's
+     * "worst-case scenario" outcome when an open Deficiency Notice can
+     * never be complied with because the requestor is deceased or
+     * otherwise permanently unable to respond. Structurally mirrors
+     * withdraw() above (same lock ordering, same transaction shape,
+     * same auto-void-the-open-notice cascade) but is a semantically
+     * DISTINCT action, not a variant of withdraw() — see
+     * RequestStatusEnum::ClosedUnableToProcess and ClosureReasonEnum's
+     * docblocks for why these are kept as two separate code paths
+     * rather than one parameterized method.
+     *
+     * GUARD — requires an OPEN Deficiency Notice to exist on this
+     * request. This status only makes sense as the resolution of an
+     * unresolvable notice (the policy's own framing: "If a Deficiency
+     * Notice cannot be complied with...") — there is no legitimate
+     * reason to reach ClosedUnableToProcess on a request that was never
+     * placed on hold in the first place. If staff need to close a
+     * request for a reason unrelated to a missing-item hold, that is
+     * an ordinary Withdrawn (see withdraw() above and
+     * WithdrawalReasonEnum), not this.
+     *
+     * WHAT THIS METHOD DOES NOT DO (see the add_closed_unable_to_process
+     * _status migration's docblock for the full list): it does not
+     * delete, anonymize, or move any data to a disposal/retention
+     * pipeline. Official Receipt records, academic records, and
+     * notification/inbox history all remain exactly where they are,
+     * governed by their own retention periods per Data Retention &
+     * Disposal Policy §3.2 — none of which are enforced by this action.
+     * It also does not release or dispose of any physical document
+     * already prepared for the request (policy §3.4 item 3) — this
+     * codebase has no subsystem tracking "has a physical document
+     * already been printed for this request" independent of
+     * request_certificate.generated_at, and conflating that signal
+     * with this closure action risks silently mis-triggering a
+     * shredding instruction on a request where nothing was ever
+     * printed. That step remains a manual Registrar's Office procedure
+     * today; flagged here as a clear integration point if/when a
+     * document-preparation-tracking feature exists to hook into.
+     *
+     * @throws \Illuminate\Auth\Access\AuthorizationException via abort() calls below
+     */
+    public function closeUnableToProcess(DocumentRequest $documentRequest, array $data): DocumentRequest
+    {
+        $statusChanged = false;
+        $voidedRemarkId = null;
+
+        $documentRequest = DB::transaction(function () use ($documentRequest, $data, &$statusChanged, &$voidedRemarkId) {
+            $documentRequest = DocumentRequest::lockForUpdate()
+                ->findOrFail($documentRequest->request_id);
+
+            if ($documentRequest->is_archived) {
+                abort(422, 'This request is archived and is read-only. Restore it first.');
+            }
+
+            $oldStatusId   = $documentRequest->status_id;
+            $currentStatus = RequestStatusEnum::from((int) $oldStatusId);
+
+            if (!in_array(RequestStatusEnum::ClosedUnableToProcess, $currentStatus->allowedTransitions(), true)) {
+                abort(422, "Transition from {$currentStatus->name} to Closed - Unable to Process is not allowed.");
+            }
+
+            // The core guard this action exists to enforce — see this
+            // method's docblock. Row-locked in the same parent-then-
+            // child order DeficiencyNoticeService::issue()/withdraw()
+            // already establish.
+            $openRemark = RequestRemark::where('request_id', $documentRequest->request_id)
+                ->where('status', RequestRemark::STATUS_OPEN)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$openRemark) {
+                abort(422, 'This request has no open Deficiency Notice. Closed - Unable to Process only applies to a request whose open notice cannot be resolved.');
+            }
+
+            $closureReasonText = $this->resolveClosureReasonText(
+                $data['closure_reason'],
+                $data['closure_detail'] ?? null,
+            );
+
+            // Void the notice as part of the same closure action — the
+            // request itself is now terminally closed, so the notice
+            // that triggered this closure can no longer sensibly remain
+            // "open". Deliberately inlined rather than delegated to
+            // DeficiencyNoticeService::void(), for the identical
+            // "notification fired inside a savepoint, not a real
+            // commit" reason documented at length in withdraw() above.
+            $openRemark->update([
+                'status'      => RequestRemark::STATUS_VOIDED,
+                'voided_by'   => Auth::id(),
+                'voided_at'   => now(),
+                'void_reason' => 'Request closed — Unable to Process: ' . $closureReasonText,
+            ]);
+
+            $voidedRemarkId = $openRemark->remark_id;
+
+            $documentRequest->update([
+                'status_id'               => RequestStatusEnum::ClosedUnableToProcess->value,
+                'closure_reason'          => $data['closure_reason'],
+                'closure_detail'          => $data['closure_detail'] ?? null,
+                'closure_proof_reference' => $data['closure_proof_reference'],
+                'closed_by'               => Auth::id(),
+                'closed_at'               => now(),
+            ]);
+
+            $this->recordStatusHistory($documentRequest, $oldStatusId);
+            $statusChanged = true;
+
+            return $documentRequest;
+        }); // end DB::transaction
+
+        // Transient, never persisted — same pattern withdraw() uses for
+        // auto_voided_deficiency_notice_id, so the controller can write
+        // its own audit_logs entry for the voided notice without a
+        // second query.
+        $documentRequest->setAttribute('closed_deficiency_notice_id', $voidedRemarkId);
+
+        // Fired after commit, not inside the transaction closure —
+        // identical reasoning to withdraw()'s notifyOwnerOfWithdrawal()
+        // call: a notification reaching an account for a closure that
+        // later rolled back would be actively wrong, and per the Data
+        // Retention & Disposal Policy §3.2 this notification/inbox/
+        // email record is itself retained as an audit artifact — it
+        // must correspond to something that actually happened.
+        $this->notifyOwnerOfClosure($documentRequest);
+
+        if ($statusChanged) {
+            $this->flushAnalyticsCache();
+        }
+
+        return $documentRequest;
+    }
+
+    /**
+     * Builds and sends the request_closed_unable_to_process
+     * notification. Sent as a best-effort record to the account on
+     * file, which — per the scenario this status exists for — may
+     * belong to a deceased requestor; see the notification-type
+     * migration's docblock for why this is still sent and retained
+     * regardless (audit trail, per Data Retention & Disposal Policy
+     * §3.2's 3-year retention on notifications/inbox/email).
+     */
+    private function notifyOwnerOfClosure(DocumentRequest $documentRequest): void
+    {
+        $owner = SystemUser::find($documentRequest->user_id);
+        if (!$owner) return;
+
+        $reasonText = $this->resolveClosureReasonText(
+            $documentRequest->closure_reason,
+            $documentRequest->closure_detail,
+        );
+
+        $this->notificationService->send(
+            recipient:    $owner,
+            triggerEvent: RequestStatusEnum::ClosedUnableToProcess->notificationTrigger(),
+            data:         [
+                'request_id'      => $documentRequest->request_id,
+                'closure_reason'  => $reasonText,
+            ],
+            requestId:    $documentRequest->request_id,
+        );
+    }
+
+    /**
+     * Data Retention & Disposal Policy — Section 3.4.
+     *
+     * Resolves the human-readable text for a closure_reason value, for
+     * substitution into a notification message or a cascaded
+     * request_remarks.void_reason. Mirrors
+     * resolveWithdrawalReasonText()'s exact shape: for every reason
+     * except Other, this is simply ClosureReasonEnum::label(); for
+     * Other, the staff-entered free-text detail is used instead. Takes
+     * raw strings (not a DocumentRequest) so it can be called from
+     * inside closeUnableToProcess()'s transaction closure against
+     * $data, before $documentRequest->closure_reason has actually been
+     * persisted.
+     */
+    private function resolveClosureReasonText(string $closureReason, ?string $closureDetail): string
+    {
+        $reason = ClosureReasonEnum::from($closureReason);
+
+        return $reason === ClosureReasonEnum::Other
+            ? ($closureDetail ?: $reason->label())
             : $reason->label();
     }
 

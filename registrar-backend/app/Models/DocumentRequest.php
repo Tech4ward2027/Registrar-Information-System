@@ -51,6 +51,19 @@ class DocumentRequest extends Model
         'withdrawal_reason',
         'withdrawal_detail',
         'superseded_by_request_id',
+        // Data Retention & Disposal Policy — Section 3.4. Written only
+        // by DocumentRequestService::closeUnableToProcess() (see
+        // migration 2026_09_07_000000_add_closed_unable_to_process_status).
+        // closure_reason is a ClosureReasonEnum value; closure_detail is
+        // the required free text when closure_reason = 'other';
+        // closure_proof_reference is a required description of the
+        // proof (e.g. death certificate) the Registrar Admin verified
+        // before closing the case.
+        'closure_reason',
+        'closure_detail',
+        'closure_proof_reference',
+        'closed_by',
+        'closed_at',
     ];
 
     protected $casts = [
@@ -60,6 +73,7 @@ class DocumentRequest extends Model
         'is_archived'  => 'boolean',
         'archived_on'  => 'datetime',
         'restored_on'  => 'datetime',
+        'closed_at'    => 'datetime',
     ];
 
     /**

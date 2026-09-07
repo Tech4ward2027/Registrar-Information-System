@@ -108,6 +108,41 @@ enum RequestStatusEnum: int
     case Withdrawn = 13;
 
     /**
+     * A terminal status for a request whose open Deficiency Notice can
+     * never be complied with because the requestor is deceased or
+     * otherwise permanently unable to respond — see the Data Retention
+     * & Disposal Policy §3.4 ("Requests That Can Never Be Resolved").
+     * Distinct from Withdrawn: Withdrawn is an ordinary administrative
+     * correction (wrong item paid, duplicate, no longer needed) that
+     * any staff member can invoke without proof of anything beyond
+     * their own judgment call. ClosedUnableToProcess is the policy's
+     * "worst-case scenario" outcome — it always carries a required
+     * document_request.closure_reason (see ClosureReasonEnum) AND a
+     * required closure_proof_reference describing the proof the
+     * Registrar Admin verified (e.g. a death certificate) before
+     * closing the case — see DocumentRequestService::
+     * closeUnableToProcess() and CloseRequestUnableToProcessRequest.
+     *
+     * status_id = 14 — the next free id after Withdrawn (13) at the
+     * time this was added; CONFIRM AGAINST THE PRODUCTION DUMP before
+     * deploying (see the add_closed_unable_to_process_status migration
+     * docblock for the exact queries to run) — same caution every
+     * status addition in this file has required. "Closed - Unable to
+     * Process" lowercases to "closed - unable to process", which is
+     * not "pending" and does not collide with the frontend's
+     * exact-match "pending" lookup (staffDashboardUtils.js).
+     *
+     * Reachable from the same set of statuses as Withdrawn
+     * (AwaitingSubmission, Processing, PendingSignature) and NOT from
+     * ReadyToClaim, for the identical reasoning documented on Withdrawn
+     * above. Additionally guarded at the service layer (not just here)
+     * to require that the request currently has an OPEN Deficiency
+     * Notice — this status only makes sense as the resolution of an
+     * unresolvable notice, never as a closure invoked out of nowhere.
+     */
+    case ClosedUnableToProcess = 14;
+
+    /**
      * Returns the set of statuses that this status may legally transition to.
      * Used by DocumentRequestService::updateRequest() to reject illegal moves.
      *
@@ -120,6 +155,8 @@ enum RequestStatusEnum: int
      *   Forfeited          → (terminal)
      *   Withdrawn          → (terminal — staff-mediated only, see
      *                         DocumentRequestService::withdraw())
+     *   ClosedUnableToProcess → (terminal — staff-mediated only, see
+     *                         DocumentRequestService::closeUnableToProcess())
      *   Cancelled          → (terminal, and unreachable from any other status — see
      *                         the @deprecated note on the Cancelled case above)
      *
@@ -157,14 +194,15 @@ enum RequestStatusEnum: int
     public function allowedTransitions(): array
     {
         return match ($this) {
-            self::AwaitingSubmission => [self::Processing, self::Withdrawn],
-            self::Processing          => [self::ReadyToClaim, self::PendingSignature, self::Withdrawn],
-            self::PendingSignature    => [self::ReadyToClaim, self::Withdrawn],
-            self::ReadyToClaim        => [self::Completed, self::Forfeited],
-            self::Completed           => [],
-            self::Forfeited           => [],
-            self::Withdrawn           => [],
-            self::Cancelled           => [],
+            self::AwaitingSubmission   => [self::Processing, self::Withdrawn, self::ClosedUnableToProcess],
+            self::Processing           => [self::ReadyToClaim, self::PendingSignature, self::Withdrawn, self::ClosedUnableToProcess],
+            self::PendingSignature     => [self::ReadyToClaim, self::Withdrawn, self::ClosedUnableToProcess],
+            self::ReadyToClaim         => [self::Completed, self::Forfeited],
+            self::Completed            => [],
+            self::Forfeited            => [],
+            self::Withdrawn            => [],
+            self::ClosedUnableToProcess => [],
+            self::Cancelled            => [],
         };
     }
 
@@ -172,14 +210,15 @@ enum RequestStatusEnum: int
     public function notificationTrigger(): ?string
     {
         return match ($this) {
-            self::AwaitingSubmission => 'awaiting_submission',
-            self::Processing          => 'request_processing',
-            self::PendingSignature    => 'pending_signature',
-            self::ReadyToClaim        => 'ready_to_claim',
-            self::Completed           => 'request_completed',
-            self::Forfeited           => 'request_forfeited',
-            self::Withdrawn           => 'request_withdrawn',
-            self::Cancelled           => null,
+            self::AwaitingSubmission   => 'awaiting_submission',
+            self::Processing           => 'request_processing',
+            self::PendingSignature     => 'pending_signature',
+            self::ReadyToClaim         => 'ready_to_claim',
+            self::Completed            => 'request_completed',
+            self::Forfeited            => 'request_forfeited',
+            self::Withdrawn            => 'request_withdrawn',
+            self::ClosedUnableToProcess => 'request_closed_unable_to_process',
+            self::Cancelled            => null,
         };
     }
 }

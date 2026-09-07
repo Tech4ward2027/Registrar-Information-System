@@ -84,13 +84,25 @@ class AnalyticsService
      * this method's scope to also cover it without an explicit decision
      * to do so.
      *
+     * ClosedUnableToProcess (Data Retention & Disposal Policy §3.4) is
+     * excluded for the identical reason as Withdrawn above: it is a
+     * terminal status a request reaches WITHOUT ever completing, so
+     * blending its interim segments into a completion-time average is
+     * the same category of distortion Withdrawn's exclusion already
+     * addresses. Grouped into this same method (rather than a second,
+     * near-duplicate exclusion method) since both statuses share the
+     * exact same "terminal, never completed, still counts as real
+     * volume" characteristics that justify excluding them from this
+     * specific class of query and no other.
+     *
      * @param  \Illuminate\Database\Query\Builder  $query
      * @param  string  $alias  Alias of a joined document_request table.
      */
     private function excludeFromProcessingTimeMetrics(\Illuminate\Database\Query\Builder $query, string $alias = 'document_request'): \Illuminate\Database\Query\Builder
     {
         return $this->excludeArchived($query, $alias)
-            ->where("{$alias}.status_id", '!=', RequestStatusEnum::Withdrawn->value);
+            ->where("{$alias}.status_id", '!=', RequestStatusEnum::Withdrawn->value)
+            ->where("{$alias}.status_id", '!=', RequestStatusEnum::ClosedUnableToProcess->value);
     }
 
     // -------------------------------------------------------------------------

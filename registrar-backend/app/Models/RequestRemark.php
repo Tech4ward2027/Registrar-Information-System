@@ -33,6 +33,13 @@ class RequestRemark extends Model
         'status',
         'issued_by',
         'issued_at',
+        // Data Retention & Disposal Policy — Section 3.3. Set once by
+        // EscalateStaleDeficiencyNotices when an open notice crosses
+        // ESCALATE_AFTER_DAYS; see that command and the
+        // add_escalated_at_to_request_remarks migration's docblock for
+        // why this is a persisted column rather than a computed
+        // attribute like is_stale below.
+        'escalated_at',
         'cleared_by',
         'cleared_at',
         'voided_by',
@@ -41,9 +48,10 @@ class RequestRemark extends Model
     ];
 
     protected $casts = [
-        'issued_at'  => 'datetime',
-        'cleared_at' => 'datetime',
-        'voided_at'  => 'datetime',
+        'issued_at'    => 'datetime',
+        'escalated_at' => 'datetime',
+        'cleared_at'   => 'datetime',
+        'voided_at'    => 'datetime',
     ];
 
     /**
@@ -71,6 +79,20 @@ class RequestRemark extends Model
      */
     public const STALE_AFTER_DAYS = 14;
 
+    /**
+     * Data Retention & Disposal Policy — Section 3.3 ("Deficiency
+     * Notice compliance window (NEW) — 30 Days"). Distinct threshold
+     * from STALE_AFTER_DAYS above: 14 days is a purely cosmetic
+     * dashboard/detail-view warning tier (Phase 4), computed at read
+     * time and never persisted. 30 days is the policy's actual
+     * compliance window — crossing it is a real event (escalation for
+     * Registrar Admin review, per §3.4), detected and recorded once by
+     * EscalateStaleDeficiencyNotices via the persisted escalated_at
+     * column above, not merely a different badge color at the same
+     * kind of read-time check.
+     */
+    public const ESCALATE_AFTER_DAYS = 30;
+
     public function documentRequest()
     {
         return $this->belongsTo(DocumentRequest::class, 'request_id', 'request_id');
@@ -94,6 +116,17 @@ class RequestRemark extends Model
     public function isOpen(): bool
     {
         return $this->status === self::STATUS_OPEN;
+    }
+
+    /**
+     * Whether this notice has already been escalated (escalated_at is
+     * set) — used by EscalateStaleDeficiencyNotices to avoid
+     * re-notifying admins for the same notice on a later scheduled run,
+     * and available for staff-facing "already escalated" filters.
+     */
+    public function isEscalated(): bool
+    {
+        return $this->escalated_at !== null;
     }
 
     /**

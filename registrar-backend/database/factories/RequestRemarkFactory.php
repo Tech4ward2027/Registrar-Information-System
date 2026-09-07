@@ -47,4 +47,16 @@ class RequestRemarkFactory extends Factory
             'void_reason' => 'Student unreachable after repeated attempts.',
         ]);
     }
+
+    /**
+     * Data Retention & Disposal Policy — Section 3.3. Convenience state
+     * for tests exercising already-escalated notices, or a notice aged
+     * past the 30-day compliance window before escalation has run.
+     */
+    public function escalated(): static
+    {
+        return $this->state(fn () => [
+            'escalated_at' => now(),
+        ]);
+    }
 }

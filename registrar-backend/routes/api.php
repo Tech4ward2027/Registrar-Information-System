@@ -210,6 +210,13 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         // WithdrawDocumentRequestRequest::authorize().
         Route::post('{documentRequest}/withdraw', [DocumentRequestController::class, 'withdraw'])
             ->middleware(['role:3', 'module:dashboard,Process']);
+        // Data Retention & Disposal Policy — Section 3.4. Same coarse
+        // role/module gate as withdraw() above — see
+        // DocumentRequestPolicy::closeUnableToProcess()'s docblock for
+        // a flagged note on whether this specific action deserves a
+        // stricter tier given its real-world gravity.
+        Route::post('{documentRequest}/close-unable-to-process', [DocumentRequestController::class, 'closeUnableToProcess'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
         // Deficiency Notice & Withdrawn Status — Phase 3. Same coarse
         // role/module gate as withdraw() above — always exactly
         // 'Process', never 'Complete', same clean single-action shape.
