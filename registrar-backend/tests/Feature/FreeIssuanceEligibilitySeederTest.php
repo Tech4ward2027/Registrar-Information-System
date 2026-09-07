@@ -27,35 +27,43 @@ function fieMakeDocType(int $id, array $overrides = []): DocumentType
     // Neither DocumentType nor CertificationType has a factory anywhere in
     // this codebase — every other FreeRequest test file builds these via
     // plain ::create() (see FreeRequestServiceTest's frsMakeUnlimitedDocType
-    // etc.). This helper needs forceCreate() rather than create(), though:
-    // document_type_id isn't in $fillable (by design — it's a plain
-    // autoincrement PK, never mass-assigned in application code), but this
-    // test suite specifically needs rows at the exact IDs the seeder
-    // targets (15, 17), not whatever ID autoincrement happens to hand out.
-    return DocumentType::forceCreate(array_merge([
-        'document_type_id'        => $id,
-        'document_name'           => "Fixture Document Type {$id}",
-        'document_description'    => '',
-        'document_process_period' => '1 day',
-        'access_id'               => 3,
-        'is_free_eligible'        => false,
-        'free_issuance_limit'     => null,
-    ], $overrides));
+    // etc.). This test needs rows at exact IDs (15, 17), not whatever ID
+    // autoincrement hands out — but a plain forceCreate() INSERT collides
+    // with reference data: TestCase sets `$seed = true`, so
+    // DatabaseSeeder::run() has already inserted real rows at these same
+    // IDs (15, 17, and certificate_type 6 are genuine seeded document/
+    // certificate types, not placeholders) before this test body runs.
+    // updateOrCreate() resets the row to a known baseline whether
+    // DatabaseSeeder created it first or not, matching the seeder-under-
+    // test's own idempotent updateOrInsert() style.
+    return DocumentType::query()->updateOrCreate(
+        ['document_type_id' => $id],
+        array_merge([
+            'document_name'           => "Fixture Document Type {$id}",
+            'document_description'    => '',
+            'document_process_period' => '1 day',
+            'access_id'               => 3,
+            'is_free_eligible'        => false,
+            'free_issuance_limit'     => null,
+        ], $overrides)
+    );
 }
 
 function fieMakeCertType(int $id, array $overrides = []): CertificationType
 {
-    // See fieMakeDocType() above — same reasoning, forceCreate() for the
-    // same explicit-PK need.
-    return CertificationType::forceCreate(array_merge([
-        'certificate_type_id'        => $id,
-        'certificate_name'           => "Fixture Certificate Type {$id}",
-        'certificate_requirements'   => 'Test fixture requirements.',
-        'certificate_process_period' => '1 working day',
-        'access_id'                  => 3,
-        'is_free_eligible'           => false,
-        'free_issuance_limit'        => null,
-    ], $overrides));
+    // See fieMakeDocType() above — same reasoning, updateOrCreate() for the
+    // same pre-seeded-ID collision.
+    return CertificationType::query()->updateOrCreate(
+        ['certificate_type_id' => $id],
+        array_merge([
+            'certificate_name'           => "Fixture Certificate Type {$id}",
+            'certificate_requirements'   => 'Test fixture requirements.',
+            'certificate_process_period' => '1 working day',
+            'access_id'                  => 3,
+            'is_free_eligible'           => false,
+            'free_issuance_limit'        => null,
+        ], $overrides)
+    );
 }
 
 test('it sets TOR (document_type 15) free-eligible with a limit of 1', function () {
@@ -126,7 +134,16 @@ test('it is idempotent — running it twice leaves the same end state', function
 });
 
 test('it does not throw when a target row is missing, and touches nothing else', function () {
-    // Deliberately do not create document_type 15/17 or certificate_type 6.
+    // TestCase sets `$seed = true`, so DatabaseSeeder::run() has already
+    // inserted real baseline rows at document_type_id 15/17 and
+    // certificate_type_id 6 by the time this test body runs — "simply not
+    // calling fieMakeDocType()" does NOT leave those IDs absent, since
+    // they're genuine seeded reference data, not test-only placeholders.
+    // To actually exercise the "target row is missing" branch, explicitly
+    // remove the baseline rows the seeder targets before running it.
+    DocumentType::whereIn('document_type_id', [15, 17])->delete();
+    CertificationType::where('certificate_type_id', 6)->delete();
+
     $unrelatedDoc = fieMakeDocType(99);
 
     (new FreeIssuanceEligibilitySeeder())->run();

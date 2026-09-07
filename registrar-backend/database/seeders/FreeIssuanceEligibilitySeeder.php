@@ -101,12 +101,16 @@ class FreeIssuanceEligibilitySeeder extends Seeder
                     continue;
                 }
 
+                // Note: document_type/certificate_type are both declared
+                // `public $timestamps = false` on their models (no
+                // updated_at column exists on either table) — do not add
+                // an updated_at write here, it will fail on every driver,
+                // not just SQLite.
                 DB::table($table)
                     ->where($spec['key'], $row['id'])
                     ->update([
                         'is_free_eligible'     => true,
                         'free_issuance_limit'  => $row['limit'],
-                        'updated_at'           => now(),
                     ]);
 
                 $limitLabel = $row['limit'] === null ? 'unlimited' : (string) $row['limit'];
