@@ -35,6 +35,22 @@
              test, present and future, instead of relying on each test to
              remember `config(['services.cashier.api_key' => ''])`. -->
         <env name="CASHIER_API_KEY" value="" force="true"/>
+        <!-- config/features.php intentionally defaults every flag to
+             `false` (fail closed) so a forgotten .env line in production
+             never silently switches a gated feature on. Tests exist to
+             exercise the code, not to be blocked by that same production
+             safety net, so the suite runs with it forced on by default —
+             one line, one place, instead of every FreeRequest test file
+             remembering `config(['features.free_request_page' => true])`
+             in its own beforeEach(). A test that specifically needs to
+             verify the disabled/404 behavior overrides this locally with
+             config(['features.free_request_page' => false]) for that one
+             test — that's the correct scope for an exception, not the
+             suite-wide default. force="true" matches the CASHIER_API_KEY
+             entry above: without it, docker-compose.local.yml's env_file
+             can leak a real FEATURE_FREE_REQUEST_PAGE=false (or true)
+             from the host .env into the run, same class of bug. -->
+        <env name="FEATURE_FREE_REQUEST_PAGE" value="true" force="true"/>
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="MAIL_MAILER" value="array"/>

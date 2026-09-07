@@ -24,23 +24,37 @@ uses(RefreshDatabase::class);
 
 function fieMakeDocType(int $id, array $overrides = []): DocumentType
 {
-    return DocumentType::factory()->create(array_merge([
-        'document_type_id' => $id,
-        'document_name'    => "Fixture Document Type {$id}",
-        'access_id'        => 3,
-        'is_free_eligible' => false,
-        'free_issuance_limit' => null,
+    // Neither DocumentType nor CertificationType has a factory anywhere in
+    // this codebase — every other FreeRequest test file builds these via
+    // plain ::create() (see FreeRequestServiceTest's frsMakeUnlimitedDocType
+    // etc.). This helper needs forceCreate() rather than create(), though:
+    // document_type_id isn't in $fillable (by design — it's a plain
+    // autoincrement PK, never mass-assigned in application code), but this
+    // test suite specifically needs rows at the exact IDs the seeder
+    // targets (15, 17), not whatever ID autoincrement happens to hand out.
+    return DocumentType::forceCreate(array_merge([
+        'document_type_id'        => $id,
+        'document_name'           => "Fixture Document Type {$id}",
+        'document_description'    => '',
+        'document_process_period' => '1 day',
+        'access_id'               => 3,
+        'is_free_eligible'        => false,
+        'free_issuance_limit'     => null,
     ], $overrides));
 }
 
 function fieMakeCertType(int $id, array $overrides = []): CertificationType
 {
-    return CertificationType::factory()->create(array_merge([
-        'certificate_type_id' => $id,
-        'certificate_name'    => "Fixture Certificate Type {$id}",
-        'access_id'           => 3,
-        'is_free_eligible'    => false,
-        'free_issuance_limit' => null,
+    // See fieMakeDocType() above — same reasoning, forceCreate() for the
+    // same explicit-PK need.
+    return CertificationType::forceCreate(array_merge([
+        'certificate_type_id'        => $id,
+        'certificate_name'           => "Fixture Certificate Type {$id}",
+        'certificate_requirements'   => 'Test fixture requirements.',
+        'certificate_process_period' => '1 working day',
+        'access_id'                  => 3,
+        'is_free_eligible'           => false,
+        'free_issuance_limit'        => null,
     ], $overrides));
 }
 
