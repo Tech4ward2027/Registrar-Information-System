@@ -61,6 +61,12 @@ return Application::configure(basePath: dirname(__DIR__))
             // route group in routes/api.php, not globally here, since public
             // routes (login, announcements) have no authenticated user yet.
             'active' => \App\Http\Middleware\EnsureAccountActive::class,
+            // Route-layer config/features.php flag gate — see
+            // EnsureFeatureEnabled docblock for how this differs from
+            // 'module' and why it 404s rather than 403s. Applied only to
+            // routes that opt into a specific flag (e.g.
+            // 'feature:free_request_page'), never globally.
+            'feature' => \App\Http\Middleware\EnsureFeatureEnabled::class,
         ]);
 
         // ── Auth redirect behaviour ──────────────────────────────────────────

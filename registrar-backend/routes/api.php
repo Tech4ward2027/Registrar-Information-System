@@ -343,7 +343,15 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
     // Gating store() at 'File' here is still correct even for a filing
     // that turns out to need Verify/Override: File is a strict subset
     // of what those two additionally require, never a bypass of them.
-    Route::middleware(['role:3,4', 'module:free_requests,View'])->group(function () {
+    //
+    // 'feature:free_request_page' is a separate, environment-wide
+    // on/off switch (config/features.php, defaults to false) sitting
+    // alongside the per-account 'module:free_requests,...' gate — see
+    // EnsureFeatureEnabled's docblock for why the two are independent.
+    // A staff account can hold every free_requests policy action and
+    // still get a 404 here until the flag is explicitly turned on for
+    // this environment.
+    Route::middleware(['role:3,4', 'module:free_requests,View', 'feature:free_request_page'])->group(function () {
         // Distinct throttle prefix, same reasoning as cashier-overrides'
         // own search-users route immediately above.
         Route::get('free-requests/search-accounts', [FreeRequestController::class, 'searchAccounts'])
@@ -363,7 +371,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             ->middleware('throttle:30,1,free-requests-reports');
     });
 
-    Route::middleware(['role:3,4', 'module:free_requests,File'])->group(function () {
+    Route::middleware(['role:3,4', 'module:free_requests,File', 'feature:free_request_page'])->group(function () {
         // Phase 7 — Security Hardening: this was the one action in the
         // whole free-request flow with no rate limit at all — every
         // read-only endpoint above (search-accounts, eligibility) had
