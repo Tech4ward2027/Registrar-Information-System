@@ -73,6 +73,26 @@ class CertificationTypeController extends Controller
             // certificate type's existing cashier patterns back to the
             // user, regardless of how they got set.
             'cashier_document_patterns',
+            // FIXED (same bug, found a fourth time — see the three comments
+            // above): is_free_eligible and free_issuance_limit have been on
+            // the column, the model's $fillable/$casts, and the
+            // FreeIssuanceEligibilitySeeder (FESPEC-0008) since Phase 1 —
+            // but were never added to this whitelist, so index/show/store/
+            // update all silently dropped them from the JSON response for
+            // certificates specifically. The exact same fields worked fine
+            // on DocumentType (whose controller has no such select()
+            // whitelist), which is why LOA and TOR appeared correctly in
+            // the Free Requests catalog while COG never did — the frontend
+            // filters on `is_free_eligible === true`, which is always
+            // `undefined` here without this line.
+            //
+            // See CertificationTypeWhitelistCompletenessTest for a
+            // standing regression guard against this recurring bug class:
+            // it fails the build the next time a certificate_type column
+            // is added but not mirrored here, instead of silently
+            // shipping a field that quietly vanishes from every response.
+            'is_free_eligible',
+            'free_issuance_limit',
         ];
     }
 
