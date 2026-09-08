@@ -103,6 +103,27 @@ Schedule::command('provisioning:expire-stale')
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/scheduler.log'));
 
+/*
+|--------------------------------------------------------------------------
+| Scheduled Commands — Data Retention & Disposal Policy (§3.3)
+|--------------------------------------------------------------------------
+|
+| 08:20  EscalateStaleDeficiencyNotices — flag any open Deficiency
+|        Notice past its 30-day compliance window and notify Registrar
+|        Admins for review (extend / abandon via Withdrawn / close via
+|        ClosedUnableToProcess — see that command's docblock for why it
+|        only escalates and never auto-decides). Given the free 08:20
+|        slot between ExpireStaleProvisioning (08:15) and
+|        security-events:prune (08:25).
+|--------------------------------------------------------------------------
+*/
+
+Schedule::command('notifications:escalate-stale-deficiency-notices')
+    ->dailyAt('08:20')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
 // BUG FIX (RIS-PROCESS-BUGS #5 — "Role Status Remains 'Active' Past
 // Expiration Date and Time"):
 //
@@ -188,6 +209,26 @@ Schedule::command('break-glass:test')
 
 Schedule::command('security-events:prune')
     ->dailyAt('08:25')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+/*
+|--------------------------------------------------------------------------
+| Scheduled Commands — Job-Health Monitoring Retention
+|--------------------------------------------------------------------------
+|
+| Daily: prune job_run_logs rows older than
+| config('job_monitoring.retention_days') — this table's own retention
+| sweep, same shape as security-events:prune above (which it runs
+| directly after). 08:30 keeps it clear of every other 08:xx job's
+| window. See PruneJobRunLogs and the create_job_run_logs_table
+| migration for why this table exists.
+|--------------------------------------------------------------------------
+*/
+
+Schedule::command('job-run-logs:prune')
+    ->dailyAt('08:30')
     ->withoutOverlapping()
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/scheduler.log'));

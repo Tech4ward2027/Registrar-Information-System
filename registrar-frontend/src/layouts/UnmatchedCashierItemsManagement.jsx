@@ -249,10 +249,10 @@ const UnmatchedCashierItemsManagement = () => {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table & Cards Container */}
       <div className={`rounded-xl border overflow-hidden ${rowBorder}`}>
-        {/* Search Header Bar */}
-        <div className={`p-4 border-b ${isDark ? 'border-[#3e4042] bg-[#1a1a1c]/20' : 'border-gray-200 bg-gray-50/50'}`}>
+        {/* Search & Sort Header Bar */}
+        <div className={`p-4 border-b flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 ${isDark ? 'border-[#3e4042] bg-[#1a1a1c]/20' : 'border-gray-200 bg-gray-50/50'}`}>
           <div className="w-full sm:max-w-md">
             <VoiceSearchInput
               value={search}
@@ -260,105 +260,206 @@ const UnmatchedCashierItemsManagement = () => {
               placeholder="Search by receipt label or resolver..."
             />
           </div>
+
+          <div className="flex md:hidden items-center justify-between sm:justify-end gap-2 text-xs">
+            <span className={subtleText}>Sort by:</span>
+            <button
+              type="button"
+              onClick={() => {
+                if (sortField === "last_seen_at") {
+                  setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+                } else {
+                  setSortField("last_seen_at");
+                  setSortOrder("desc");
+                }
+              }}
+              className={`flex items-center gap-1 font-bold px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                isDark ? "bg-[#242526] border-[#3e4042] text-gray-200" : "bg-white border-gray-200 text-gray-700"
+              }`}
+            >
+              <span>Last Seen</span>
+              {sortField === "last_seen_at" ? (
+                sortOrder === "asc" ? (
+                  <ChevronUpIcon className="w-3.5 h-3.5 text-blue-500" />
+                ) : (
+                  <ChevronDownIcon className="w-3.5 h-3.5 text-blue-500" />
+                )
+              ) : (
+                <ChevronDownIcon className="w-3.5 h-3.5 text-gray-400 opacity-50" />
+              )}
+            </button>
+          </div>
         </div>
 
-        <table className="w-full text-sm">
-          <thead>
-            <tr className={`text-left ${isDark ? "bg-[#242526]" : "bg-gray-50"}`}>
-              <th className="px-4 py-3 font-semibold">Receipt Label</th>
-              <th className="px-4 py-3 font-semibold">Occurrences</th>
+        {/* Mobile Cards View (< md) */}
+        <div className="md:hidden divide-y divide-gray-200 dark:divide-[#3e4042]">
+          {loading ? (
+            <div className={`p-6 text-center ${subtleText}`}>Loading...</div>
+          ) : filteredItems.length === 0 ? (
+            <div className={`p-6 text-center ${subtleText}`}>
+              {search.trim() ? "No items matching search." : showResolved ? "No resolved items yet." : "Nothing unresolved right now — all clear!"}
+            </div>
+          ) : (
+            filteredItems.map((item) => (
+              <div
+                key={item.unmatched_cashier_item_id}
+                className={`p-4 space-y-3 ${
+                  isDark ? 'bg-[#18191a]' : 'bg-white'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-bold text-sm text-gray-900 dark:text-white leading-snug wrap-break-word">
+                    {item.raw_label}
+                  </div>
+                  <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                    isDark ? 'bg-zinc-800 text-amber-300' : 'bg-amber-50 text-amber-800 border border-amber-200'
+                  }`}>
+                    {item.occurrence_count} {item.occurrence_count === 1 ? 'occurrence' : 'occurrences'}
+                  </span>
+                </div>
 
-              {/* Last Seen Header (Sortable) */}
-              <th className="px-4 py-3 font-semibold">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (sortField === "last_seen_at") {
-                      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-                    } else {
-                      setSortField("last_seen_at");
-                      setSortOrder("desc");
-                    }
-                  }}
-                  className={`flex items-center gap-1 text-xs font-bold hover:text-[#800000] dark:hover:text-[#FFC72C] transition-colors focus:outline-none cursor-pointer ${
-                    isDark ? "text-[#b0b3b8]" : "text-gray-500"
-                  }`}
-                >
-                  <span>Last Seen</span>
-                  {sortField === "last_seen_at" ? (
-                    sortOrder === "asc" ? (
-                      <ChevronUpIcon className="w-3.5 h-3.5 text-blue-500" />
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1">
+                  <span className={subtleText}>
+                    Last Seen: <span className="font-semibold text-gray-800 dark:text-gray-200">{item.last_seen_at ? new Date(item.last_seen_at).toLocaleDateString() : '—'}</span>
+                  </span>
+                  {showResolved && (
+                    <span className={subtleText}>
+                      Resolved By: <span className="font-semibold text-gray-800 dark:text-gray-200">
+                        {item.resolved_by_user
+                          ? (item.resolved_by_user.admin_profile
+                              ? `${item.resolved_by_user.admin_profile.first_name} ${item.resolved_by_user.admin_profile.last_name}`
+                              : item.resolved_by_user.email)
+                          : '—'}
+                      </span>
+                    </span>
+                  )}
+                </div>
+
+                {!showResolved && (
+                  <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-[#2a2a2d]">
+                    <button
+                      onClick={() => openResolveModal(item)}
+                      className={`flex-1 text-center text-xs font-semibold py-2 rounded-xl transition-all cursor-pointer shadow-xs active:scale-95 ${
+                        isDark ? 'bg-yellow-400 text-gray-900 hover:bg-yellow-300' : 'bg-pup-dark-maroon text-white hover:bg-pup-maroon'
+                      }`}
+                    >
+                      Resolve
+                    </button>
+                    <button
+                      onClick={() => setDismissConfirm({ open: true, item })}
+                      className={`flex-1 text-center text-xs font-semibold py-2 rounded-xl border transition-all cursor-pointer active:scale-95 ${
+                        isDark ? 'border-[#3e4042] text-[#b0b3b8] hover:bg-[#242526]' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Desktop Table View (≥ md) */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-sm min-w-137.5">
+            <thead>
+              <tr className={`text-left ${isDark ? "bg-[#242526]" : "bg-gray-50"}`}>
+                <th className="px-4 py-3 font-semibold">Receipt Label</th>
+                <th className="px-4 py-3 font-semibold">Occurrences</th>
+
+                {/* Last Seen Header (Sortable) */}
+                <th className="px-4 py-3 font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (sortField === "last_seen_at") {
+                        setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+                      } else {
+                        setSortField("last_seen_at");
+                        setSortOrder("desc");
+                      }
+                    }}
+                    className={`flex items-center gap-1 text-xs font-bold hover:text-[#800000] dark:hover:text-[#FFC72C] transition-colors focus:outline-none cursor-pointer ${
+                      isDark ? "text-[#b0b3b8]" : "text-gray-500"
+                    }`}
+                  >
+                    <span>Last Seen</span>
+                    {sortField === "last_seen_at" ? (
+                      sortOrder === "asc" ? (
+                        <ChevronUpIcon className="w-3.5 h-3.5 text-blue-500" />
+                      ) : (
+                        <ChevronDownIcon className="w-3.5 h-3.5 text-blue-500" />
+                      )
                     ) : (
-                      <ChevronDownIcon className="w-3.5 h-3.5 text-blue-500" />
-                    )
-                  ) : (
-                    <ChevronDownIcon className="w-3.5 h-3.5 text-gray-400 opacity-50" />
-                  )}
-                </button>
-              </th>
-              {showResolved && <th className="px-4 py-3 font-semibold">Resolved By</th>}
-              {!showResolved && <th className="px-4 py-3 font-semibold text-right">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={showResolved ? 4 : 4} className={`px-4 py-8 text-center ${subtleText}`}>
-                  Loading...
-                </td>
+                      <ChevronDownIcon className="w-3.5 h-3.5 text-gray-400 opacity-50" />
+                    )}
+                  </button>
+                </th>
+                {showResolved && <th className="px-4 py-3 font-semibold">Resolved By</th>}
+                {!showResolved && <th className="px-4 py-3 font-semibold text-right">Actions</th>}
               </tr>
-            ) : filteredItems.length === 0 ? (
-              <tr>
-                <td colSpan={showResolved ? 4 : 4} className={`px-4 py-8 text-center ${subtleText}`}>
-                  {search.trim() ? "No items matching search." : showResolved ? "No resolved items yet." : "Nothing unresolved right now — all clear!"}
-                </td>
-              </tr>
-            ) : (
-              filteredItems.map((item) => (
-                <tr key={item.unmatched_cashier_item_id} className={`border-t ${rowBorder}`}>
-                  <td className="px-4 py-3 font-medium">{item.raw_label}</td>
-                  <td className="px-4 py-3">{item.occurrence_count}</td>
-                  <td className={`px-4 py-3 ${subtleText}`}>
-                    {item.last_seen_at ? new Date(item.last_seen_at).toLocaleDateString() : "—"}
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={showResolved ? 4 : 4} className={`px-4 py-8 text-center ${subtleText}`}>
+                    Loading...
                   </td>
-                  {showResolved ? (
-                    <td className={`px-4 py-3 ${subtleText}`}>
-                      {item.resolved_by_user
-                        ? (item.resolved_by_user.admin_profile
-                            ? `${item.resolved_by_user.admin_profile.first_name} ${item.resolved_by_user.admin_profile.last_name}`
-                            : item.resolved_by_user.email)
-                        : "—"}
-                    </td>
-                  ) : (
-                    <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
-                      <button
-                        onClick={() => openResolveModal(item)}
-                        className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-all cursor-pointer ${
-                          isDark ? "bg-yellow-400 text-gray-900 hover:bg-yellow-300" : "bg-pup-dark-maroon text-white hover:bg-pup-maroon"
-                        }`}
-                      >
-                        Resolve
-                      </button>
-                      <button
-                        onClick={() => setDismissConfirm({ open: true, item })}
-                        className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all cursor-pointer ${
-                          isDark ? "border-[#3e4042] text-[#b0b3b8] hover:bg-[#242526]" : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                        }`}
-                      >
-                        Dismiss
-                      </button>
-                    </td>
-                  )}
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : filteredItems.length === 0 ? (
+                <tr>
+                  <td colSpan={showResolved ? 4 : 4} className={`px-4 py-8 text-center ${subtleText}`}>
+                    {search.trim() ? "No items matching search." : showResolved ? "No resolved items yet." : "Nothing unresolved right now — all clear!"}
+                  </td>
+                </tr>
+              ) : (
+                filteredItems.map((item) => (
+                  <tr key={item.unmatched_cashier_item_id} className={`border-t ${rowBorder}`}>
+                    <td className="px-4 py-3 font-medium">{item.raw_label}</td>
+                    <td className="px-4 py-3">{item.occurrence_count}</td>
+                    <td className={`px-4 py-3 ${subtleText}`}>
+                      {item.last_seen_at ? new Date(item.last_seen_at).toLocaleDateString() : "—"}
+                    </td>
+                    {showResolved ? (
+                      <td className={`px-4 py-3 ${subtleText}`}>
+                        {item.resolved_by_user
+                          ? (item.resolved_by_user.admin_profile
+                              ? `${item.resolved_by_user.admin_profile.first_name} ${item.resolved_by_user.admin_profile.last_name}`
+                              : item.resolved_by_user.email)
+                          : "—"}
+                      </td>
+                    ) : (
+                      <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                        <button
+                          onClick={() => openResolveModal(item)}
+                          className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-all cursor-pointer ${
+                            isDark ? "bg-yellow-400 text-gray-900 hover:bg-yellow-300" : "bg-pup-dark-maroon text-white hover:bg-pup-maroon"
+                          }`}
+                        >
+                          Resolve
+                        </button>
+                        <button
+                          onClick={() => setDismissConfirm({ open: true, item })}
+                          className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all cursor-pointer ${
+                            isDark ? "border-[#3e4042] text-[#b0b3b8] hover:bg-[#242526]" : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                          }`}
+                        >
+                          Dismiss
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Pagination */}
       {meta.last_page > 1 && (
-        <div className="flex justify-center items-center gap-4 mt-4 text-sm">
+        <div className="flex flex-wrap justify-center items-center gap-3 sm:gap-4 mt-4 text-xs sm:text-sm">
           <button
             disabled={meta.current_page <= 1 || loading}
             onClick={() => loadItems(meta.current_page - 1)}

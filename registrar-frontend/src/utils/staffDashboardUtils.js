@@ -25,6 +25,8 @@ export const WORKFLOW_STATUS_NAMES = [
   'Ready to Claim',
   'Completed',
   'Forfeited',
+  'Withdrawn',
+  'Closed - Unable to Process',
   // Deprecated: unreachable for any new request (see the @deprecated note
   // on RequestStatusEnum::Cancelled) but kept selectable so staff can
   // still filter historical requests that were cancelled before the
@@ -67,6 +69,7 @@ export const STATUS_FALLBACK = {
   // fetch hasn't resolved yet, we still want a correct id rather than
   // `undefined` breaking every `statusId === resolvedStatusIds.X` check.
   AWAITING_SUBMISSION: 12,
+  WITHDRAWN: 13,
 };
 
 export const COMPLETED_VISIBILITY_MS = 24 * 60 * 60 * 1000;
@@ -257,6 +260,13 @@ export const mapDocumentRequest = (r, resolvedStatusIds, docTypeName) => {
     isArchived,
     archivedOn: r.archived_on ?? null,
     archivedBy: r.archived_by_user?.email ?? null,
+    withdrawalReason: r.withdrawal_reason ?? null,
+    withdrawalDetail: r.withdrawal_detail ?? null,
+    supersededByRequestId: r.superseded_by_request_id ?? null,
+    closureReason: r.closure_reason ?? null,
+    closureDetail: r.closure_detail ?? null,
+    closureProofReference: r.closure_proof_reference ?? null,
+    openDeficiencyNotice: r.open_deficiency_notice ?? null,
   };
 };
 

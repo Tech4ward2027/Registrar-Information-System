@@ -2,11 +2,13 @@
 
 use App\Models\AccessRequest;
 use App\Models\AuditLog;
+use App\Models\JobRunLog;
 use App\Models\Policy;
 use App\Models\RoleAssignment;
 use App\Models\SystemUser;
 use App\Models\UnmatchedCashierItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\Sanctum;
 
@@ -78,6 +80,31 @@ function saAccessRequest(array $overrides = []): AccessRequest
         'status'            => AccessRequest::STATUS_REQUESTED,
         'expires_at'        => now()->addDays(7),
     ], $overrides));
+}
+
+/**
+ * Writes a job_run_logs row directly, the same shape LogsJobRun's
+ * startJobRun()/finishJobRun() would have produced for a real command
+ * invocation. $startedAgo lets a test place the run at an arbitrary
+ * point in the past — the whole point of this panel is "how long ago
+ * did this last run", so every test below needs to control that
+ * precisely rather than relying on "just now".
+ */
+function saWriteJobRun(string $jobName, string $status, Carbon $startedAgo, ?string $errorMessage = null): JobRunLog
+{
+    $finishedAt = in_array($status, [JobRunLog::STATUS_SUCCESS, JobRunLog::STATUS_FAILED], true)
+        ? $startedAgo->copy()->addSecond()
+        : null;
+
+    return JobRunLog::create([
+        'job_name'      => $jobName,
+        'status'        => $status,
+        'started_at'    => $startedAgo,
+        'finished_at'   => $finishedAt,
+        'duration_ms'   => $finishedAt ? 1000 : null,
+        'rows_affected' => $status === JobRunLog::STATUS_SUCCESS ? 0 : null,
+        'error_message' => $errorMessage,
+    ]);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -314,4 +341,202 @@ test('unresolved backlog counts only unmatched cashier items with no resolved_at
 
     expect($response->json('unresolved_backlog'))->toBe(1);
     expect($response->json('top_backlog_items.0.raw_label'))->toBe('Transcript Fee');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// scheduledJobsHealth() — Job-Health Monitoring
+// ═════════════════════════════════════════════════════════════════════════════
+
+test('a job with no rows at all is reported as never_run and counted in needs_attention', function () {
+    saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
+
+    // Every other job in JobRunLog::JOBS gets a healthy row so only the
+    // one under test drives needs_attention — otherwise this assertion
+    // would be trivially true for the wrong reason (every job starts
+    // out never_run before any fixture writes a row).
+    foreach (JobRunLog::JOBS as $jobName => $label) {
+        if ($jobName === 'audit:verify') {
+            continue; // the one left never_run on purpose
+        }
+        saWriteJobRun($jobName, JobRunLog::STATUS_SUCCESS, now()->subMinute());
+    }
+
+    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+
+    $job = collect($response->json('jobs'))->firstWhere('job_name', 'audit:verify');
+    expect($job['status'])->toBe('never_run');
+    expect($job['last_started_at'])->toBeNull();
+    expect($response->json('needs_attention'))->toBe(1);
+});
+
+test('a run still sitting in running well past the stalled ceiling is reported as stalled, not running', function () {
+    saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
+
+    // Hourly job, "started" 45 minutes ago and never closed out — past
+    // scheduledJobsHealth()'s 30-minute stalled ceiling, and every one
+    // of these commands normally finishes in well under a minute.
+    saWriteJobRun('notifications:shred-expired-requests', JobRunLog::STATUS_RUNNING, now()->subMinutes(45));
+
+    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+
+    $job = collect($response->json('jobs'))->firstWhere('job_name', 'notifications:shred-expired-requests');
+    expect($job['status'])->toBe('stalled');
+});
+
+test('a run still sitting in running within the stalled ceiling is reported as running, not stalled or overdue', function () {
+    saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
+
+    // 10 minutes in — well under both the 30-minute stalled ceiling AND
+    // this hourly job's 120-minute overdue threshold. A run genuinely
+    // in progress right now must never be flagged as either.
+    saWriteJobRun('role-assignments:expire', JobRunLog::STATUS_RUNNING, now()->subMinutes(10));
+
+    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+
+    $job = collect($response->json('jobs'))->firstWhere('job_name', 'role-assignments:expire');
+    expect($job['status'])->toBe('running');
+});
+
+test('a failed run is reported as failed with its error message, even long after it started', function () {
+    saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
+
+    // Started 5 hours ago — well past this hourly job's 120-minute
+    // overdue threshold. A FAILED outcome must win over 'overdue': the
+    // schedule clearly did fire (that's what "failed" means, as opposed
+    // to no row at all), so reporting it as merely 'overdue' would hide
+    // the more specific and more actionable signal.
+    saWriteJobRun(
+        'notifications:shred-expired-requests',
+        JobRunLog::STATUS_FAILED,
+        now()->subHours(5),
+        'Connection refused: database unreachable.',
+    );
+
+    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+
+    $job = collect($response->json('jobs'))->firstWhere('job_name', 'notifications:shred-expired-requests');
+    expect($job['status'])->toBe('failed');
+    expect($job['error_message'])->toBe('Connection refused: database unreachable.');
+});
+
+test('a successful run well within its expected interval is reported as success, not overdue', function () {
+    saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
+
+    // Hourly job, ran 20 minutes ago — nowhere near its 120-minute
+    // overdue threshold.
+    saWriteJobRun('role-assignments:expire', JobRunLog::STATUS_SUCCESS, now()->subMinutes(20));
+
+    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+
+    $job = collect($response->json('jobs'))->firstWhere('job_name', 'role-assignments:expire');
+    expect($job['status'])->toBe('success');
+});
+
+test('a successful run whose gap has exceeded its expected interval is reported as overdue', function () {
+    // This is the exact production edge case that motivated the
+    // 'overdue' status: the scheduler container going down across an
+    // entire tick (e.g. a deploy) leaves the last row looking perfectly
+    // healthy ('success') even though the job hasn't actually run since.
+    // A 'stalled'-only check can never see this, because nothing is
+    // stuck in 'running' — there's simply no newer row at all.
+    saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
+
+    // Hourly job (120-minute threshold), last successful run 3 hours ago.
+    saWriteJobRun('notifications:shred-expired-requests', JobRunLog::STATUS_SUCCESS, now()->subHours(3));
+
+    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+
+    $job = collect($response->json('jobs'))->firstWhere('job_name', 'notifications:shred-expired-requests');
+    expect($job['status'])->toBe('overdue');
+    expect($response->json('needs_attention'))->toBeGreaterThanOrEqual(1);
+});
+
+test('a daily job successful 20 hours ago is still success, not overdue, per its wider grace window', function () {
+    saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
+
+    // Daily jobs get a 26-hour (1560-minute) threshold specifically so a
+    // job that's merely running a few hours "late" within the same
+    // calendar day doesn't false-positive.
+    saWriteJobRun('notifications:send-unclaimed-reminders', JobRunLog::STATUS_SUCCESS, now()->subHours(20));
+
+    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+
+    $job = collect($response->json('jobs'))->firstWhere('job_name', 'notifications:send-unclaimed-reminders');
+    expect($job['status'])->toBe('success');
+});
+
+test('a daily job successful 30 hours ago is overdue, past its 26-hour grace window', function () {
+    saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
+
+    saWriteJobRun('notifications:send-unclaimed-reminders', JobRunLog::STATUS_SUCCESS, now()->subHours(30));
+
+    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+
+    $job = collect($response->json('jobs'))->firstWhere('job_name', 'notifications:send-unclaimed-reminders');
+    expect($job['status'])->toBe('overdue');
+});
+
+test('a weekly job successful 5 days ago is still success, not overdue', function () {
+    saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
+
+    // Weekly job, 8-day (11520-minute) threshold — 5 days in is well
+    // within its normal cadence.
+    saWriteJobRun('break-glass:test', JobRunLog::STATUS_SUCCESS, now()->subDays(5));
+
+    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+
+    $job = collect($response->json('jobs'))->firstWhere('job_name', 'break-glass:test');
+    expect($job['status'])->toBe('success');
+});
+
+test('a weekly job successful 9 days ago is overdue, past its 8-day grace window', function () {
+    saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
+
+    saWriteJobRun('break-glass:test', JobRunLog::STATUS_SUCCESS, now()->subDays(9));
+
+    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+
+    $job = collect($response->json('jobs'))->firstWhere('job_name', 'break-glass:test');
+    expect($job['status'])->toBe('overdue');
+});
+
+test('needs_attention counts failed, stalled, overdue, and never_run jobs together', function () {
+    saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
+
+    saWriteJobRun('notifications:shred-expired-requests', JobRunLog::STATUS_FAILED, now()->subMinutes(5), 'boom');
+    saWriteJobRun('role-assignments:expire', JobRunLog::STATUS_RUNNING, now()->subMinutes(45)); // stalled
+    saWriteJobRun('notifications:send-unclaimed-reminders', JobRunLog::STATUS_SUCCESS, now()->subHours(30)); // overdue
+    // 'audit:verify' left with no row at all -> never_run
+    saWriteJobRun('announcements:auto-disable-expired', JobRunLog::STATUS_SUCCESS, now()->subMinutes(5)); // healthy
+    saWriteJobRun('provisioning:expire-stale', JobRunLog::STATUS_SUCCESS, now()->subMinutes(5)); // healthy
+    saWriteJobRun('security-events:prune', JobRunLog::STATUS_SUCCESS, now()->subMinutes(5)); // healthy
+    saWriteJobRun('job-run-logs:prune', JobRunLog::STATUS_SUCCESS, now()->subMinutes(5)); // healthy
+    saWriteJobRun('break-glass:test', JobRunLog::STATUS_SUCCESS, now()->subMinutes(5)); // healthy
+
+    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+
+    // failed + stalled + overdue + never_run (audit:verify) = 4.
+    expect($response->json('needs_attention'))->toBe(4);
+});
+
+test('only the latest row per job is considered, not an older healthy or unhealthy one', function () {
+    saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
+
+    // An old failure followed by a recent success must report success —
+    // scheduledJobsHealth() keys off MAX(job_run_id), not "has this job
+    // ever failed".
+    saWriteJobRun('role-assignments:expire', JobRunLog::STATUS_FAILED, now()->subHours(2), 'old failure');
+    saWriteJobRun('role-assignments:expire', JobRunLog::STATUS_SUCCESS, now()->subMinutes(5));
+
+    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+
+    $job = collect($response->json('jobs'))->firstWhere('job_name', 'role-assignments:expire');
+    expect($job['status'])->toBe('success');
+    expect($job['error_message'])->toBeNull();
+});
+
+test('a plain admin cannot reach the scheduled-jobs-health endpoint', function () {
+    saMakeUser(SystemUser::ROLE_ADMIN);
+
+    $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertForbidden();
 });

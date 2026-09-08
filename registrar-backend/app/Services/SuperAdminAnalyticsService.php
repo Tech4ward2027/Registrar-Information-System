@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AccessRequest;
 use App\Models\AuditLog;
+use App\Models\JobRunLog;
 use App\Models\SystemUser;
 use App\Models\UnmatchedCashierItem;
 use Illuminate\Support\Facades\DB;
@@ -269,6 +270,132 @@ class SuperAdminAnalyticsService
             'match_rate'         => $total > 0 ? round(($matched / $total) * 100, 1) : null,
             'unresolved_backlog' => $backlogTotal,
             'top_backlog_items'  => $topBacklogItems,
+        ];
+    }
+
+    // -------------------------------------------------------------------------
+    // Scheduled jobs health
+    // -------------------------------------------------------------------------
+
+    /**
+     * "Is the system itself healthy" panel, Job-Health Monitoring addendum
+     * to Phase 2 — closes the gap surfaced during the Sep 2026 production
+     * verification of ShredExpiredRequests/SendUnclaimedReminders: the
+     * only prior signal that a scheduled command ran at all was a line in
+     * storage/logs/scheduler.log inside the scheduler container, which
+     * nobody was alerted to. See JobRunLog and the LogsJobRun trait for
+     * how each command now records its own run.
+     *
+     * Not date-ranged — same reasoning as adminRosterHealth(): this is a
+     * "right now, per job" snapshot (latest run + its status), not a
+     * trend over a window.
+     *
+     * Iterates JobRunLog::JOBS (the canonical list of every command
+     * registered in routes/console.php) rather than just whatever
+     * job_names happen to already be in the table — a job that has NEVER
+     * produced a single row still shows up as "no runs recorded" instead
+     * of silently being absent, which is itself important signal (e.g.
+     * the scheduler container never having been deployed with a newly
+     * added command registered).
+     *
+     * Each job's `status` is one of:
+     *   'running'   — a run is currently in progress (started, not yet
+     *                 past the stalled ceiling below).
+     *   'success' | 'failed' — the latest run's own outcome.
+     *   'stalled'   — the latest run has sat in 'running' past
+     *                 $stalledAfterMinutes: the process almost certainly
+     *                 died mid-run without ever closing out its row.
+     *   'overdue'   — the latest run finished (successfully) long enough
+     *                 ago that the job should have started again by now
+     *                 and hasn't — see JobRunLog::EXPECTED_INTERVAL_MINUTES.
+     *                 This is the case a 'stalled'-only check can't see:
+     *                 last run looked completely fine, the schedule just
+     *                 never fired again (scheduler container down across
+     *                 an entire tick, e.g. during a deploy).
+     *   'never_run' — no row for this job_name has ever been written.
+     */
+    public function scheduledJobsHealth(): array
+    {
+        // "For each job_name, the row with the max started_at" — a plain
+        // GROUP BY + MAX + IN, portable across the drivers this app
+        // targets (MySQL/MariaDB, SQLite for tests, PostgreSQL as a
+        // future migration path) rather than a driver-specific window
+        // function, same portability-first approach as
+        // minutesDiffExpression() below. Two round trips total,
+        // regardless of how many jobs or how many historical rows exist.
+        $latestIds = DB::table('job_run_logs')
+            ->selectRaw('MAX(job_run_id) as id')
+            ->groupBy('job_name')
+            ->pluck('id');
+
+        $latestRuns = JobRunLog::query()
+            ->whereIn('job_run_id', $latestIds)
+            ->get()
+            ->keyBy('job_name');
+
+        $now = now();
+
+        // A run still sitting in 'running' well past a generous ceiling
+        // almost certainly means the process died mid-run without ever
+        // reaching finishJobRun()/failJobRun() (container killed, OOM,
+        // deploy restart mid-execution) rather than a genuinely long
+        // job — every one of these commands normally completes in well
+        // under a minute against this schema's data volumes.
+        $stalledAfterMinutes = 30;
+
+        $jobs = collect(JobRunLog::JOBS)
+            ->map(function (string $scheduleLabel, string $jobName) use ($latestRuns, $now, $stalledAfterMinutes) {
+                /** @var JobRunLog|null $run */
+                $run = $latestRuns->get($jobName);
+
+                $stalled = $run
+                    && $run->status === JobRunLog::STATUS_RUNNING
+                    && $run->started_at->diffInMinutes($now) >= $stalledAfterMinutes;
+
+                // 'overdue' — see JobRunLog::EXPECTED_INTERVAL_MINUTES's
+                // docblock for the full reasoning. Deliberately scoped to
+                // STATUS_SUCCESS only: a 'failed' latest row is already
+                // surfaced via STATUS_FAILED below and still proves the
+                // container was alive and the schedule fired, and a
+                // 'running'/'stalled' row is already covered by its own
+                // branch above — overdue exists specifically to catch
+                // "the last run looked completely fine, but the schedule
+                // itself never fired again," which only a genuinely
+                // successful latest row can mask.
+                $maxGapMinutes = JobRunLog::EXPECTED_INTERVAL_MINUTES[$jobName] ?? null;
+                $overdue = !$stalled
+                    && $run
+                    && $run->status === JobRunLog::STATUS_SUCCESS
+                    && $maxGapMinutes !== null
+                    && $run->started_at->diffInMinutes($now) > $maxGapMinutes;
+
+                $status = match (true) {
+                    $stalled => 'stalled',
+                    $overdue => 'overdue',
+                    default  => $run->status ?? 'never_run',
+                };
+
+                return [
+                    'job_name'         => $jobName,
+                    'schedule'         => $scheduleLabel,
+                    'status'           => $status,
+                    'last_started_at'  => $run?->started_at,
+                    'last_finished_at' => $run?->finished_at,
+                    'duration_ms'      => $run?->duration_ms,
+                    'rows_affected'    => $run?->rows_affected,
+                    'error_message'    => $run?->error_message,
+                ];
+            })
+            ->values();
+
+        $needsAttention = $jobs->filter(
+            fn (array $job) => in_array($job['status'], [JobRunLog::STATUS_FAILED, 'stalled', 'never_run', 'overdue'], true)
+        )->count();
+
+        return [
+            'jobs'            => $jobs->all(),
+            'needs_attention' => $needsAttention,
+            'checked_at'      => $now,
         ];
     }
 

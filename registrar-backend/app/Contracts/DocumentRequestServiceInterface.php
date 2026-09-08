@@ -2,6 +2,7 @@
 
 namespace App\Contracts;
 
+use App\Enums\RequestChannelEnum;
 use App\Models\DocumentRequest;
 use App\Models\SystemUser;
 
@@ -19,8 +20,18 @@ interface DocumentRequestServiceInterface
      * Create a new document request for a student or alumni user,
      * attach its document and certificate line-items, and send
      * the relevant notifications.
+     *
+     * $channel defaults to SelfService — every pre-existing call site
+     * (the student/alumni Request pages) keeps creating self-service
+     * requests unchanged. FESPEC-0008's FreeRequestService is the only
+     * caller that ever passes AdminFiledFree, so the whole write —
+     * parent row, line items, release groups, AND the channel itself —
+     * lands inside the exact same transaction createRequest() already
+     * wraps everything else in, rather than a second, separate update
+     * after the fact that could theoretically leave a request created
+     * with the wrong channel if it failed.
      */
-    public function createRequest(SystemUser $user, array $validated): DocumentRequest;
+    public function createRequest(SystemUser $user, array $validated, RequestChannelEnum $channel = RequestChannelEnum::SelfService): DocumentRequest;
 
     /**
      * Update a document request (status, OR number, receipt date).
@@ -71,4 +82,45 @@ interface DocumentRequestServiceInterface
      * @return array{restored: int[], skipped: int[]}
      */
     public function restoreRequests(array $requestIds, SystemUser $actor): array;
+
+    /**
+     * Deficiency Notice & Withdrawn Status — Phase 1.
+     *
+     * Withdraw a request that will never be fulfilled — wrong item paid,
+     * a duplicate submission, or the requestor no longer needing it (see
+     * WithdrawalReasonEnum). Staff-mediated only; a separate, dedicated
+     * method from updateRequest() (same reasoning as archiveRequest()
+     * being separate) because it carries its own required reason field,
+     * its own optional superseded_by_request_id, and always requires
+     * exactly the 'Process' dashboard action rather than the
+     * status-dependent set updateRequest() computes.
+     *
+     * Reachable only from AwaitingSubmission, Processing, or
+     * PendingSignature (see RequestStatusEnum::allowedTransitions()) —
+     * never from ReadyToClaim, which resolves via claim/forfeit instead.
+     * The paid OR (or_number/receipt_date) is left untouched for finance
+     * reconciliation.
+     *
+     * @param array{
+     *     withdrawal_reason: string,
+     *     withdrawal_detail?: string|null,
+     *     superseded_by_request_id?: int|null,
+     * } $data
+     * @throws \Illuminate\Http\Exceptions\HttpResponseException 422 if the
+     *         request is archived, its current status cannot transition
+     *         to Withdrawn, or superseded_by_request_id doesn't reference
+     *         an existing request.
+     */
+    public function withdraw(DocumentRequest $documentRequest, array $data): DocumentRequest;
+
+    /**
+     * Data Retention & Disposal Policy — Section 3.4. Closes a request
+     * as ClosedUnableToProcess — see DocumentRequestService::
+     * closeUnableToProcess() for full behavior.
+     *
+     * @throws \Illuminate\Http\Exceptions\HttpResponseException 422 if the
+     *         request is archived, its current status cannot transition
+     *         to ClosedUnableToProcess, or it has no open Deficiency Notice.
+     */
+    public function closeUnableToProcess(DocumentRequest $documentRequest, array $data): DocumentRequest;
 }

@@ -18,7 +18,7 @@
 // Status IDs mirror RequestStatusEnum in the backend:
 //   1 = Processing  2 = ReadyToClaim  3 = Completed
 //   4 = Forfeited   5 = Cancelled     6 = PendingSignature
-//   12 = AwaitingSubmission
+//   12 = AwaitingSubmission 13 = Withdrawn
 // Keep in sync with backend Enums/RequestStatusEnum.php
 export const STATUS_CONFIG = {
   1:  { label: "Processing",         classes: "bg-yellow-100 text-yellow-700 border-yellow-200" },
@@ -28,6 +28,8 @@ export const STATUS_CONFIG = {
   5:  { label: "Cancelled",          classes: "bg-orange-100 text-orange-700 border-orange-200"},
   6:  { label: "Awaiting Signature", classes: "bg-orange-100 text-orange-700 border-orange-200"},
   12: { label: "Awaiting Submission",classes: "bg-purple-100 text-purple-700 border-purple-200"},
+  13: { label: "Withdrawn",          classes: "bg-red-100 text-red-700 border-red-200"       },
+  14: { label: "Closed - Unable to Process", classes: "bg-red-100 text-red-700 border-red-200" },
 };
 
 export const TAB_MAP = {
@@ -85,6 +87,8 @@ export const PROGRESS_MAP = {
   4: 0,    // Forfeited
   5: 0,    // Cancelled
   6: 60,   // Pending Signature — registrar's part is done, waiting externally
+  13: 0,   // Withdrawn — terminal and no longer claimable
+  14: 0,   // Closed - Unable to Process — terminal and no longer claimable
 };
 
 // @deprecated-shims
@@ -154,4 +158,5 @@ export const CERTIFICATION_MAP = {
   8:  "Re-Admission Certificate",
   9:  "Leave of Absence",
   10: "Course Accreditation",
+  13: "history",  // Withdrawn — terminal and staff-mediated.
 };

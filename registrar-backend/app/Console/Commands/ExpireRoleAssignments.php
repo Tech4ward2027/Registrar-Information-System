@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\LogsJobRun;
 use App\Models\AuditLog;
 use App\Models\RoleAssignment;
 use App\Services\AuditLogger;
@@ -40,22 +41,37 @@ use Illuminate\Http\Request;
 */
 class ExpireRoleAssignments extends Command
 {
+    use LogsJobRun;
+
     protected $signature   = 'role-assignments:expire';
     protected $description = 'Expire role assignments past their expires_at and revoke the affected sessions';
 
+    /**
+     * Job-Health Monitoring: see LogsJobRun's docblock. Logic below is
+     * unchanged; only the outer try/catch and the two logging calls
+     * around it are new.
+     */
     public function handle(AuditLogger $auditLogger): int
     {
-        // Synthetic request for the same reason ExpireStaleProvisioning
-        // uses one — AuditLogger::log() expects something to read
-        // browser/IP from; both come back empty for a console-originated
-        // action, which is the honest value for a scheduled job.
-        $request = Request::create('/console/role-assignments-expire', 'POST');
+        $this->startJobRun($this->getName());
 
-        $expired = $this->expireDueAssignments($auditLogger, $request);
+        try {
+            // Synthetic request for the same reason ExpireStaleProvisioning
+            // uses one — AuditLogger::log() expects something to read
+            // browser/IP from; both come back empty for a console-originated
+            // action, which is the honest value for a scheduled job.
+            $request = Request::create('/console/role-assignments-expire', 'POST');
 
-        $this->info("role-assignments:expire — expired {$expired} role assignment(s).");
+            $expired = $this->expireDueAssignments($auditLogger, $request);
 
-        return self::SUCCESS;
+            $this->info("role-assignments:expire — expired {$expired} role assignment(s).");
+
+            $this->finishJobRun(self::SUCCESS, $expired);
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            $this->failJobRun($e);
+            throw $e;
+        }
     }
 
     private function expireDueAssignments(AuditLogger $auditLogger, Request $request): int

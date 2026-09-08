@@ -13,6 +13,12 @@ class DocumentType extends Model
         'document_name', 'document_description', 'document_requirements', 'document_process_period',
         'access_id', 'cashier_document_patterns', 'is_archived', 'archived_on', 'archived_by',
         'logbook_category_id', 'requires_source_submission', 'fulfillment_track_id',
+        // FESPEC-0008 — Free Document/Certificate Request (Phase 1 columns,
+        // wired into the model in Phase 2 since FreeRequestEligibilityService
+        // reads them directly and a future type-management screen needs to
+        // set them via mass assignment, same as requires_source_submission
+        // above).
+        'is_free_eligible', 'free_issuance_limit',
     ];
 
     protected $casts = [
@@ -20,6 +26,8 @@ class DocumentType extends Model
         'is_archived'                => 'boolean',
         'archived_on'                => 'datetime',
         'requires_source_submission' => 'boolean',
+        'is_free_eligible'           => 'boolean',
+        'free_issuance_limit'        => 'integer',
     ];
 
     public function requestDocuments()

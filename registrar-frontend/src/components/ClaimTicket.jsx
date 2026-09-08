@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { QRCodeCanvas } from 'qrcode.react';
+import { QRCodeSVG } from 'qrcode.react';
 import { ClipboardDocumentIcon, CheckIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { toPng } from 'html-to-image';
 
@@ -38,6 +38,8 @@ const ClaimTicket = ({ uuid, claimCode, size = 144, downloadOnly = false, small 
 
     toPng(contentRef.current, {
       backgroundColor: '#ffffff',
+      cacheBust: true,
+      pixelRatio: 2,
       style: {
         borderRadius: '16px',
       },
@@ -124,7 +126,7 @@ const ClaimTicket = ({ uuid, claimCode, size = 144, downloadOnly = false, small 
         <div className="flex flex-col items-center justify-center gap-2 sm:gap-2.5 shrink-0 w-full sm:w-auto">
           <div className={`rounded-xl bg-white border border-gray-200 ${small ? 'p-1.5 sm:p-2' : 'p-2 sm:p-3'}`}>
             <div className={`border border-dashed border-gray-250 rounded-lg flex items-center justify-center ${small ? 'p-1' : 'p-1 sm:p-1.5'}`}>
-              <QRCodeCanvas id={`qr-canvas-${claimCode}`} value={uuid} size={qrSize} level="M" fgColor="#000000" bgColor="#ffffff" />
+              <QRCodeSVG id={`qr-code-${claimCode}`} value={uuid} size={qrSize} level="M" fgColor="#000000" bgColor="#ffffff" />
             </div>
           </div>
 

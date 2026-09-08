@@ -11,6 +11,7 @@ use App\Models\AuditLog;
 use App\Models\CertificationType;
 use App\Models\SystemUser;
 use App\Services\AuditLogger;
+use App\Services\CashierPatternSanitizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -59,6 +60,39 @@ class CertificationTypeController extends Controller
             // whitelist, so it was silently dropped from every response
             // here even after being correctly saved to the DB.
             'fulfillment_track_id',
+            // FIXED (same bug, found a third time — see the two comments
+            // above): cashier_document_patterns has been on the column,
+            // the model's $fillable/$casts, and every audit log entry
+            // (see store()/update() below) since the cashier-matching
+            // subsystem shipped, but was never added to this whitelist —
+            // so index/show/layouts/store/update all silently dropped it
+            // from the JSON response for certificates specifically, even
+            // though the exact same field worked fine on DocumentType
+            // (whose controller has no such select() whitelist at all).
+            // In practice this meant the admin UI had no way to display a
+            // certificate type's existing cashier patterns back to the
+            // user, regardless of how they got set.
+            'cashier_document_patterns',
+            // FIXED (same bug, found a fourth time — see the three comments
+            // above): is_free_eligible and free_issuance_limit have been on
+            // the column, the model's $fillable/$casts, and the
+            // FreeIssuanceEligibilitySeeder (FESPEC-0008) since Phase 1 —
+            // but were never added to this whitelist, so index/show/store/
+            // update all silently dropped them from the JSON response for
+            // certificates specifically. The exact same fields worked fine
+            // on DocumentType (whose controller has no such select()
+            // whitelist), which is why LOA and TOR appeared correctly in
+            // the Free Requests catalog while COG never did — the frontend
+            // filters on `is_free_eligible === true`, which is always
+            // `undefined` here without this line.
+            //
+            // See CertificationTypeWhitelistCompletenessTest for a
+            // standing regression guard against this recurring bug class:
+            // it fails the build the next time a certificate_type column
+            // is added but not mirrored here, instead of silently
+            // shipping a field that quietly vanishes from every response.
+            'is_free_eligible',
+            'free_issuance_limit',
         ];
     }
 
@@ -115,7 +149,9 @@ class CertificationTypeController extends Controller
 
     public function store(StoreCertificationTypeRequest $request)
     {
-        $cert = CertificationType::create($request->validated());
+        $validated = $this->withSanitizedPatterns($request->validated());
+
+        $cert = CertificationType::create($validated);
 
         /** @var SystemUser $actor */
         $actor = Auth::user();
@@ -138,7 +174,7 @@ class CertificationTypeController extends Controller
             return response()->json(['message' => 'Certification type not found'], 404);
         }
 
-        $validated = $request->validated();
+        $validated = $this->withSanitizedPatterns($request->validated());
         $cert->update($validated);
 
         /** @var SystemUser $actor */
@@ -353,5 +389,22 @@ class CertificationTypeController extends Controller
                 'url'  => $url,
             ],
         ], 201);
+    }
+
+    /**
+     * If the validated payload included cashier_document_patterns, replace
+     * it with the sanitized version before it's written to the DB. See
+     * DocumentTypeController::withSanitizedPatterns() for the full
+     * rationale — identical behaviour, mirrored here for certificates.
+     */
+    private function withSanitizedPatterns(array $validated): array
+    {
+        if (array_key_exists('cashier_document_patterns', $validated)) {
+            $validated['cashier_document_patterns'] = CashierPatternSanitizer::sanitize(
+                $validated['cashier_document_patterns'] ?? []
+            );
+        }
+
+        return $validated;
     }
 }

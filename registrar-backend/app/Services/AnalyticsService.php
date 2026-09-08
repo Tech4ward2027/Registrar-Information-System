@@ -49,6 +49,62 @@ class AnalyticsService
             ->whereNull("{$alias}.deleted_at");
     }
 
+    /**
+     * Deficiency Notice & Withdrawn Status — Phase 5 ("Analytics/report
+     * exclusion"). Excludes every request_history row belonging to a
+     * WITHDRAWN request from average-processing-time metrics, on top of
+     * the archive/soft-delete exclusion above.
+     *
+     * Applies only to the business_minutes-based "how long does
+     * processing take" queries (overview()'s avg_processing_minutes,
+     * byDocumentType()'s processingTimeByGroup subquery,
+     * processingTime()'s per-document-type and per-admin averages, and
+     * signatureTurnaroundTime()'s two SLA-clock breakdowns) — NOT plain
+     * request-count queries like overview()'s total/pending/completed
+     * buckets or byStatus(), where a Withdrawn request legitimately
+     * belongs in the count (it was a real submission that consumed
+     * intake) even though it never belongs in a "how fast do we complete
+     * work" average. A Withdrawn request never completed, so blending
+     * its interim segments — some reflecting a mistake caught quickly,
+     * others a stalled request finally being closed out — into a
+     * completion-time average would skew the number for no analytical
+     * benefit, in either direction depending on which cases happen to
+     * dominate a given date range.
+     *
+     * NOTE — Forfeited requests are deliberately NOT excluded here: this
+     * method's job is the Withdrawn-specific exit criterion this
+     * feature's Phase 5 calls for, not a general audit of every terminal
+     * status's inclusion in these averages. On inspection, Forfeited
+     * requests are not currently excluded from any of these same
+     * averages either (a Forfeited request's ReadyToClaim segment — time
+     * spent sitting unclaimed before expiring — still contributes to
+     * processingTime()'s and overview()'s numbers today). That is a
+     * pre-existing gap, not something introduced or fixed by this
+     * change; flagged here for visibility rather than silently expanding
+     * this method's scope to also cover it without an explicit decision
+     * to do so.
+     *
+     * ClosedUnableToProcess (Data Retention & Disposal Policy §3.4) is
+     * excluded for the identical reason as Withdrawn above: it is a
+     * terminal status a request reaches WITHOUT ever completing, so
+     * blending its interim segments into a completion-time average is
+     * the same category of distortion Withdrawn's exclusion already
+     * addresses. Grouped into this same method (rather than a second,
+     * near-duplicate exclusion method) since both statuses share the
+     * exact same "terminal, never completed, still counts as real
+     * volume" characteristics that justify excluding them from this
+     * specific class of query and no other.
+     *
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  string  $alias  Alias of a joined document_request table.
+     */
+    private function excludeFromProcessingTimeMetrics(\Illuminate\Database\Query\Builder $query, string $alias = 'document_request'): \Illuminate\Database\Query\Builder
+    {
+        return $this->excludeArchived($query, $alias)
+            ->where("{$alias}.status_id", '!=', RequestStatusEnum::Withdrawn->value)
+            ->where("{$alias}.status_id", '!=', RequestStatusEnum::ClosedUnableToProcess->value);
+    }
+
     // -------------------------------------------------------------------------
     // Logbook-category reporting rollup
     // -------------------------------------------------------------------------
@@ -138,7 +194,7 @@ class AnalyticsService
         // since requested_at, re-counted on every status change) — see
         // processingTime()'s doc block for the full explanation of why
         // these two columns aren't interchangeable.
-        $avgProcessing = $this->excludeArchived(
+        $avgProcessing = $this->excludeFromProcessingTimeMetrics(
             DB::table('request_history as rh')
                 ->join('document_request as dr', 'rh.request_id', '=', 'dr.request_id')
                 ->whereBetween('rh.changed_at', [$from, $to])
@@ -266,7 +322,7 @@ class AnalyticsService
         //      at all, so avg_processing_min silently ignored the selected
         //      date range and always computed an all-time average regardless
         //      of whether "Today," "This Month," or "This Year" was picked.
-        $processingTimeByGroup = $this->excludeArchived(
+        $processingTimeByGroup = $this->excludeFromProcessingTimeMetrics(
             DB::table('request_history as rh')
                 ->join('request_document as rd2', 'rh.request_id', '=', 'rd2.request_id')
                 ->join('document_type as dt2', 'rd2.document_type_id', '=', 'dt2.document_type_id')
@@ -415,7 +471,7 @@ class AnalyticsService
             ->whereBetween('rh.changed_at', [$from, $to])
             ->whereNotNull('rh.business_minutes');
 
-        $byDocType = $this->excludeArchived($byDocTypeQuery, 'dr')
+        $byDocType = $this->excludeFromProcessingTimeMetrics($byDocTypeQuery, 'dr')
             ->select(
                 DB::raw('MIN(dt.document_type_id) as document_type_id'),
                 'dt.logbook_category_id',
@@ -484,7 +540,7 @@ class AnalyticsService
             ->whereBetween('rh.changed_at', [$from, $to])
             ->whereNotNull('rh.business_minutes');
 
-        $byAdmin = $this->excludeArchived($byAdminQuery, 'dr')
+        $byAdmin = $this->excludeFromProcessingTimeMetrics($byAdminQuery, 'dr')
             ->select(
                 'u.user_id',
                 'u.email',
@@ -608,7 +664,7 @@ class AnalyticsService
             ->whereBetween('rh.changed_at', [$from, $to])
             ->whereNotNull('rh.business_minutes');
 
-        $registrarTime = $this->excludeArchived($registrarTimeQuery, 'dr')
+        $registrarTime = $this->excludeFromProcessingTimeMetrics($registrarTimeQuery, 'dr')
             ->select(
                 DB::raw('MIN(dt.document_type_id) as document_type_id'),
                 'dt.logbook_category_id',
@@ -632,7 +688,7 @@ class AnalyticsService
             ->whereBetween('rh.changed_at', [$from, $to])
             ->whereNotNull('rh.business_minutes');
 
-        $signatureTime = $this->excludeArchived($signatureTimeQuery, 'dr')
+        $signatureTime = $this->excludeFromProcessingTimeMetrics($signatureTimeQuery, 'dr')
             ->select(
                 DB::raw('MIN(dt.document_type_id) as document_type_id'),
                 'dt.logbook_category_id',

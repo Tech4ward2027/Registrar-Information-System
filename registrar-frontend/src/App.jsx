@@ -53,6 +53,7 @@ const SystemSettings = lazy(() => import('./layouts/SystemSettings.jsx'));
 const BusinessCalendarManagement = lazy(() => import('./layouts/BusinessCalendarManagement.jsx'));
 const CashierOrOverrideManagement = lazy(() => import('./layouts/CashierOrOverrideManagement.jsx'));
 const SuperAdminAnalyticsDashboard = lazy(() => import('./layouts/SuperAdminAnalyticsDashboard.jsx'));
+const FreeRequestPage = lazy(() => import('./layouts/FreeRequestPage.jsx'));
 
 const StaffIndexRedirect = () => {
   const { user, loading } = useAuth();
@@ -173,6 +174,9 @@ const App = () => {
                     } />
                     <Route path="cashier-overrides" element={
                       <ModuleRoute module={MODULE_KEYS.CASHIER_OVERRIDES}><CashierOrOverrideManagement /></ModuleRoute>
+                    } />
+                    <Route path="free-requests" element={
+                      <ModuleRoute module={MODULE_KEYS.FREE_REQUESTS}><FreeRequestPage /></ModuleRoute>
                     } />
                   </Route>
 

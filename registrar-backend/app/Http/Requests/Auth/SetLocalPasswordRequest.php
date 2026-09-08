@@ -14,7 +14,21 @@ class SetLocalPasswordRequest extends FormRequest
         // pattern used elsewhere (e.g. SystemUserPolicy) — cheap to keep
         // and means this class stays correct even if the route
         // middleware is ever refactored.
-        return $this->user()?->role_id === SystemUser::ROLE_SUPER_ADMIN;
+        //
+        // BUG FIX (session-assumed-role authorization gap): must read
+        // through SystemUser::isSuperAdmin() (which resolves the
+        // session's ASSUMED role via assumedRoleId()), not the raw
+        // role_id column. An Admin whose account also holds an Active
+        // Super Admin role_assignment and has switched into it via
+        // POST /auth/switch-role is a Super Admin for the rest of this
+        // session in every other gate (RoleMiddleware, EnsureModuleAccess,
+        // RoleAssignmentPolicy) — this was the one remaining spot still
+        // reading the raw column, so a switched-in Super Admin passed
+        // the route's 'role:4' middleware and then got 403'd right back
+        // out by this check. Fully backward compatible: for a classic,
+        // never-switched Super Admin, isSuperAdmin() resolves to exactly
+        // the same answer as the old raw-column check.
+        return $this->user()?->isSuperAdmin() ?? false;
     }
 
     public function rules(): array

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\DocumentType;
 
+use App\Rules\CashierPatternsAreConflictFree;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreDocumentTypeRequest extends FormRequest
@@ -29,6 +30,25 @@ class StoreDocumentTypeRequest extends FormRequest
             // regardless of what the client sent).
             'fulfillment_track_id'        => 'nullable|integer|exists:fulfillment_track,fulfillment_track_id',
             'requires_source_submission'  => 'nullable|boolean',
+
+            // Lets an admin seed expected cashier receipt labels for this
+            // type at creation time, instead of only ever discovering them
+            // reactively via the Unmatched Cashier Items queue (see
+            // CashierDocumentSuggester's docblock). Same column, same
+            // normalisation, same matcher/suggester — this is just a
+            // second, proactive way to populate it, not a parallel list.
+            //
+            // 'max:50' is a sanity ceiling, not a real-world expectation —
+            // no type should plausibly need more than a handful of label
+            // variants; this just bounds worst-case validation/query cost.
+            // 'max:255' per entry matches unmatched_cashier_items.raw_label's
+            // column width, so a pattern seeded here and a pattern
+            // attached later via the resolve() flow are held to the same limit.
+            'cashier_document_patterns'   => [
+                'sometimes', 'nullable', 'array', 'max:50',
+                new CashierPatternsAreConflictFree('document'),
+            ],
+            'cashier_document_patterns.*' => ['string', 'max:255'],
         ];
     }
 }

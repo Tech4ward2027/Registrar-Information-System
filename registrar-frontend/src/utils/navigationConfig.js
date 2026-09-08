@@ -76,6 +76,7 @@ export const ROLE_CONFIG = {
         items: [
           { name: 'Access Requests', to: 'access-requests', icon: ClipboardDocumentCheckIcon, module: MODULE_KEYS.ACCESS_REQUESTS },
           { name: 'Cashier OR Overrides', to: 'cashier-overrides', icon: ShieldCheckIcon, module: MODULE_KEYS.CASHIER_OVERRIDES },
+          { name: 'Free Requests', to: 'free-requests', icon: DocumentDuplicateIcon, module: MODULE_KEYS.FREE_REQUESTS },
         ],
       },
       {
@@ -101,7 +102,15 @@ export const ROLE_CONFIG = {
       {
         title: 'Overview',
         items: [
-          { name: 'System analytics', to: 'system-analytics', icon: ChartBarSquareIcon },
+          {
+            name: 'System analytics',
+            to: 'system-analytics',
+            icon: ChartBarSquareIcon,
+            children: [
+              { name: 'System analytics', to: 'system-analytics?tab=analytics', tabKey: 'analytics' },
+              { name: 'Admin roster health', to: 'system-analytics?tab=roster', tabKey: 'roster' },
+            ],
+          },
           { name: 'Audit trail', to: 'report', icon: UserCircleIcon },
         ],
       },

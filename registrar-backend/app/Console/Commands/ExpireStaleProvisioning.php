@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\LogsJobRun;
 use App\Models\AccessRequest;
 use App\Models\AuditLog;
 use App\Models\SystemUser;
@@ -31,24 +32,41 @@ use Illuminate\Http\Request;
 */
 class ExpireStaleProvisioning extends Command
 {
+    use LogsJobRun;
+
     protected $signature   = 'provisioning:expire-stale';
     protected $description = 'Expire stale Pending Activation SystemUsers and unactioned access requests';
 
+    /**
+     * Job-Health Monitoring: see LogsJobRun's docblock. Logic below is
+     * unchanged; only the outer try/catch and the two logging calls
+     * around it are new. rows_affected is the SUM of both sweeps — the
+     * per-sweep breakdown stays visible in the command's own $this->info
+     * output/scheduler.log line, same as before.
+     */
     public function handle(AuditLogger $auditLogger): int
     {
-        // A synthetic Request so AuditLogger::log() (which expects one, to
-        // extract browser/IP for a human-initiated action) has something
-        // to call ->userAgent()/->ip() on. Both come back null/empty for a
-        // console-originated action, which is the correct, honest value —
-        // there is no browser or IP to record for a scheduled job.
-        $request = Request::create('/console/provisioning-expire-stale', 'POST');
+        $this->startJobRun($this->getName());
 
-        $expiredUsers = $this->expireStaleUsers($auditLogger, $request);
-        $expiredRequests = $this->expireStaleAccessRequests($auditLogger, $request);
+        try {
+            // A synthetic Request so AuditLogger::log() (which expects one, to
+            // extract browser/IP for a human-initiated action) has something
+            // to call ->userAgent()/->ip() on. Both come back null/empty for a
+            // console-originated action, which is the correct, honest value —
+            // there is no browser or IP to record for a scheduled job.
+            $request = Request::create('/console/provisioning-expire-stale', 'POST');
 
-        $this->info("provisioning:expire-stale — expired {$expiredUsers} pending user(s), {$expiredRequests} access request(s).");
+            $expiredUsers = $this->expireStaleUsers($auditLogger, $request);
+            $expiredRequests = $this->expireStaleAccessRequests($auditLogger, $request);
 
-        return self::SUCCESS;
+            $this->info("provisioning:expire-stale — expired {$expiredUsers} pending user(s), {$expiredRequests} access request(s).");
+
+            $this->finishJobRun(self::SUCCESS, $expiredUsers + $expiredRequests);
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            $this->failJobRun($e);
+            throw $e;
+        }
     }
 
     private function expireStaleUsers(AuditLogger $auditLogger, Request $request): int

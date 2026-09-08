@@ -25,10 +25,27 @@ export const MODULE_KEYS = {
   ACCESS_REQUESTS: "access_requests",
   BUSINESS_CALENDAR: "business_calendar",
   CASHIER_OVERRIDES: "cashier_overrides",
+  FREE_REQUESTS: "free_requests",
 };
 
+export const KEY_TO_LABEL = {
+  dashboard: "Dashboard",
+  inbox: "Inbox",
+  analytics: "Admin Analytics",
+  logbook: "Admin Logbook",
+  profile: "Admin Profile",
+  access_requests: "Access Requests",
+  business_calendar: "Business Calendar",
+  cashier_overrides: "Cashier OR Overrides",
+  free_requests: "Free Requests",
+};
+
+export const LABEL_TO_KEY = Object.fromEntries(
+  Object.entries(KEY_TO_LABEL).map(([key, label]) => [label, key])
+);
+
 /**
- * Work Item #1 — Granular Per-Action Permissions.
+ * Granular Per-Action Permissions.
  *
  * Mirrors the backend's App\Models\Policy::MODULE_ACTIONS — the two
  * modules that grant a SUBSET of named actions instead of the default
@@ -39,6 +56,7 @@ export const MODULE_KEYS = {
 export const MODULE_ACTIONS = {
   dashboard: ["View", "Process", "Complete"],
   logbook: ["View", "Export"],
+  free_requests: ["View", "File", "Verify", "Override"],
 };
 
 /**

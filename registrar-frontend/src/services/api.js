@@ -216,6 +216,119 @@ export const searchCashierOverrideUsers = (q) =>
   api.get("/cashier-overrides/search-users", { params: { q } });
 
 // -------------------------------------------------------
+// FREE DOCUMENT/CERTIFICATE REQUESTS (FESPEC-0008) — Admin with the
+// "free_requests" module, or Super Admin. Staff on-behalf-of filing for
+// the Free Documents/Certificates Request Policy and the First Copy
+// Free Issuance for Graduates Policy. Same on-behalf-of shape as
+// CASHIER OR OVERRIDES above (search an account, then act on it), but
+// with a read-only eligibility pre-check step in between — see
+// FreeRequestController on the backend for the full design rationale.
+//
+// 'View' (search-accounts, eligibility) vs 'File' (store) are two
+// separate module actions server-side — searchFreeRequestAccounts()
+// and checkFreeRequestEligibility() only need 'View'; fileFreeRequest()
+// needs 'File'. A user with only 'View' can staff the lookup/eligibility
+// screen but will get a 403 attempting to actually file — surface that
+// the same way other module-gated 403s are already handled in this app,
+// rather than trying to pre-guess it client-side.
+// -------------------------------------------------------
+
+// GET /free-requests/search-accounts?q=...&student_number=...&program=...
+// — typeahead lookup for the student/alumni account staff are filing on
+// behalf of. Distinct from searchGrantableUsers()/searchCashierOverrideUsers()
+// above: this one returns FreeRequestAccountResource, which additionally
+// carries student_number / program / year_of_graduation — the exact fields
+// the First Copy policy's in-person records-check step (§3.4) is verified
+// against, not just a name/email picker.
+//
+// Free Documents/Certificates Request Policy §3.3: "Full Name (required),
+// Student Number (optional), Program (optional)". `q` is the required name
+// search; `studentNumber`/`program` are optional disambiguation filters for
+// when a name search returns more than one plausible match (e.g. two
+// students sharing a name) — both default to undefined so this call stays
+// backward-compatible with existing single-argument callers, and axios
+// omits a param entirely from the querystring when its value is undefined.
+export const searchFreeRequestAccounts = (q, studentNumber = undefined, program = undefined) =>
+  api.get("/free-requests/search-accounts", {
+    params: { q, student_number: studentNumber, program },
+  });
+
+// POST /free-requests/eligibility — read-only pre-check. Shows staff the
+// eligibility indicator for every item under consideration BEFORE they
+// commit to filing. Never writes anything server-side; the backend
+// re-runs this same check again, under a row lock, at actual filing
+// time, so treat this response as advisory only — it can go stale
+// between here and the fileFreeRequest() call (e.g. another admin files
+// the graduate's one-time COG in the meantime).
+//
+// data: { target_user_id, documents?: [{ document_type_id }],
+//          certificates?: [{ certificate_type_id }] }
+//
+// Response shape (res.data):
+//   { target_user_id, results: [{
+//       eligible, kind: "document"|"certificate", type_id, type_label,
+//       reason_code, reason, requires_graduate_verification,
+//       free_issuance_limit, remaining
+//   }] }
+// reason_code is a stable machine-readable slug (e.g. "not_graduate",
+// "limit_reached", "not_free_eligible") — switch on that for UI
+// state, not the human-readable `reason` sentence.
+export const checkFreeRequestEligibility = (data) =>
+  api.post("/free-requests/eligibility", data);
+
+// POST /free-requests — files the free request on behalf of
+// target_user_id. Mirrors createDocumentRequest()'s documents/
+// certificates array shape, plus three fields specific to this
+// admin-filed flow:
+//   - override / override_reason: staff have independently determined
+//     an ineligible item should be filed anyway. override_reason is
+//     required (min 10 chars) when override is true.
+//   - verification: { credentials_verified, records_checked } — the
+//     in-person attestation checkboxes. Only actually enforced by the
+//     backend when the filing includes a COG/TOR item; omit entirely
+//     for an LOA-only filing.
+//
+// On success (201): { document_request, was_overridden,
+//   graduate_verification_performed } — document_request comes fully
+// loaded (status, requestPurpose, documents.documentType,
+// certificates.certificationType, graduateVerification), so no
+// follow-up getDocumentRequest() call is needed to render a
+// confirmation screen.
+//
+// On ineligible-without-override (422): { message, errors: [...] } —
+// `errors` is the same per-item shape as the eligibility endpoint above,
+// reflecting the AT-FILING-TIME check (which can differ from whatever
+// checkFreeRequestEligibility() showed earlier) — re-render the
+// eligibility indicator from this array rather than the stale one.
+export const fileFreeRequest = (data) => api.post("/free-requests", data);
+
+// GET /free-requests/reports/monthly-volume?year=2026 — Phase 8
+// observability. Free-issuance COUNT actually claimed, grouped by
+// calendar month and document/certificate type — a graduate's one-time
+// COG/TOR only shows up here the month they scan/type their claim code,
+// not the month staff filed it, so this can lag a filing by however
+// long the item took to process. Gated by the same 'free_requests'
+// module 'View' action as searchFreeRequestAccounts()/
+// checkFreeRequestEligibility() above, not a separate reports
+// permission — this codebase doesn't have one yet.
+//
+// year is optional (server defaults to the current year in the
+// registrar's display timezone, Asia/Manila) — omit it to show the
+// current year on first load.
+//
+// Response shape (res.data): { year, data: [{ month: "2026-04",
+//   type_label: "Transcript of Records", count: 3 }, ...] } — flat/tidy
+// rows, one per (month, type) pair, already sorted month-then-type-label
+// ascending. This is the same long-format shape
+// getAuditLogs()/getSecurityEvents() already hand ReportManagement.jsx
+// for its table+CSV-export pattern (see auditLogSheet.js) — feed it
+// into that same table pattern, or pivot it client-side into a
+// month-by-type grid/chart if a visual breakdown is wanted; the backend
+// intentionally doesn't pre-shape it either way.
+export const getFreeRequestMonthlyVolumeReport = (year) =>
+  api.get("/free-requests/reports/monthly-volume", { params: year ? { year } : {} });
+
+// -------------------------------------------------------
 // SIGNATORIES (certificate signees) — read/write: Admin only
 // (unlike document-types/certifications, GET is admin-only here too —
 // see routes/api.php)
@@ -316,6 +429,144 @@ export const archiveDocumentRequest  = (id)  => api.patch(`/document-requests/${
 export const restoreDocumentRequest  = (id)  => api.patch(`/document-requests/${id}/restore`);
 export const archiveDocumentRequests = (ids) => api.post(`/document-requests/archive-bulk`, { request_ids: ids });
 export const restoreDocumentRequests = (ids) => api.post(`/document-requests/restore-bulk`, { request_ids: ids });
+
+// -------------------------------------------------------
+// WITHDRAWN STATUS (Deficiency Notice & Withdrawn Status — Phase 1/2) —
+// staff/admin only (same role:3 + module:dashboard,Process gate as the
+// other admin status actions above). Terminal — a withdrawn request can
+// never transition again. Does NOT touch or_number/receipt_date; the
+// paid OR stays permanently attached for finance reconciliation.
+//
+// data shape:
+//   {
+//     withdrawal_reason: "wrong_item_paid" | "duplicate_submission"
+//                       | "student_no_longer_needs" | "other",
+//     withdrawal_detail?: string,   // REQUIRED when withdrawal_reason === "other",
+//                                   // max 2000 chars — this is the staff-typed
+//                                   // free text, e.g. from a required textarea
+//                                   // that only appears when "Other" is picked
+//     superseded_by_request_id?: number, // optional — id of the corrected/
+//                                         // resubmitted request, if any
+//   }
+//
+// On success returns the updated DocumentRequest (with its withdrawal_reason,
+// withdrawal_detail, and superseded_by_request_id fields set) — re-render
+// from the response rather than re-fetching. On failure the backend already
+// distinguishes an invalid-transition 422 (e.g. trying to withdraw a
+// ReadyToClaim or already-Completed/Withdrawn request) from a 422 validation
+// error (missing/invalid reason, missing detail when reason is "other") —
+// surface err.response.data.message / err.response.data.errors as-is.
+//
+// NOTE: if this request currently has an open Deficiency Notice, the
+// backend auto-voids it as part of this same call (cascading this
+// withdrawal_reason/detail into the notice's void_reason) — no separate
+// call needed, and no separate notification is sent for that voiding.
+// See DocumentRequestService::withdraw()'s docblock.
+// -------------------------------------------------------
+export const withdrawDocumentRequest = (id, data) =>
+  api.post(`/document-requests/${id}/withdraw`, data);
+
+// -------------------------------------------------------
+// DEFICIENCY NOTICE (Deficiency Notice & Withdrawn Status — Phase 3/4) —
+// staff/admin only, same gate as WITHDRAWN STATUS above. A notice is a
+// named, cleared/voidable HOLD on a request — issuing, clearing, or
+// voiding one never changes document_request.status_id. At most one
+// OPEN notice can exist per request at a time (issue() 422s otherwise).
+//
+// getDocumentRequest(id) already eager-loads the request's currently-open
+// notice (if any) under the request payload — check that first before
+// assuming issueDeficiencyNotice() is available; the UI should show the
+// "on hold" banner + Clear/Void actions instead of an Issue button
+// whenever an open notice is already present.
+//
+// NOTE — the notice object also now carries two independent time-based
+// signals, not to be conflated:
+//   - is_stale (boolean): Phase 4's original 14-day cosmetic badge,
+//     purely computed — true once issued_at is 14+ days in the past
+//     and the notice is still open. No backend action ever happens
+//     because of this; it's a visual warning tier only.
+//   - escalated_at (timestamp | null): Data Retention & Disposal
+//     Policy §3.4's real 30-day compliance trigger. Set exactly once
+//     by a nightly scheduled job once issued_at is 30+ days in the
+//     past, and NEVER un-set by clearing/voiding after the fact — it's
+//     a historical record, not a live flag. A non-null escalated_at
+//     means Registrar Admins have already been notified this notice
+//     needs a decision (extend / Withdraw / Close — Unable to
+//     Process); render this as a visually STRONGER tier than the
+//     plain 14-day is_stale badge, not the same color at a later date.
+//
+// issueDeficiencyNotice(requestId, data) — data shape:
+//   {
+//     item_key: "missing_signature" | "missing_valid_id" | "other",
+//     detail?: string,  // REQUIRED when item_key === "other", max 2000 chars
+//   }
+//   Do NOT send item_label — it's a server-derived, denormalized display
+//   value resolved from item_key at issue time; the backend rejects/ignores
+//   any client-supplied value for it.
+//
+// clearDeficiencyNotice(noticeId) — marks the notice resolved (item was
+//   submitted); processing may resume. No body. 422s if the notice is
+//   already cleared or voided.
+//
+// voidDeficiencyNotice(noticeId, voidReason) — the "never resolved"
+//   escalation outcome (student unreachable, deceased, etc.). Does NOT
+//   auto-transition the parent request — that stays a manual staff
+//   decision (e.g. calling withdrawDocumentRequest() separately once
+//   they've reviewed the case; consider prompting for that in the same
+//   UI action after a successful void). void_reason is required, max
+//   2000 chars. 422s if the notice is already cleared or voided.
+//
+// All three act on the DEFICIENCY NOTICE'S OWN id — request.open_deficiency_notice
+// .remark_id (the relation is eager-loaded onto every getDocumentRequest()/
+// getDocumentRequests() response under that snake_case key) — NOT the
+// parent document request's id. clear()/void() are not nested under
+// /document-requests/{id}/....
+// -------------------------------------------------------
+export const issueDeficiencyNotice = (requestId, data) =>
+  api.post(`/document-requests/${requestId}/deficiency-notices`, data);
+export const clearDeficiencyNotice = (noticeId) =>
+  api.post(`/deficiency-notices/${noticeId}/clear`);
+export const voidDeficiencyNotice = (noticeId, voidReason) =>
+  api.post(`/deficiency-notices/${noticeId}/void`, { void_reason: voidReason });
+
+// -------------------------------------------------------
+// CLOSED — UNABLE TO PROCESS (Data Retention & Disposal Policy §3.4) —
+// staff/admin only, same role:3 + module:dashboard,Process gate as
+// WITHDRAWN STATUS / DEFICIENCY NOTICE above. The policy's "worst-case
+// scenario" closure: a request whose open Deficiency Notice can never
+// be complied with because the requestor is deceased or otherwise
+// permanently unable to respond. Terminal — cannot transition again.
+//
+// GUARD (backend-enforced, will 422 otherwise): the target request
+// must currently have an OPEN Deficiency Notice
+// (request.open_deficiency_notice must be present — check this before
+// showing whatever UI action triggers this call; there is no reason to
+// offer "Close — Unable to Process" on a request with no open notice).
+// This is NOT an alternative to Withdraw — it always requires proof.
+//
+// data shape:
+//   {
+//     closure_reason: "requestor_deceased" | "requestor_incapacitated" | "other",
+//     closure_detail?: string,          // REQUIRED when closure_reason === "other",
+//                                        // max 2000 chars
+//     closure_proof_reference: string,  // ALWAYS required (regardless of reason),
+//                                        // max 500 chars — a text description of
+//                                        // what was verified, e.g. "Death
+//                                        // certificate submitted by [name],
+//                                        // verified [date]". This is a
+//                                        // reference/description only — there is
+//                                        // no file upload here; the actual
+//                                        // physical/scanned proof stays with the
+//                                        // Registrar's Office's own records.
+//   }
+//
+// On success returns the updated DocumentRequest. The request's
+// previously-open Deficiency Notice is auto-voided server-side as part
+// of this same call (same pattern as withdrawDocumentRequest() —
+// no separate voidDeficiencyNotice() call needed first).
+// -------------------------------------------------------
+export const closeRequestUnableToProcess = (id, data) =>
+  api.post(`/document-requests/${id}/close-unable-to-process`, data);
 
 // -------------------------------------------------------
 // BULK READY / BULK DONE (Multi-Item / Mixed-Status Batch rules) —
@@ -458,6 +709,7 @@ export const postAnalyticsAiQuery      = (body  = {}) => api.post("/analytics/ai
 export const getAdminRosterHealth         = ()             => api.get("/system-analytics/admin-roster-health");
 export const getAccessRequestThroughput   = (params = {}) => api.get("/system-analytics/access-request-throughput", { params });
 export const getCashierVerificationHealth = (params = {}) => api.get("/system-analytics/cashier-verification-health", { params });
+export const getScheduledJobsHealth       = ()             => api.get("/system-analytics/scheduled-jobs-health");
 
 // -------------------------------------------------------
 // ANNOUNCEMENTS (read: all authenticated | write: Super Admin)

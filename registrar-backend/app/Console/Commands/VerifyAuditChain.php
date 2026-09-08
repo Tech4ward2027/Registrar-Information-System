@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\LogsJobRun;
 use App\Models\AuditLog;
 use App\Services\AuditLogger;
 use Illuminate\Console\Command;
@@ -30,10 +31,31 @@ use Illuminate\Support\Facades\Log;
 */
 class VerifyAuditChain extends Command
 {
+    use LogsJobRun;
+
     protected $signature   = 'audit:verify {--chunk=1000 : Rows to load per DB round-trip}';
     protected $description = 'Verify the audit_logs tamper-evident hash chain is unbroken';
 
+    /**
+     * Job-Health Monitoring: see LogsJobRun's docblock. This command has
+     * two intentional (non-exception) exit points, so each one calls
+     * finishJobRun() directly with its own exit code — same pattern as
+     * TestBreakGlassAccess. The outer try/catch still exists to catch
+     * genuine uncaught exceptions (e.g. a DB error mid-chunk).
+     */
     public function handle(AuditLogger $auditLogger): int
+    {
+        $this->startJobRun($this->getName());
+
+        try {
+            return $this->verifyChain($auditLogger);
+        } catch (\Throwable $e) {
+            $this->failJobRun($e);
+            throw $e;
+        }
+    }
+
+    private function verifyChain(AuditLogger $auditLogger): int
     {
         $chunkSize = max(1, (int) $this->option('chunk'));
 
@@ -82,10 +104,13 @@ class VerifyAuditChain extends Command
 
         if (empty($breaks)) {
             $this->info("[audit:verify] OK — {$rowsChecked} row(s) verified, chain intact.");
+            $this->finishJobRun(self::SUCCESS, $rowsChecked);
             return self::SUCCESS;
         }
 
         $this->error('[audit:verify] FAILED — ' . count($breaks) . ' issue(s) found across ' . $rowsChecked . ' row(s) checked:');
+
+        $breakSummaries = [];
 
         foreach ($breaks as $break) {
             $this->line("  - audit_logs.id={$break['id']}: {$break['reason']}");
@@ -94,7 +119,15 @@ class VerifyAuditChain extends Command
                 'audit_log_id' => $break['id'],
                 'reason'       => $break['reason'],
             ]);
+
+            $breakSummaries[] = "id={$break['id']}: {$break['reason']}";
         }
+
+        $this->finishJobRun(
+            self::FAILURE,
+            count($breaks),
+            count($breaks) . ' break(s) found across ' . $rowsChecked . ' row(s) — ' . implode(' | ', $breakSummaries),
+        );
 
         return self::FAILURE;
     }

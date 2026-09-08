@@ -9,6 +9,7 @@ use App\Models\RequestDocument;
 use App\Models\RequestHistory;
 use App\Models\RequestReleaseGroup;
 use App\Models\SystemUser;
+use App\Console\Commands\Concerns\LogsJobRun;
 use App\Contracts\NotificationServiceInterface;
 use App\Services\BusinessCalendarService;
 use App\Services\Concerns\FlushesAnalyticsCache;
@@ -67,6 +68,7 @@ use Illuminate\Support\Facades\Log;
 class ShredExpiredRequests extends Command
 {
     use FlushesAnalyticsCache;
+    use LogsJobRun;
 
     protected $signature   = 'notifications:shred-expired-requests';
     protected $description = 'Auto-forfeit ReadyToClaim requests unclaimed for 90+ days and notify the student';
@@ -76,7 +78,29 @@ class ShredExpiredRequests extends Command
         parent::__construct();
     }
 
+    /**
+     * Job-Health Monitoring: every run of this command is recorded via
+     * LogsJobRun (see that trait's docblock) so the SuperAdmin dashboard
+     * can show whether the 90-day forfeiture sweep actually ran, without
+     * requiring an SSH session and a scheduler.log grep. The command's
+     * own logic below is unchanged — only the outer try/catch and the
+     * two logging calls around it are new.
+     */
     public function handle(NotificationServiceInterface $notificationService): int
+    {
+        $this->startJobRun($this->getName());
+
+        try {
+            $shredded = $this->shredExpiredRequests($notificationService);
+            $this->finishJobRun(self::SUCCESS, $shredded);
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            $this->failJobRun($e);
+            throw $e;
+        }
+    }
+
+    private function shredExpiredRequests(NotificationServiceInterface $notificationService): int
     {
         $cutoff = Carbon::now()->subDays(90);
 
@@ -216,7 +240,7 @@ class ShredExpiredRequests extends Command
             $this->flushAnalyticsCache();
         }
 
-        return self::SUCCESS;
+        return $shredded;
     }
 
     /**

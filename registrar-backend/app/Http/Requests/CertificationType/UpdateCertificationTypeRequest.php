@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\CertificationType;
 
+use App\Rules\CashierPatternsAreConflictFree;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateCertificationTypeRequest extends FormRequest
@@ -11,6 +12,18 @@ class UpdateCertificationTypeRequest extends FormRequest
         // Route already sits behind the 'role:3' middleware group in
         // routes/api.php — no per-request Policy check needed here.
         return true;
+    }
+
+    /**
+     * The certificate_type_id being edited, from the route — {id} in
+     * PUT /certifications/{id} (see routes/api.php). Excludes this row's
+     * own existing patterns from the conflict scan below.
+     */
+    private function currentTypeId(): ?int
+    {
+        $id = $this->route('id');
+
+        return $id !== null ? (int) $id : null;
     }
 
     public function rules(): array
@@ -28,6 +41,14 @@ class UpdateCertificationTypeRequest extends FormRequest
             // regardless of what the client sent).
             'fulfillment_track_id'        => 'nullable|integer|exists:fulfillment_track,fulfillment_track_id',
             'requires_source_submission'  => 'nullable|boolean',
+
+            // See StoreCertificationTypeRequest / StoreDocumentTypeRequest
+            // for the full rationale.
+            'cashier_document_patterns'   => [
+                'sometimes', 'nullable', 'array', 'max:50',
+                new CashierPatternsAreConflictFree('certificate', $this->currentTypeId()),
+            ],
+            'cashier_document_patterns.*' => ['string', 'max:255'],
         ];
     }
 }

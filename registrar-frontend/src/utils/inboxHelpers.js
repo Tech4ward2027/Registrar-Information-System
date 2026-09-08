@@ -136,9 +136,11 @@ export const getRequirementsList = (selectedMail, notifications, isClaiming) => 
   const isSubmitted =
     type === 'request_submitted' ||
     type === 'payment_verified' ||
+    type === 'awaiting_submission' ||
     type === 'admin_new_request' ||
     category === 'Submitted' ||
     docTitle.includes('submitted') ||
+    docTitle.includes('source document required') ||
     progress === 25;
 
   const isReadyToClaim =

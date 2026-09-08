@@ -24,6 +24,7 @@ class PolicyResource extends JsonResource
         'access_requests'   => 'Access Requests',
         'business_calendar' => 'Business Calendar',
         'cashier_overrides' => 'Cashier OR Overrides',
+        'free_requests'     => 'Free Requests',
     ];
 
     public function toArray($request): array

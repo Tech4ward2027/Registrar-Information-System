@@ -1,14 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ExclamationCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { useTheme } from "../context/ThemeContext";
 import { useHeaderResponsiveState } from '../utils/helpers';
 
 const ErrorToast = ({ message, onClose }) => {
   const [duration, setDuration] = useState(5000);
   const toastRef = useRef(null);
-  const { isDark } = useTheme();
   const { headerHeight } = useHeaderResponsiveState(!!message);
-
 
   useEffect(() => {
     if (message) {
@@ -44,25 +41,34 @@ const ErrorToast = ({ message, onClose }) => {
     <div
       ref={toastRef}
       style={{
-        top: `${headerHeight + 16}px`,
+        top: `${headerHeight > 0 ? headerHeight + 16 : 20}px`,
       }}
-      className={`fixed left-1/2 -translate-x-1/2 md:left-auto md:right-5 md:translate-x-0 z-200000 flex items-center w-[calc(100vw-24px)] md:w-[340px] px-4 py-3 rounded-lg shadow-xl animate-in slide-in-from-top-2 md:slide-in-from-right-4 fade-in duration-300 transition-all duration-300 ${isDark ? 'text-[#e4e6eb] bg-[#242526] border border-[#3e4042]' : 'text-white bg-pup-maroon border border-white/20'}`}
+      className="fixed left-1/2 -translate-x-1/2 md:left-auto md:right-5 md:translate-x-0 z-[999999] flex items-center w-[calc(100vw-24px)] md:w-[380px] px-4 py-3.5 rounded-xl shadow-2xl animate-in slide-in-from-top-4 md:slide-in-from-right-4 fade-in duration-300 transition-all text-white bg-[#800000] border border-white/20 ring-1 ring-black/10"
     >
-      <div className={`flex items-center justify-center w-9 h-9 rounded-md shrink-0 ${isDark ? 'text-[#FFC72C] bg-[#1a1b1e]' : 'text-pup-maroon bg-white'}`}>
-        <ExclamationCircleIcon className="w-9 h-7" strokeWidth={2.5} />
+      {/* Icon Badge */}
+      <div className="flex items-center justify-center w-10 h-10 rounded-lg shrink-0 text-[#800000] bg-white shadow-sm">
+        <ExclamationCircleIcon className="w-6 h-6" strokeWidth={2.5} />
       </div>
-      <div className="ml-3 text-sm font-semibold leading-snug flex-1">
+
+      {/* Message */}
+      <div className="ml-3 text-sm font-semibold leading-snug flex-1 text-white drop-shadow-xs">
         {message}
       </div>
+
+      {/* Close Button */}
       <button 
+        type="button"
         onClick={onClose}
-        className={`ml-3 p-1.5 rounded-md transition-colors ${isDark ? 'hover:bg-white/6' : 'hover:bg-white/10'}`}
+        aria-label="Close error alert"
+        className="ml-3 p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/20 transition-colors cursor-pointer"
       >
         <XMarkIcon className="w-5 h-5" strokeWidth={2.5} />
       </button>
-      <div className={`absolute bottom-0 left-0 h-0.75 rounded-b-lg overflow-hidden w-full ${isDark ? 'bg-white/10' : 'bg-white/40'}`}>
+
+      {/* Progress Bar */}
+      <div className="absolute bottom-0 left-0 h-1 rounded-b-xl overflow-hidden w-full bg-white/30">
         <div
-          className={`h-full ${isDark ? 'bg-pup-yellow' : 'bg-white'}`}
+          className="h-full bg-white"
           style={{
             width: '100%',
             animation: `shrink ${duration}ms linear forwards`

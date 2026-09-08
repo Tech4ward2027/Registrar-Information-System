@@ -25,10 +25,38 @@ class SystemUserPolicy
     // -------------------------------------------------------
     // GET /system-users
     // Only super admins manage the admin/super-admin roster.
+    //
+    // BUG FIX (session-assumed-role authorization gap): these checks
+    // used to read $user->role_id directly — the raw PRIMARY role
+    // column. That's correct for the isAdministrativelyManageable()
+    // check further down (which evaluates $target, someone else's
+    // account, where "primary identity" is exactly what matters), but
+    // wrong here, where $user is the ACTOR making the request.
+    //
+    // An Admin whose account also holds an Active Super Admin
+    // role_assignment (the "Admin + Super Admin" dual-role case — see
+    // RoleAssignmentService::grant()) and who has switched their
+    // session into that grant via POST /auth/switch-role is, for every
+    // other purpose in the app (RoleMiddleware's route-level 'role:4'
+    // gate, EnsureModuleAccess, RoleAssignmentPolicy), treated as a
+    // Super Admin for the duration of that session — SystemUser::
+    // isSuperAdmin() is the single source of truth for that, and reads
+    // through assumedRoleId() (the session's assumed role if one is in
+    // effect, else the raw column) rather than the raw column directly.
+    //
+    // This policy was the one place still bypassing that and reading
+    // role_id directly, so a switched-in Super Admin passed the route
+    // middleware (assumed-role-aware) and then got a 403 straight back
+    // out of the controller's $this->authorize() call (raw-role-aware) —
+    // visible as "everything 403s the moment I switch to Super Admin."
+    // isSuperAdmin() is fully backward compatible: for a classic,
+    // never-switched Super Admin account it's identical to the old
+    // check, since assumedRoleId() falls through to the raw column
+    // whenever no session override is in effect.
     // -------------------------------------------------------
     public function viewAny(SystemUser $user): bool
     {
-        return $user->role_id === SystemUser::ROLE_SUPER_ADMIN;
+        return $user->isSuperAdmin();
     }
 
     // -------------------------------------------------------
@@ -46,7 +74,10 @@ class SystemUserPolicy
     // -------------------------------------------------------
     public function view(SystemUser $user, SystemUser $target): bool
     {
-        return $user->role_id === SystemUser::ROLE_SUPER_ADMIN
+        // $user: session-assumed role (see viewAny() docblock above).
+        // $target: raw role_id is correct here — isAdministrativelyManageable()
+        // is deliberately about the TARGET's actual, durable identity.
+        return $user->isSuperAdmin()
             && $this->isAdministrativelyManageable($target);
     }
 
@@ -55,7 +86,7 @@ class SystemUserPolicy
     // -------------------------------------------------------
     public function create(SystemUser $user): bool
     {
-        return $user->role_id === SystemUser::ROLE_SUPER_ADMIN;
+        return $user->isSuperAdmin();
     }
 
     // -------------------------------------------------------
@@ -71,7 +102,7 @@ class SystemUserPolicy
     // -------------------------------------------------------
     public function update(SystemUser $user, SystemUser $target): bool
     {
-        return $user->role_id === SystemUser::ROLE_SUPER_ADMIN
+        return $user->isSuperAdmin()
             && $this->isAdministrativelyManageable($target);
     }
 
@@ -98,7 +129,7 @@ class SystemUserPolicy
     // -------------------------------------------------------
     public function delete(SystemUser $user, SystemUser $target): bool
     {
-        return $user->role_id === SystemUser::ROLE_SUPER_ADMIN
+        return $user->isSuperAdmin()
             && in_array($target->role_id, self::MANAGEABLE_ROLES);
     }
 

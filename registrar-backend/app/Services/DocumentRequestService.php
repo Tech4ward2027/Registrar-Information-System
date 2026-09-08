@@ -2,11 +2,15 @@
 
 namespace App\Services;
 
+use App\Enums\ClosureReasonEnum;
+use App\Enums\RequestChannelEnum;
 use App\Enums\RequestStatusEnum;
+use App\Enums\WithdrawalReasonEnum;
 use App\Models\CertificationType;
 use App\Models\DocumentRequest;
 use App\Models\DocumentType;
 use App\Models\RequestHistory;
+use App\Models\RequestRemark;
 use App\Models\SystemUser;
 use App\Contracts\DocumentRequestServiceInterface;
 use App\Contracts\NotificationServiceInterface;
@@ -39,13 +43,13 @@ class DocumentRequestService implements DocumentRequestServiceInterface
      *
      * @throws \Illuminate\Http\Exceptions\HttpResponseException
      */
-    public function createRequest(SystemUser $user, array $validated): DocumentRequest
+    public function createRequest(SystemUser $user, array $validated, RequestChannelEnum $channel = RequestChannelEnum::SelfService): DocumentRequest
     {
         $initialStatus = $this->requestRequiresSourceSubmission($validated)
             ? RequestStatusEnum::AwaitingSubmission
             : RequestStatusEnum::Processing;
 
-        $requestData = $this->buildRequestData($user, $validated, $initialStatus);
+        $requestData = $this->buildRequestData($user, $validated, $initialStatus, $channel);
 
         // BUG FIX (createRequest was never transactional): the parent
         // document_request row, every request_document/request_certificate
@@ -629,6 +633,441 @@ class DocumentRequestService implements DocumentRequestServiceInterface
     }
 
     // -------------------------------------------------------------------------
+    // Withdraw
+    // -------------------------------------------------------------------------
+    //
+    // Deficiency Notice & Withdrawn Status — Phase 1. Deliberately a
+    // separate method from updateRequest() (same reasoning as
+    // archiveRequest()/restoreRequest() being separate): withdrawal
+    // carries its own required reason field and its own dedicated route/
+    // permission tier, rather than being one more thing PUT
+    // /document-requests/{id} has to branch on.
+
+    /**
+     * @param array{
+     *     withdrawal_reason: string,
+     *     withdrawal_detail?: string|null,
+     *     superseded_by_request_id?: int|null,
+     * } $data
+     */
+    public function withdraw(DocumentRequest $documentRequest, array $data): DocumentRequest
+    {
+        // Same BUG FIX rationale as updateRequest() above (RIS-PROCESS-BUGS
+        // #9): analytics are cached for 10 minutes under the "analytics"
+        // tag, so a request that just left the active queue via Withdrawn
+        // needs that cache invalidated once this durably commits.
+        $statusChanged = false;
+
+        // Deficiency Notice & Withdrawn Status — Phase 5 (Cross-Feature
+        // Hardening & Edge Cases: "Withdraw while a Deficiency Notice is
+        // open"). Set inside the transaction below when an open notice
+        // gets auto-voided as part of this withdrawal, so the caller
+        // (DocumentRequestController::withdraw()) can write its own
+        // audit_logs entry for the voided notice without a second query.
+        $autoVoidedRemarkId = null;
+
+        $documentRequest = DB::transaction(function () use ($documentRequest, $data, &$statusChanged, &$autoVoidedRemarkId) {
+            // Re-fetch with a row-level lock — same concurrency guarantee
+            // as updateRequest(): a second concurrent write blocks here
+            // until the first transaction commits, then re-reads the
+            // committed state rather than racing against it.
+            $documentRequest = DocumentRequest::lockForUpdate()
+                ->findOrFail($documentRequest->request_id);
+
+            // Archive Rules: same "archived records are read-only" guard
+            // updateRequest() and markCertificatesGenerated() already
+            // enforce. Restoring must happen first via restoreRequest().
+            if ($documentRequest->is_archived) {
+                abort(422, 'This request is archived and is read-only. Restore it first.');
+            }
+
+            $oldStatusId   = $documentRequest->status_id;
+            $currentStatus = RequestStatusEnum::from((int) $oldStatusId);
+
+            // Enforce the same allowedTransitions() map updateRequest()
+            // uses — Withdrawn is only reachable from AwaitingSubmission,
+            // Processing, or PendingSignature (see RequestStatusEnum's
+            // docblock). This also naturally rejects withdrawing an
+            // already-Withdrawn/Completed/Forfeited request, since none
+            // of those terminal statuses list Withdrawn among their
+            // allowed transitions.
+            if (!in_array(RequestStatusEnum::Withdrawn, $currentStatus->allowedTransitions(), true)) {
+                abort(422, "Transition from {$currentStatus->name} to Withdrawn is not allowed.");
+            }
+
+            // Deficiency Notice & Withdrawn Status — Phase 5 ("Withdraw
+            // while a Deficiency Notice is open"). Decision taken per the
+            // implementation plan's recommendation: AUTO-VOID rather than
+            // block, so staff never need two trips (clear/void the notice,
+            // THEN withdraw) to close out a case that's already decided.
+            // The notice's void_reason cascades from this same
+            // withdrawal_reason/withdrawal_detail, so anyone reviewing the
+            // notice later sees exactly why it was closed — one clean
+            // audit trail instead of two independently-maintained ones.
+            //
+            // Row-locked in the same parent-then-child order
+            // DeficiencyNoticeService::issue() already establishes
+            // (document_request locked above, then the remark) — no new
+            // deadlock risk from doing this here instead of via
+            // DeficiencyNoticeService::void().
+            //
+            // Deliberately NOT delegating to DeficiencyNoticeService::
+            // void(): that method sends its notification immediately
+            // after its OWN DB::transaction() closure returns. Called
+            // from inside this method's transaction, that inner
+            // "transaction" is really just a savepoint — the notification
+            // would fire before this OUTER withdrawal transaction actually
+            // commits, exactly the "notification for a change that might
+            // still roll back" problem notifyOwnerOfWithdrawal()'s
+            // docblock below already exists to avoid. The void itself is
+            // therefore inlined here (a three-column update, not complex
+            // enough to justify the cross-cutting risk), while any
+            // notification about it is deferred to the post-commit block
+            // below, alongside notifyOwnerOfWithdrawal().
+            $openRemark = RequestRemark::where('request_id', $documentRequest->request_id)
+                ->where('status', RequestRemark::STATUS_OPEN)
+                ->lockForUpdate()
+                ->first();
+
+            if ($openRemark) {
+                $openRemark->update([
+                    'status'      => RequestRemark::STATUS_VOIDED,
+                    'voided_by'   => Auth::id(),
+                    'voided_at'   => now(),
+                    'void_reason' => 'Automatically voided — parent request was withdrawn: '
+                        . $this->resolveWithdrawalReasonText(
+                            $data['withdrawal_reason'],
+                            $data['withdrawal_detail'] ?? null,
+                        ),
+                ]);
+
+                $autoVoidedRemarkId = $openRemark->remark_id;
+            }
+
+            if (!empty($data['superseded_by_request_id'])) {
+                // withArchived() so an archived-but-real request can still
+                // be referenced — the point of this pointer is historical
+                // record-keeping, not "is that other request currently
+                // active."
+                $supersedingExists = DocumentRequest::withArchived()
+                    ->where('request_id', $data['superseded_by_request_id'])
+                    ->exists();
+
+                if (!$supersedingExists) {
+                    abort(422, 'superseded_by_request_id does not reference an existing request.');
+                }
+
+                if ((int) $data['superseded_by_request_id'] === (int) $documentRequest->request_id) {
+                    abort(422, 'A request cannot supersede itself.');
+                }
+            }
+
+            $documentRequest->update([
+                'status_id'                => RequestStatusEnum::Withdrawn->value,
+                'withdrawal_reason'        => $data['withdrawal_reason'],
+                'withdrawal_detail'        => $data['withdrawal_detail'] ?? null,
+                'superseded_by_request_id' => $data['superseded_by_request_id'] ?? null,
+            ]);
+
+            $this->recordStatusHistory($documentRequest, $oldStatusId);
+            $statusChanged = true;
+
+            return $documentRequest;
+        }); // end DB::transaction
+
+        // Deficiency Notice & Withdrawn Status — Phase 5. Transient —
+        // never persisted (not in $fillable, never passed to update()) —
+        // so DocumentRequestController::withdraw() can write its own
+        // audit_logs entry for the voided notice without a second query,
+        // and so API consumers can tell an auto-void happened without a
+        // separate round trip to fetch the notice. Harmless to include in
+        // the JSON response: null on every withdrawal that didn't touch
+        // an open notice, which is the overwhelming majority.
+        $documentRequest->setAttribute('auto_voided_deficiency_notice_id', $autoVoidedRemarkId);
+
+        // Fired AFTER commit, not inside the transaction closure above —
+        // unlike updateRequest()'s notifyOwnerOfStatusChange() call (which
+        // runs inside its transaction), a withdrawal notification
+        // reaching a student for a withdrawal that later turned out to
+        // roll back would be actively confusing ("your request was
+        // withdrawn" followed by no actual change). Matches the
+        // reasoning createRequest() already documents for keeping
+        // notifications outside its own transaction.
+        $this->notifyOwnerOfWithdrawal($documentRequest);
+
+        // Deficiency Notice & Withdrawn Status — Phase 5. Deliberately
+        // NOT sending a second, separate deficiency_notice_voided
+        // notification to the student here. The withdrawal notification
+        // just sent above is already the complete, definitive explanation
+        // from the student's point of view ("your request has been
+        // withdrawn: <reason>") — a second "your request will not
+        // proceed: <cascaded reason>" notification moments later tells
+        // them nothing new and reads as a confusing duplicate for what
+        // is, from where they sit, one event. The notice is still fully
+        // and correctly voided in request_remarks (its own void_reason/
+        // voided_by/voided_at) and audited via
+        // AuditLog::ACTION_DEFICIENCY_NOTICE_VOIDED (see
+        // DocumentRequestController::withdraw()) — this only skips the
+        // redundant customer-facing message, not the audit trail. Revisit
+        // if registrar/student feedback wants the explicit second notice;
+        // wire it from $autoVoidedRemarkId using the same
+        // 'deficiency_notice_voided' trigger DeficiencyNoticeService::
+        // void() uses.
+
+        if ($statusChanged) {
+            $this->flushAnalyticsCache();
+        }
+
+        return $documentRequest;
+    }
+
+    /**
+     * Builds and sends the request_withdrawn notification. For every
+     * reason except Other, the message substitutes
+     * WithdrawalReasonEnum::label() (e.g. "Wrong item was paid for"). For
+     * Other, it substitutes the staff-entered withdrawal_detail free text
+     * instead — a generic "Other" would tell the student nothing they
+     * don't already know, whereas the detail they typed is the whole
+     * point of choosing Other in the first place.
+     */
+    private function notifyOwnerOfWithdrawal(DocumentRequest $documentRequest): void
+    {
+        $owner = SystemUser::find($documentRequest->user_id);
+        if (!$owner) return;
+
+        $reasonText = $this->resolveWithdrawalReasonText(
+            $documentRequest->withdrawal_reason,
+            $documentRequest->withdrawal_detail,
+        );
+
+        $this->notificationService->send(
+            recipient:    $owner,
+            triggerEvent: RequestStatusEnum::Withdrawn->notificationTrigger(),
+            data:         [
+                'request_id'        => $documentRequest->request_id,
+                'withdrawal_reason' => $reasonText,
+            ],
+            requestId:    $documentRequest->request_id,
+        );
+    }
+
+    /**
+     * Deficiency Notice & Withdrawn Status — Phase 1/5.
+     *
+     * Resolves the human-readable text for a withdrawal_reason value, for
+     * substitution into a notification message or a cascaded
+     * request_remarks.void_reason. For every reason except Other, this is
+     * simply WithdrawalReasonEnum::label() (e.g. "Wrong item was paid
+     * for"); for Other, the staff-entered free-text detail is used
+     * instead — a generic "Other" would tell the reader nothing they
+     * don't already know, whereas the detail is the whole point of
+     * having chosen Other. Shared by notifyOwnerOfWithdrawal() (the
+     * student-facing request_withdrawn notification) and withdraw()'s
+     * Phase 5 auto-void cascade.
+     *
+     * Takes raw strings rather than a DocumentRequest so it can be called
+     * from inside withdraw()'s transaction closure against $data, before
+     * $documentRequest->withdrawal_reason has actually been persisted.
+     */
+    private function resolveWithdrawalReasonText(string $withdrawalReason, ?string $withdrawalDetail): string
+    {
+        $reason = WithdrawalReasonEnum::from($withdrawalReason);
+
+        return $reason === WithdrawalReasonEnum::Other
+            ? ($withdrawalDetail ?: $reason->label())
+            : $reason->label();
+    }
+
+    /**
+     * Data Retention & Disposal Policy — Section 3.4 ("Requests That
+     * Can Never Be Resolved (e.g., Death of Requestor)").
+     *
+     * Closes a request as ClosedUnableToProcess: the policy's
+     * "worst-case scenario" outcome when an open Deficiency Notice can
+     * never be complied with because the requestor is deceased or
+     * otherwise permanently unable to respond. Structurally mirrors
+     * withdraw() above (same lock ordering, same transaction shape,
+     * same auto-void-the-open-notice cascade) but is a semantically
+     * DISTINCT action, not a variant of withdraw() — see
+     * RequestStatusEnum::ClosedUnableToProcess and ClosureReasonEnum's
+     * docblocks for why these are kept as two separate code paths
+     * rather than one parameterized method.
+     *
+     * GUARD — requires an OPEN Deficiency Notice to exist on this
+     * request. This status only makes sense as the resolution of an
+     * unresolvable notice (the policy's own framing: "If a Deficiency
+     * Notice cannot be complied with...") — there is no legitimate
+     * reason to reach ClosedUnableToProcess on a request that was never
+     * placed on hold in the first place. If staff need to close a
+     * request for a reason unrelated to a missing-item hold, that is
+     * an ordinary Withdrawn (see withdraw() above and
+     * WithdrawalReasonEnum), not this.
+     *
+     * WHAT THIS METHOD DOES NOT DO (see the add_closed_unable_to_process
+     * _status migration's docblock for the full list): it does not
+     * delete, anonymize, or move any data to a disposal/retention
+     * pipeline. Official Receipt records, academic records, and
+     * notification/inbox history all remain exactly where they are,
+     * governed by their own retention periods per Data Retention &
+     * Disposal Policy §3.2 — none of which are enforced by this action.
+     * It also does not release or dispose of any physical document
+     * already prepared for the request (policy §3.4 item 3) — this
+     * codebase has no subsystem tracking "has a physical document
+     * already been printed for this request" independent of
+     * request_certificate.generated_at, and conflating that signal
+     * with this closure action risks silently mis-triggering a
+     * shredding instruction on a request where nothing was ever
+     * printed. That step remains a manual Registrar's Office procedure
+     * today; flagged here as a clear integration point if/when a
+     * document-preparation-tracking feature exists to hook into.
+     *
+     * @throws \Illuminate\Auth\Access\AuthorizationException via abort() calls below
+     */
+    public function closeUnableToProcess(DocumentRequest $documentRequest, array $data): DocumentRequest
+    {
+        $statusChanged = false;
+        $voidedRemarkId = null;
+
+        $documentRequest = DB::transaction(function () use ($documentRequest, $data, &$statusChanged, &$voidedRemarkId) {
+            $documentRequest = DocumentRequest::lockForUpdate()
+                ->findOrFail($documentRequest->request_id);
+
+            if ($documentRequest->is_archived) {
+                abort(422, 'This request is archived and is read-only. Restore it first.');
+            }
+
+            $oldStatusId   = $documentRequest->status_id;
+            $currentStatus = RequestStatusEnum::from((int) $oldStatusId);
+
+            if (!in_array(RequestStatusEnum::ClosedUnableToProcess, $currentStatus->allowedTransitions(), true)) {
+                abort(422, "Transition from {$currentStatus->name} to Closed - Unable to Process is not allowed.");
+            }
+
+            // The core guard this action exists to enforce — see this
+            // method's docblock. Row-locked in the same parent-then-
+            // child order DeficiencyNoticeService::issue()/withdraw()
+            // already establish.
+            $openRemark = RequestRemark::where('request_id', $documentRequest->request_id)
+                ->where('status', RequestRemark::STATUS_OPEN)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$openRemark) {
+                abort(422, 'This request has no open Deficiency Notice. Closed - Unable to Process only applies to a request whose open notice cannot be resolved.');
+            }
+
+            $closureReasonText = $this->resolveClosureReasonText(
+                $data['closure_reason'],
+                $data['closure_detail'] ?? null,
+            );
+
+            // Void the notice as part of the same closure action — the
+            // request itself is now terminally closed, so the notice
+            // that triggered this closure can no longer sensibly remain
+            // "open". Deliberately inlined rather than delegated to
+            // DeficiencyNoticeService::void(), for the identical
+            // "notification fired inside a savepoint, not a real
+            // commit" reason documented at length in withdraw() above.
+            $openRemark->update([
+                'status'      => RequestRemark::STATUS_VOIDED,
+                'voided_by'   => Auth::id(),
+                'voided_at'   => now(),
+                'void_reason' => 'Request closed — Unable to Process: ' . $closureReasonText,
+            ]);
+
+            $voidedRemarkId = $openRemark->remark_id;
+
+            $documentRequest->update([
+                'status_id'               => RequestStatusEnum::ClosedUnableToProcess->value,
+                'closure_reason'          => $data['closure_reason'],
+                'closure_detail'          => $data['closure_detail'] ?? null,
+                'closure_proof_reference' => $data['closure_proof_reference'],
+                'closed_by'               => Auth::id(),
+                'closed_at'               => now(),
+            ]);
+
+            $this->recordStatusHistory($documentRequest, $oldStatusId);
+            $statusChanged = true;
+
+            return $documentRequest;
+        }); // end DB::transaction
+
+        // Transient, never persisted — same pattern withdraw() uses for
+        // auto_voided_deficiency_notice_id, so the controller can write
+        // its own audit_logs entry for the voided notice without a
+        // second query.
+        $documentRequest->setAttribute('closed_deficiency_notice_id', $voidedRemarkId);
+
+        // Fired after commit, not inside the transaction closure —
+        // identical reasoning to withdraw()'s notifyOwnerOfWithdrawal()
+        // call: a notification reaching an account for a closure that
+        // later rolled back would be actively wrong, and per the Data
+        // Retention & Disposal Policy §3.2 this notification/inbox/
+        // email record is itself retained as an audit artifact — it
+        // must correspond to something that actually happened.
+        $this->notifyOwnerOfClosure($documentRequest);
+
+        if ($statusChanged) {
+            $this->flushAnalyticsCache();
+        }
+
+        return $documentRequest;
+    }
+
+    /**
+     * Builds and sends the request_closed_unable_to_process
+     * notification. Sent as a best-effort record to the account on
+     * file, which — per the scenario this status exists for — may
+     * belong to a deceased requestor; see the notification-type
+     * migration's docblock for why this is still sent and retained
+     * regardless (audit trail, per Data Retention & Disposal Policy
+     * §3.2's 3-year retention on notifications/inbox/email).
+     */
+    private function notifyOwnerOfClosure(DocumentRequest $documentRequest): void
+    {
+        $owner = SystemUser::find($documentRequest->user_id);
+        if (!$owner) return;
+
+        $reasonText = $this->resolveClosureReasonText(
+            $documentRequest->closure_reason,
+            $documentRequest->closure_detail,
+        );
+
+        $this->notificationService->send(
+            recipient:    $owner,
+            triggerEvent: RequestStatusEnum::ClosedUnableToProcess->notificationTrigger(),
+            data:         [
+                'request_id'      => $documentRequest->request_id,
+                'closure_reason'  => $reasonText,
+            ],
+            requestId:    $documentRequest->request_id,
+        );
+    }
+
+    /**
+     * Data Retention & Disposal Policy — Section 3.4.
+     *
+     * Resolves the human-readable text for a closure_reason value, for
+     * substitution into a notification message or a cascaded
+     * request_remarks.void_reason. Mirrors
+     * resolveWithdrawalReasonText()'s exact shape: for every reason
+     * except Other, this is simply ClosureReasonEnum::label(); for
+     * Other, the staff-entered free-text detail is used instead. Takes
+     * raw strings (not a DocumentRequest) so it can be called from
+     * inside closeUnableToProcess()'s transaction closure against
+     * $data, before $documentRequest->closure_reason has actually been
+     * persisted.
+     */
+    private function resolveClosureReasonText(string $closureReason, ?string $closureDetail): string
+    {
+        $reason = ClosureReasonEnum::from($closureReason);
+
+        return $reason === ClosureReasonEnum::Other
+            ? ($closureDetail ?: $reason->label())
+            : $reason->label();
+    }
+
+    // -------------------------------------------------------------------------
     // Internal helpers
     // -------------------------------------------------------------------------
 
@@ -680,7 +1119,7 @@ class DocumentRequestService implements DocumentRequestServiceInterface
         return false;
     }
 
-    private function buildRequestData(SystemUser $user, array $validated, RequestStatusEnum $initialStatus): array
+    private function buildRequestData(SystemUser $user, array $validated, RequestStatusEnum $initialStatus, RequestChannelEnum $channel = RequestChannelEnum::SelfService): array
     {
         $base = [
             'user_id'            => $user->user_id,
@@ -688,6 +1127,7 @@ class DocumentRequestService implements DocumentRequestServiceInterface
             'request_purpose_id' => $validated['request_purpose_id'],
             'or_number'          => $validated['or_number'] ?? null,
             'receipt_date'       => $validated['receipt_date'] ?? null,
+            'channel'            => $channel->value,
         ];
 
         if ($user->isStudent()) {

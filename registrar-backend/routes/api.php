@@ -8,6 +8,7 @@ use App\Http\Controllers\RequestStatusController;
 use App\Http\Controllers\DocumentTypeController;
 use App\Http\Controllers\CertificationTypeController;
 use App\Http\Controllers\DocumentRequestController;
+use App\Http\Controllers\DeficiencyNoticeController;
 use App\Http\Controllers\RequestDocumentController;
 use App\Http\Controllers\RequestHistoryController;
 use App\Http\Controllers\AuthController;
@@ -22,6 +23,8 @@ use App\Http\Controllers\LogbookCategoryController;
 use App\Http\Controllers\FulfillmentTrackController;
 use App\Http\Controllers\UnmatchedCashierItemController;
 use App\Http\Controllers\CashierOrOverrideController;
+use App\Http\Controllers\FreeRequestController;
+use App\Http\Controllers\FreeRequestReportController;
 use App\Http\Controllers\AlumniSystemController;
 use App\Http\Controllers\ProgramController;
 use App\Http\Controllers\PolicyController;
@@ -195,6 +198,33 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::get('{documentRequest}', [DocumentRequestController::class, 'show'])->middleware('module:dashboard,View');
         Route::post('/', [DocumentRequestController::class, 'store'])->middleware('role:1,2');
         Route::put('{documentRequest}',    [DocumentRequestController::class, 'update'])->middleware(['role:3', 'module:dashboard,Process|Complete']);
+        // Deficiency Notice & Withdrawn Status — Phase 1. Same coarse
+        // role/module gate as every other admin status-write action on
+        // this resource. Unlike update(), withdraw() always requires
+        // exactly 'Process' — never 'Complete' — since it can only ever
+        // be reached from AwaitingSubmission/Processing/PendingSignature
+        // (see RequestStatusEnum::allowedTransitions()), the same clean
+        // single-action shape as claim() above requiring exactly
+        // 'Complete'. Fine-grained enforcement happens in
+        // DocumentRequestPolicy::withdraw(), called from
+        // WithdrawDocumentRequestRequest::authorize().
+        Route::post('{documentRequest}/withdraw', [DocumentRequestController::class, 'withdraw'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
+        // Data Retention & Disposal Policy — Section 3.4. Same coarse
+        // role/module gate as withdraw() above — see
+        // DocumentRequestPolicy::closeUnableToProcess()'s docblock for
+        // a flagged note on whether this specific action deserves a
+        // stricter tier given its real-world gravity.
+        Route::post('{documentRequest}/close-unable-to-process', [DocumentRequestController::class, 'closeUnableToProcess'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
+        // Deficiency Notice & Withdrawn Status — Phase 3. Same coarse
+        // role/module gate as withdraw() above — always exactly
+        // 'Process', never 'Complete', same clean single-action shape.
+        // Fine-grained enforcement happens in
+        // DocumentRequestPolicy::issueDeficiencyNotice(), called from
+        // IssueDeficiencyNoticeRequest::authorize().
+        Route::post('{documentRequest}/deficiency-notices', [DeficiencyNoticeController::class, 'issue'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
         // Item-level status — see RequestItemStatusService and
         // DocumentRequestController::updateDocumentItemStatus()/
         // updateCertificateItemStatus(). Same coarse role/module gate as
@@ -219,6 +249,23 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::patch('{documentRequest}/archive', [DocumentRequestController::class, 'archive'])->middleware('role:3');
         Route::patch('{documentRequest}/restore', [DocumentRequestController::class, 'restore'])->middleware('role:3');
         Route::delete('{documentRequest}', [DocumentRequestController::class, 'destroy'])->middleware('role:3');
+    });
+
+    // Deficiency Notice & Withdrawn Status — Phase 3. clear()/void() act
+    // on a RequestRemark directly (not nested under a specific
+    // document-requests/{documentRequest} URL) since a Deficiency Notice
+    // is addressable by its own id once issued — same flat-resource
+    // shape request-history's own top-level routes already use
+    // elsewhere in this file. Same coarse role/module gate as every
+    // other admin status-write action on this feature; fine-grained
+    // enforcement happens in RequestRemarkPolicy::clear()/void(),
+    // called from ClearDeficiencyNoticeRequest::authorize()/
+    // VoidDeficiencyNoticeRequest::authorize().
+    Route::prefix('deficiency-notices')->group(function () {
+        Route::post('{deficiencyNotice}/clear', [DeficiencyNoticeController::class, 'clear'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
+        Route::post('{deficiencyNotice}/void', [DeficiencyNoticeController::class, 'void'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
     });
 
     // Request documents (line-items)
@@ -276,6 +323,69 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::get('cashier-overrides',              [CashierOrOverrideController::class, 'index']);
         Route::post('cashier-overrides',              [CashierOrOverrideController::class, 'store']);
         Route::post('cashier-overrides/{id}/revoke',  [CashierOrOverrideController::class, 'revoke']);
+    });
+
+    // Free Document/Certificate Request (FESPEC-0008) — the admin
+    // Free Request page. Staff on-behalf-of filing for the Free
+    // Documents/Certificates Request Policy and the First Copy Free
+    // Issuance for Graduates Policy — see FreeRequestController's own
+    // docblock for why this has no Laravel Policy class (same
+    // model-less, route-middleware-gated pattern as cashier_overrides
+    // directly above).
+    //
+    // 'View' covers the read-only search/eligibility actions every
+    // Free Request page user needs just to see the screen. 'File' is
+    // the actual filing action. 'Verify' and 'Override' are NOT
+    // route-level gates — a single POST /free-requests call may or may
+    // not require either depending on what's being filed, so those two
+    // are enforced inside FreeRequestService::assertCapability() at the
+    // moment they're actually exercised (see that method's docblock).
+    // Gating store() at 'File' here is still correct even for a filing
+    // that turns out to need Verify/Override: File is a strict subset
+    // of what those two additionally require, never a bypass of them.
+    //
+    // 'feature:free_request_page' is a separate, environment-wide
+    // on/off switch (config/features.php, defaults to false) sitting
+    // alongside the per-account 'module:free_requests,...' gate — see
+    // EnsureFeatureEnabled's docblock for why the two are independent.
+    // A staff account can hold every free_requests policy action and
+    // still get a 404 here until the flag is explicitly turned on for
+    // this environment.
+    Route::middleware(['role:3,4', 'module:free_requests,View', 'feature:free_request_page'])->group(function () {
+        // Distinct throttle prefix, same reasoning as cashier-overrides'
+        // own search-users route immediately above.
+        Route::get('free-requests/search-accounts', [FreeRequestController::class, 'searchAccounts'])
+            ->middleware('throttle:30,1,free-requests-search-accounts');
+
+        Route::post('free-requests/eligibility', [FreeRequestController::class, 'eligibility'])
+            ->middleware('throttle:30,1,free-requests-eligibility');
+
+        // Phase 8 — Observability. Same 'View' gate as the two routes
+        // above (see FreeRequestReportController's own docblock on why
+        // this doesn't have its own module/action yet), and the same
+        // 30/min read-only throttle bucket family used elsewhere in
+        // this group — this is a periodic admin report, not a
+        // high-frequency page, so it doesn't need its own tighter or
+        // looser limit.
+        Route::get('free-requests/reports/monthly-volume', [FreeRequestReportController::class, 'monthlyVolume'])
+            ->middleware('throttle:30,1,free-requests-reports');
+    });
+
+    Route::middleware(['role:3,4', 'module:free_requests,File', 'feature:free_request_page'])->group(function () {
+        // Phase 7 — Security Hardening: this was the one action in the
+        // whole free-request flow with no rate limit at all — every
+        // read-only endpoint above (search-accounts, eligibility) had
+        // one, but the actual write/filing action did not. Tighter than
+        // the 30/min read limiters above: this performs a real DB write
+        // (a free-of-charge document/certificate issuance) and briefly
+        // holds a row lock on the target account (see
+        // FreeRequestService::fileFreeRequest()'s docblock), so it's
+        // both a higher-value abuse target and more expensive per call.
+        // 10/min per authenticated admin is generous for genuine
+        // counter-service filing pace while meaningfully bounding
+        // automated abuse or override brute-forcing.
+        Route::post('free-requests', [FreeRequestController::class, 'store'])
+            ->middleware('throttle:10,1,free-requests-store');
     });
 
     // Request history — READ ONLY. History is written only by DocumentRequestService.
@@ -420,6 +530,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::get('admin-roster-health',        [SuperAdminAnalyticsController::class, 'adminRosterHealth']);
             Route::get('access-request-throughput',  [SuperAdminAnalyticsController::class, 'accessRequestThroughput']);
             Route::get('cashier-verification-health', [SuperAdminAnalyticsController::class, 'cashierVerificationHealth']);
+            Route::get('scheduled-jobs-health',       [SuperAdminAnalyticsController::class, 'scheduledJobsHealth']);
         });
         Route::post('announcements',                      [AnnouncementController::class, 'store']);
         Route::put('announcements/{announcement}',        [AnnouncementController::class, 'update']);

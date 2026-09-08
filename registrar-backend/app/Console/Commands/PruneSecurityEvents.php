@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\LogsJobRun;
 use App\Models\SecurityEvent;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -33,23 +34,39 @@ use Illuminate\Support\Facades\Log;
 
 class PruneSecurityEvents extends Command
 {
+    use LogsJobRun;
+
     protected $signature   = 'security-events:prune';
     protected $description = 'Delete security_events rows older than the configured retention window';
 
+    /**
+     * Job-Health Monitoring: see LogsJobRun's docblock. Logic below is
+     * unchanged; only the outer try/catch and the two logging calls
+     * around it are new.
+     */
     public function handle(): int
     {
-        $retentionDays = (int) config('security_events.retention_days', 90);
-        $cutoff        = Carbon::now()->subDays($retentionDays);
+        $this->startJobRun($this->getName());
 
-        $deleted = SecurityEvent::where('created_at', '<', $cutoff)->delete();
+        try {
+            $retentionDays = (int) config('security_events.retention_days', 90);
+            $cutoff        = Carbon::now()->subDays($retentionDays);
 
-        Log::info('[PruneSecurityEvents] rows pruned', [
-            'deleted_count'   => $deleted,
-            'retention_days'  => $retentionDays,
-            'cutoff'          => $cutoff->toDateTimeString(),
-        ]);
+            $deleted = SecurityEvent::where('created_at', '<', $cutoff)->delete();
 
-        $this->info("[PruneSecurityEvents] {$deleted} row(s) older than {$retentionDays} day(s) deleted.");
-        return self::SUCCESS;
+            Log::info('[PruneSecurityEvents] rows pruned', [
+                'deleted_count'   => $deleted,
+                'retention_days'  => $retentionDays,
+                'cutoff'          => $cutoff->toDateTimeString(),
+            ]);
+
+            $this->info("[PruneSecurityEvents] {$deleted} row(s) older than {$retentionDays} day(s) deleted.");
+
+            $this->finishJobRun(self::SUCCESS, $deleted);
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            $this->failJobRun($e);
+            throw $e;
+        }
     }
 }

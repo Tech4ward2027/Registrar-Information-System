@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\LogsJobRun;
 use App\Models\Announcement;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -33,10 +34,31 @@ use Illuminate\Support\Facades\Log;
 
 class AutoDisableExpiredAnnouncements extends Command
 {
+    use LogsJobRun;
+
     protected $signature   = 'announcements:auto-disable-expired';
     protected $description = 'Disable announcements whose scheduled end date has passed';
 
+    /**
+     * Job-Health Monitoring: see LogsJobRun's docblock. Logic below is
+     * unchanged; only the outer try/catch and the two logging calls
+     * around it are new.
+     */
     public function handle(): int
+    {
+        $this->startJobRun($this->getName());
+
+        try {
+            $disabled = $this->disableExpiredAnnouncements();
+            $this->finishJobRun(self::SUCCESS, $disabled);
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            $this->failJobRun($e);
+            throw $e;
+        }
+    }
+
+    private function disableExpiredAnnouncements(): int
     {
         $today = Carbon::today();
 
@@ -59,6 +81,6 @@ class AutoDisableExpiredAnnouncements extends Command
         }
 
         $this->info("[AutoDisableExpiredAnnouncements] {$disabled} announcement(s) disabled.");
-        return self::SUCCESS;
+        return $disabled;
     }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment } from "react";
+import React, { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -9,11 +9,14 @@ import {
   ArrowPathIcon,
   ArrowDownTrayIcon,
   CalendarIcon,
+  SparklesIcon,
+  DocumentCheckIcon,
 } from "@heroicons/react/24/outline";
 import VoiceSearchInput from "../components/VoiceSearchInput.jsx";
 import {
   getAuditLogs, getAuditLogFilters,
   getSecurityEvents, getSecurityEventFilters,
+  getFreeRequestMonthlyVolumeReport,
 } from "../services/api";
 import ErrorToast from "../components/ErrorToast";
 import SuccessToast from "../components/SuccessToast";
@@ -325,6 +328,71 @@ const ReportManagement = () => {
   const seReasonDropdownRef = useRef(null);
   const browserDropdownRef = useRef(null);
 
+  // ── Free Request Monthly Volume state (Phase 8) ──────────────────────
+  const [freeReportYear] = useState(new Date().getFullYear());
+  const [freeReportData, setFreeReportData] = useState([]);
+  const [freeReportLoading, setFreeReportLoading] = useState(false);
+  const [freeSearch, setFreeSearch] = useState("");
+  const [freeTypeFilter, setFreeTypeFilter] = useState("All");
+  const [freeCurrentPage, setFreeCurrentPage] = useState(1);
+  const freeTypeDropdownRef = useRef(null);
+  const [freeTypeDropdownOpen, setFreeTypeDropdownOpen] = useState(false);
+
+  const fetchFreeReport = useCallback(async () => {
+    setFreeReportLoading(true);
+    try {
+      const res = await getFreeRequestMonthlyVolumeReport(freeReportYear);
+      setFreeReportData(res.data?.data || res.data || []);
+    } catch (err) {
+      console.warn("Failed to load free requests volume report:", err);
+      setErrorMsg(err.response?.data?.message || "Failed to load monthly volume report.");
+    } finally {
+      setFreeReportLoading(false);
+    }
+  }, [freeReportYear]);
+
+  useEffect(() => {
+    if (activeTab === 'free_requests') {
+      fetchFreeReport();
+    }
+  }, [activeTab, fetchFreeReport]);
+
+  const freeTypeOptions = [...new Set(freeReportData.map((row) => row.type_label || row.name).filter(Boolean))];
+
+  const filteredFreeData = freeReportData.filter((row) => {
+    const timestamp = row.month_name || row.month || "";
+    const typeLabel = row.type_label || row.name || "";
+    if (freeTypeFilter !== "All" && typeLabel !== freeTypeFilter) return false;
+    if (!freeSearch.trim()) return true;
+    const q = freeSearch.toLowerCase().trim();
+    const month = timestamp.toLowerCase();
+    const normalizedTypeLabel = typeLabel.toLowerCase();
+    const isGrad = normalizedTypeLabel.includes("graduation") || normalizedTypeLabel.includes("transcript") || normalizedTypeLabel.includes("tor");
+    const policyLabel = isGrad ? "one-time free copy (graduates)" : "unlimited free (loa)";
+    return month.includes(q) || normalizedTypeLabel.includes(q) || policyLabel.includes(q);
+  });
+
+  const formatFreeTimestamp = (row) => {
+    const rawTimestamp = row.timestamp || row.claimed_at || row.changed_at;
+    if (rawTimestamp) {
+      const parsed = new Date(rawTimestamp);
+      if (!Number.isNaN(parsed.getTime())) {
+        const pad = (value) => String(value).padStart(2, "0");
+        return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
+      }
+    }
+
+    const month = row.month_name || row.month;
+    return /^\d{4}-\d{2}$/.test(month || "") ? `${month}-01` : month || "—";
+  };
+
+  const freeTotalPages = Math.max(1, Math.ceil(filteredFreeData.length / PER_PAGE));
+  const safeFreeCurrentPage = Math.min(freeCurrentPage, freeTotalPages);
+  const paginatedFreeData = filteredFreeData.slice(
+    (safeFreeCurrentPage - 1) * PER_PAGE,
+    safeFreeCurrentPage * PER_PAGE
+  );
+
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(search);
@@ -348,6 +416,9 @@ const ReportManagement = () => {
       }
       if (browserDropdownRef.current && !browserDropdownRef.current.contains(event.target)) {
         setBrowserDropdownOpen(false);
+      }
+      if (freeTypeDropdownRef.current && !freeTypeDropdownRef.current.contains(event.target)) {
+        setFreeTypeDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -521,6 +592,28 @@ const ReportManagement = () => {
     dateTo !== "" ||
     search.trim() !== "";
 
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (roleDropdownRef.current && !roleDropdownRef.current.contains(event.target)) {
+        setRoleDropdownOpen(false);
+      }
+      if (actionDropdownRef.current && !actionDropdownRef.current.contains(event.target)) {
+        setActionDropdownOpen(false);
+      }
+      if (seEventTypeDropdownRef.current && !seEventTypeDropdownRef.current.contains(event.target)) {
+        setSeEventTypeDropdownOpen(false);
+      }
+      if (seReasonDropdownRef.current && !seReasonDropdownRef.current.contains(event.target)) {
+        setSeReasonDropdownOpen(false);
+      }
+      if (browserDropdownRef.current && !browserDropdownRef.current.contains(event.target)) {
+        setBrowserDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const pageNumbers = (total, current) => {
     if (total <= 6) return Array.from({ length: total }, (_, i) => i + 1);
     const pages = [1, 2, 3];
@@ -530,44 +623,44 @@ const ReportManagement = () => {
     return [...new Set(pages)];
   };
 
-  const tabButtonClasses = (tab) => {
-    const isActive = activeTab === tab;
-    if (isActive) {
-      return isDark
-        ? 'bg-[#8B0000]/20 text-[#ffb3b3] border-[#8B0000]/30'
-        : 'bg-[#8B0000]/10 text-[#8B0000] border-[#8B0000]/20';
-    }
-    return isDark
-      ? 'bg-transparent text-[#b0b3b8] border-transparent hover:bg-[#2a2a2f]'
-      : 'bg-transparent text-gray-500 border-transparent hover:bg-gray-50';
-  };
-
   return (
     <div className="w-full flex flex-col font-sans">
+      <div className="hidden md:flex justify-center mx-4 sm:mx-6 mb-5">
+        <div className={`inline-flex px-8 py-3.5 rounded-full transition-all duration-300 hover:-translate-y-0.5 ${isDark
+          ? 'bg-[#242526] border border-[#3e4042] shadow-[0_2px_8px_rgba(0,0,0,0.2)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.35)]'
+          : 'bg-white border border-gray-200/80 shadow-[0_2px_8px_rgba(0,0,0,0.05)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.1)]'
+        } gap-8 items-center`}>
+          {[
+            { key: 'audit', label: 'Audit Log' },
+            { key: 'security', label: 'Security Events' },
+            { key: 'free_requests', label: 'Free Issuance Volume' },
+          ].map((tab) => {
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={`text-sm relative rounded-full flex items-center justify-center gap-2 shrink-0 font-semibold transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer whitespace-nowrap ${activeTab === tab.key
+                  ? isDark
+                    ? 'text-yellow-400 font-bold'
+                    : 'text-pup-dark-maroon font-black'
+                  : isDark
+                    ? 'text-[#b0b3b8] hover:text-white'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className={`rounded-2xl p-4 sm:p-6 ${
         isDark 
           ? 'bg-[#242526] text-[#e4e6eb] border border-[#3e4042]' 
           : 'bg-white text-gray-900 shadow-md border border-gray-200/80'
       }`}>
-
-        {/* Tab toggle */}
-        <div className={`flex items-center gap-1 mb-4 p-1 rounded-xl w-fit ${isDark ? 'bg-[#1f1f1f]' : 'bg-gray-50'}`}>
-          <button
-            type="button"
-            onClick={() => setActiveTab('audit')}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border ${tabButtonClasses('audit')}`}
-          >
-            Audit Log
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('security')}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border flex items-center gap-1.5 ${tabButtonClasses('security')}`}
-          >
-            <ShieldExclamationIcon className="w-4 h-4" />
-            Security Events
-          </button>
-        </div>
 
         {activeTab === 'audit' ? (
           <>
@@ -865,180 +958,322 @@ const ReportManagement = () => {
                 </div>
               </div>
           </>
-        ) : (
+        ) : activeTab === 'security' ? (
+          /* Security Events Tab (Phase 3) */
           <>
-            {/* -------------------------------------------------------
-                Security Events tab (Phase 3g) — deliberately a small,
-                quiet list: same table shell as Audit Log for visual
-                consistency, but no role badge, no eye-catching red —
-                see getEventBadgeClasses/getReasonBadgeClasses above.
-               ------------------------------------------------------- */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-              <div className="flex-1 min-w-0 sm:max-w-xs">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-6">
+              <div className="flex-1 min-w-0 max-w-full sm:max-w-xs">
                 <VoiceSearchInput
                   value={seSearch}
                   onChange={(value) => {
                     setSeSearch(value);
-                    handleSeFilterChange();
+                    setSeCurrentPage(1);
                   }}
-                  placeholder="Search by email"
+                  placeholder="Search"
                 />
               </div>
 
-              {(seEventTypeFilter !== 'All' || seReasonFilter !== 'All' || seSearch.trim() !== '') && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSeEventTypeFilter('All');
-                    setSeReasonFilter('All');
-                    setSeSearch('');
-                    setSeCurrentPage(1);
-                  }}
-                  className={`w-full sm:w-auto px-4 py-2 rounded-lg text-sm font-semibold transition-colors border shadow-sm flex items-center justify-center shrink-0
-                    ${isDark
-                      ? 'bg-[#1f1f1f] text-[#b0b3b8] border-[#3e4042] hover:bg-[#2a2a2f] hover:text-[#e4e6eb]'
-                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900'
+              <div className="flex flex-wrap items-center gap-2.5">
+                {(seSearch.trim() !== "" || seEventTypeFilter !== "All" || seReasonFilter !== "All") && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSeSearch("");
+                      setSeEventTypeFilter("All");
+                      setSeReasonFilter("All");
+                      setSeCurrentPage(1);
+                    }}
+                    className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors border shadow-sm flex items-center justify-center cursor-pointer shrink-0 ${
+                      isDark
+                        ? 'bg-[#1f1f1f] text-[#b0b3b8] border-[#3e4042] hover:bg-[#2a2a2f] hover:text-[#e4e6eb]'
+                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900'
                     }`}
-                >
-                  Clear Filters
-                </button>
-              )}
+                  >
+                    Clear Filters
+                  </button>
+                )}
+              </div>
             </div>
 
+            {/* Security Events Table */}
             <div className={`rounded-2xl overflow-hidden ${isDark ? 'bg-[#242526] border border-[#3e4042] shadow-none' : 'bg-white shadow-sm border border-gray-100'}`}>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-180 text-sm">
-                <thead>
-                  <tr className={isDark ? 'border-b border-[#3e4042]' : 'border-b border-gray-100'}>
-                    <th className={`px-4 py-3 text-center font-medium ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'}`}>Timestamp</th>
-                    <th className={`px-4 py-3 text-center font-medium ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'}`}>Email</th>
-                    <th className="px-4 py-3 text-center">
-                      <DashboardDropdown
-                        isOpen={seEventTypeDropdownOpen}
-                        setIsOpen={setSeEventTypeDropdownOpen}
-                        dropdownRef={seEventTypeDropdownRef}
-                        align="center"
-                        trigger={
-                          <span className={seEventTypeFilter !== 'All' ? (isDark ? 'text-yellow-400' : 'text-[#8b0000]') : (isDark ? 'text-[#b0b3b8]' : 'text-gray-500')}>
-                            Event Type
-                          </span>
-                        }
-                        sections={[
-                          {
-                            title: 'Filter by Event Type',
-                            items: seEventTypeOptions.map(option => ({
-                              label: formatLabel(option),
-                              isSelected: seEventTypeFilter === option,
-                              onClick: () => {
-                                setSeEventTypeFilter(option);
-                                handleSeFilterChange();
-                              }
-                            }))
-                          }
-                        ]}
-                      />
-                    </th>
-                    <th className="px-4 py-3 text-center">
-                      <DashboardDropdown
-                        isOpen={seReasonDropdownOpen}
-                        setIsOpen={setSeReasonDropdownOpen}
-                        dropdownRef={seReasonDropdownRef}
-                        align="center"
-                        trigger={
-                          <span className={seReasonFilter !== 'All' ? (isDark ? 'text-yellow-400' : 'text-[#8b0000]') : (isDark ? 'text-[#b0b3b8]' : 'text-gray-500')}>
-                            Reason
-                          </span>
-                        }
-                        sections={[
-                          {
-                            title: 'Filter by Reason',
-                            items: seReasonOptions.map(option => ({
-                              label: formatLabel(option),
-                              isSelected: seReasonFilter === option,
-                              onClick: () => {
-                                setSeReasonFilter(option);
-                                handleSeFilterChange();
-                              }
-                            }))
-                          }
-                        ]}
-                      />
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {seLoading ? (
-                    <ReportTableSkeleton isDark={isDark} count={10} />
-                  ) : seEvents.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="py-20">
-                        <div className="flex flex-col items-center justify-center">
-                          <div className={`w-16 h-16 mb-4 flex items-center justify-center rounded-full ${isDark ? 'bg-[#3a3b3c]/50' : 'bg-gray-100'}`}>
-                            <ShieldExclamationIcon className={`w-8 h-8 ${isDark ? 'text-[#b0b3b8]' : 'text-gray-400'}`} />
-                          </div>
-                          <h3 className={`text-sm font-bold mb-1 ${isDark ? 'text-[#e4e6eb]' : 'text-gray-800'}`}>
-                            No Security Events Found
-                          </h3>
-                          <p className={`text-xs ${isDark ? 'text-[#9a9a9a]' : 'text-gray-500'}`}>
-                            No failed local-auth or IDP-unreachable events match your current search or filters.
-                          </p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    seEvents.map((ev) => (
-                      <tr key={ev.id} className={`border-b text-center transition-colors ${isDark ? 'border-[#3e4042] hover:bg-[#2a2a2f]' : 'border-gray-50 hover:bg-gray-50'}`}>
-
-                        <td className={`px-4 py-3 text-xs whitespace-nowrap ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'}`}>
-                          {ev.date} {ev.time}
-                        </td>
-
-                        <td className={`px-4 py-3 ${isDark ? 'text-[#e4e6eb]' : 'text-gray-800'}`}>{ev.email}</td>
-
-                        <td className="px-4 py-3">
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold border whitespace-nowrap ${getEventBadgeClasses(ev.event_type, isDark)}`}>
-                            {ev.event_type}
-                          </span>
-                        </td>
-
-                        <td className="px-4 py-3">
-                          {ev.reason ? (
-                            <span className={`px-2 py-1 rounded-full text-xs font-bold border whitespace-nowrap ${getReasonBadgeClasses(ev.reason, isDark)}`}>
-                              {ev.reason}
+                  <thead>
+                    <tr className={isDark ? 'border-b border-[#3e4042]' : 'border-b border-gray-100'}>
+                      <th className={`px-4 py-3 text-center font-medium ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'}`}>Timestamp</th>
+                      <th className={`px-4 py-3 text-center font-medium ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'}`}>Target Email</th>
+                      <th className="px-4 py-3 text-center">
+                        <DashboardDropdown
+                          isOpen={seEventTypeDropdownOpen}
+                          setIsOpen={setSeEventTypeDropdownOpen}
+                          dropdownRef={seEventTypeDropdownRef}
+                          align="center"
+                          trigger={
+                            <span className={seEventTypeFilter !== 'All' ? (isDark ? 'text-yellow-400' : 'text-[#8b0000]') : (isDark ? 'text-[#b0b3b8]' : 'text-gray-500')}>
+                              Event Type
                             </span>
-                          ) : (
-                            <span className={`text-xs ${isDark ? 'text-[#6b6b6b]' : 'text-gray-400'}`}>—</span>
-                          )}
+                          }
+                          sections={[
+                            {
+                              title: 'Filter by Event Type',
+                              items: seEventTypeOptions.map(option => ({
+                                label: formatLabel(option),
+                                isSelected: seEventTypeFilter === option,
+                                onClick: () => {
+                                  setSeEventTypeFilter(option);
+                                  setSeCurrentPage(1);
+                                }
+                              }))
+                            }
+                          ]}
+                        />
+                      </th>
+                      <th className="px-4 py-3 text-center">
+                        <DashboardDropdown
+                          isOpen={seReasonDropdownOpen}
+                          setIsOpen={setSeReasonDropdownOpen}
+                          dropdownRef={seReasonDropdownRef}
+                          align="center"
+                          trigger={
+                            <span className={seReasonFilter !== 'All' ? (isDark ? 'text-yellow-400' : 'text-[#8b0000]') : (isDark ? 'text-[#b0b3b8]' : 'text-gray-500')}>
+                              Failure Reason
+                            </span>
+                          }
+                          sections={[
+                            {
+                              title: 'Filter by Failure Reason',
+                              items: seReasonOptions.map(option => ({
+                                label: formatLabel(option),
+                                isSelected: seReasonFilter === option,
+                                onClick: () => {
+                                  setSeReasonFilter(option);
+                                  setSeCurrentPage(1);
+                                }
+                              }))
+                            }
+                          ]}
+                        />
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {seLoading ? (
+                      <ReportTableSkeleton isDark={isDark} count={10} />
+                    ) : seEvents.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-20">
+                          <div className="flex flex-col items-center justify-center">
+                            <div className={`w-16 h-16 mb-4 flex items-center justify-center rounded-full ${isDark ? 'bg-[#3a3b3c]/50' : 'bg-gray-100'}`}>
+                              <ShieldExclamationIcon className={`w-8 h-8 ${isDark ? 'text-[#b0b3b8]' : 'text-gray-400'}`} />
+                            </div>
+                            <h3 className={`text-sm font-bold mb-1 ${isDark ? 'text-[#e4e6eb]' : 'text-gray-800'}`}>
+                              No Security Events Found
+                            </h3>
+                            <p className={`text-xs ${isDark ? 'text-[#9a9a9a]' : 'text-gray-500'}`}>
+                              No failed local-auth or IDP-unreachable events match your current search or filters.
+                            </p>
+                          </div>
                         </td>
-
                       </tr>
-                    ))
-                  )}
-                </tbody>
+                    ) : (
+                      seEvents.map((ev) => (
+                        <tr key={ev.id} className={`border-b text-center transition-colors ${isDark ? 'border-[#3e4042] hover:bg-[#2a2a2f]' : 'border-gray-50 hover:bg-gray-50'}`}>
+
+                          <td className={`px-4 py-3 text-xs whitespace-nowrap ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'}`}>
+                            {ev.date} {ev.time}
+                          </td>
+
+                          <td className={`px-4 py-3 ${isDark ? 'text-[#e4e6eb]' : 'text-gray-800'}`}>{ev.email}</td>
+
+                          <td className="px-4 py-3">
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold border whitespace-nowrap ${getEventBadgeClasses(ev.event_type, isDark)}`}>
+                              {ev.event_type}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            {ev.reason ? (
+                              <span className={`px-2 py-1 rounded-full text-xs font-bold border whitespace-nowrap ${getReasonBadgeClasses(ev.reason, isDark)}`}>
+                                {ev.reason}
+                              </span>
+                            ) : (
+                              <span className={`text-xs ${isDark ? 'text-[#6b6b6b]' : 'text-gray-400'}`}>—</span>
+                            )}
+                          </td>
+
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
                 </table>
               </div>
 
               {/* Pagination */}
               <div className={`flex items-center justify-center gap-1 px-4 py-4 border-t ${isDark ? 'border-[#3e4042]' : 'border-gray-100'}`}>
                 <button onClick={() => setSeCurrentPage((p) => Math.max(1, p - 1))} disabled={seCurrentPage === 1}
-                  className={`flex items-center gap-1 text-sm px-2 py-1 disabled:opacity-40 ${isDark ? 'text-[#b0b3b8] hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}>
+                  className={`flex items-center gap-1 text-sm px-2 py-1 disabled:opacity-40 cursor-pointer ${isDark ? 'text-[#b0b3b8] hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}>
                   <ChevronLeftIcon className="w-4 h-4" /> Previous
                 </button>
                 {pageNumbers(seTotalPages, seCurrentPage).map((p, i) => (
                   <button key={i} onClick={() => typeof p === "number" && setSeCurrentPage(p)} disabled={p === "..."}
-                    className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors
-                      ${seCurrentPage === p ? 'bg-yellow-400 text-white' : (isDark ? 'text-[#b0b3b8] hover:bg-[#2a2a2f]' : 'text-gray-500 hover:bg-gray-100')}
+                    className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors cursor-pointer
+                      ${seCurrentPage === p ? (isDark ? 'bg-amber-400 text-black font-bold' : 'bg-[#800000] text-white font-bold') : (isDark ? 'text-[#b0b3b8] hover:bg-[#2a2a2f]' : 'text-gray-500 hover:bg-gray-100')}
                       ${p === "..." ? "cursor-default pointer-events-none" : ""}`}>
                     {p}
                   </button>
                 ))}
                 <button onClick={() => setSeCurrentPage((p) => Math.min(seTotalPages, p + 1))} disabled={seCurrentPage === seTotalPages}
-                  className={`flex items-center gap-1 text-sm px-2 py-1 disabled:opacity-40 ${isDark ? 'text-[#b0b3b8] hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}>
+                  className={`flex items-center gap-1 text-sm px-2 py-1 disabled:opacity-40 cursor-pointer ${isDark ? 'text-[#b0b3b8] hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}>
                   Next <ChevronRightIcon className="w-4 h-4" />
                 </button>
               </div>
             </div>
           </>
+        ) : (
+          /* Free Requests Monthly Volume Report Tab (Audit Logs Design System) */
+          <div>
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-6">
+              <div className="flex-1 min-w-0 max-w-full sm:max-w-xs">
+                <VoiceSearchInput
+                  value={freeSearch}
+                  onChange={(val) => {
+                    setFreeSearch(val);
+                    setFreeCurrentPage(1);
+                  }}
+                  placeholder="Search"
+                />
+              </div>
+
+              {(freeSearch.trim() !== "" || freeTypeFilter !== "All") && (
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFreeSearch("");
+                      setFreeTypeFilter("All");
+                      setFreeCurrentPage(1);
+                    }}
+                    className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors border shadow-sm flex items-center justify-center cursor-pointer shrink-0 ${
+                      isDark
+                        ? 'bg-[#1f1f1f] text-[#b0b3b8] border-[#3e4042] hover:bg-[#2a2a2f] hover:text-[#e4e6eb]'
+                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900'
+                    }`}
+                  >
+                    Clear Filters
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Volume Table (Audit Logs Table Pattern) */}
+            <div className={`rounded-2xl overflow-hidden ${isDark ? 'bg-[#242526] border border-[#3e4042] shadow-none' : 'bg-white shadow-sm border border-gray-100'}`}>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-180 text-sm">
+                  <thead>
+                    <tr className={isDark ? 'border-b border-[#3e4042]' : 'border-b border-gray-100'}>
+                      <th className={`px-4 py-3 text-center font-medium ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'}`}>Timestamp</th>
+                      <th className="px-4 py-3 text-center">
+                        <DashboardDropdown
+                          isOpen={freeTypeDropdownOpen}
+                          setIsOpen={setFreeTypeDropdownOpen}
+                          dropdownRef={freeTypeDropdownRef}
+                          align="center"
+                          trigger={
+                            <span className={freeTypeFilter !== 'All' ? (isDark ? 'text-yellow-400' : 'text-[#8b0000]') : (isDark ? 'text-[#b0b3b8]' : 'text-gray-500')}>
+                              Document / Certificate Type
+                            </span>
+                          }
+                          sections={[{
+                            title: 'Filter by Document / Certificate Type',
+                            items: ['All', ...freeTypeOptions].map((option) => ({
+                              label: option === 'All' ? 'All' : option,
+                              isSelected: freeTypeFilter === option,
+                              onClick: () => {
+                                setFreeTypeFilter(option);
+                                setFreeCurrentPage(1);
+                              },
+                            })),
+                          }]}
+                        />
+                      </th>
+                      <th className={`px-4 py-3 text-center font-medium ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'}`}>Category Policy</th>
+                      <th className={`px-4 py-3 text-center font-medium ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'}`}>Claimed Volume</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {freeReportLoading ? (
+                      <ReportTableSkeleton isDark={isDark} count={PER_PAGE} />
+                    ) : paginatedFreeData.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-20">
+                          <div className="flex flex-col items-center justify-center">
+                            <div className={`w-16 h-16 mb-4 flex items-center justify-center rounded-full ${isDark ? 'bg-[#3a3b3c]/50' : 'bg-gray-100'}`}>
+                              <SparklesIcon className={`w-8 h-8 ${isDark ? 'text-[#b0b3b8]' : 'text-gray-400'}`} />
+                            </div>
+                            <h3 className={`text-sm font-bold mb-1 ${isDark ? 'text-[#e4e6eb]' : 'text-gray-800'}`}>
+                              No Free Issuance Records Found
+                            </h3>
+                            <p className={`text-xs ${isDark ? 'text-[#9a9a9a]' : 'text-gray-500'}`}>
+                              No monthly claimed free issuance records match your current search criteria.
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      paginatedFreeData.map((row, idx) => {
+                        const typeLabel = row.type_label || row.name || "Document";
+                        const isGraduateType = typeLabel.toLowerCase().includes("graduation") || typeLabel.toLowerCase().includes("transcript") || typeLabel.toLowerCase().includes("tor");
+
+                        return (
+                          <tr key={idx} className={`border-b text-center transition-colors ${isDark ? 'border-[#3e4042] hover:bg-[#2a2a2f]' : 'border-gray-50 hover:bg-gray-50'}`}>
+                            <td className={`px-4 py-3 text-xs font-bold whitespace-nowrap ${isDark ? 'text-[#e4e6eb]' : 'text-gray-900'}`}>
+                              {formatFreeTimestamp(row)}
+                            </td>
+                            <td className={`px-4 py-3 text-xs font-semibold ${isDark ? 'text-[#e4e6eb]' : 'text-gray-800'}`}>
+                              {typeLabel}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`px-3 py-1 rounded-full text-xs font-bold border whitespace-nowrap ${
+                                isGraduateType
+                                  ? isDark ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800/50' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : isDark ? 'bg-blue-950/40 text-blue-400 border-blue-800/50' : 'bg-blue-50 text-blue-700 border-blue-200'
+                              }`}>
+                                {isGraduateType ? "One-Time Free Copy (Graduates)" : "Unlimited Free (LOA)"}
+                              </span>
+                            </td>
+                            <td className={`px-4 py-3 text-xs font-extrabold font-mono ${isDark ? 'text-amber-400' : 'text-[#800000]'}`}>
+                              {row.count || row.total_count || 0}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              <div className={`flex items-center justify-center gap-1 px-4 py-4 border-t ${isDark ? 'border-[#3e4042]' : 'border-gray-100'}`}>
+                <button onClick={() => setFreeCurrentPage((p) => Math.max(1, p - 1))} disabled={safeFreeCurrentPage === 1}
+                  className={`flex items-center gap-1 text-sm px-2 py-1 disabled:opacity-40 cursor-pointer ${isDark ? 'text-[#b0b3b8] hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}>
+                  <ChevronLeftIcon className="w-4 h-4" /> Previous
+                </button>
+                {pageNumbers(freeTotalPages, safeFreeCurrentPage).map((p, i) => (
+                  <button key={i} onClick={() => typeof p === "number" && setFreeCurrentPage(p)} disabled={p === "..."}
+                    className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors cursor-pointer
+                      ${safeFreeCurrentPage === p ? (isDark ? 'bg-amber-400 text-black font-bold' : 'bg-[#800000] text-white font-bold') : (isDark ? 'text-[#b0b3b8] hover:bg-[#2a2a2f]' : 'text-gray-500 hover:bg-gray-100')}
+                      ${p === "..." ? "cursor-default pointer-events-none" : ""}`}>
+                      {p}
+                    </button>
+                ))}
+                <button onClick={() => setFreeCurrentPage((p) => Math.min(freeTotalPages, p + 1))} disabled={safeFreeCurrentPage === freeTotalPages || freeTotalPages === 0}
+                  className={`flex items-center gap-1 text-sm px-2 py-1 disabled:opacity-40 cursor-pointer ${isDark ? 'text-[#b0b3b8] hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}>
+                  Next <ChevronRightIcon className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         <LogbookDateRangeModal

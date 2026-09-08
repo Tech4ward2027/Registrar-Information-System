@@ -109,13 +109,8 @@ export const ManagementCarousel = ({
   const [activeIndex, setActiveIndex] = useState(0);
   const totalPages = Math.ceil(items.length / 3);
 
-  // Reset page position when items set changes
-  useEffect(() => {
-    setActiveIndex(0);
-    if (scrollRef.current) {
-      scrollRef.current.scrollLeft = 0;
-    }
-  }, [items]);
+  const itemIdsKey = items.map(item => item.document_type_id ?? item.certificate_type_id ?? item.id ?? item.name).join(',');
+  const prevItemIdsKeyRef = useRef(itemIdsKey);
 
   const scrollToPage = (pageIdx) => {
     if (scrollRef.current) {
@@ -132,6 +127,18 @@ export const ManagementCarousel = ({
       }
     }
   };
+
+  // Only adjust page position when the list of items actually changes (e.g. search/delete),
+  // not on parent re-renders when a card is selected or edited.
+  useEffect(() => {
+    if (prevItemIdsKeyRef.current !== itemIdsKey) {
+      prevItemIdsKeyRef.current = itemIdsKey;
+      if (activeIndex >= totalPages) {
+        const newPage = Math.max(0, totalPages - 1);
+        scrollToPage(newPage);
+      }
+    }
+  }, [itemIdsKey, totalPages, activeIndex]);
 
   const scrollLeft = () => {
     const newPage = Math.max(0, activeIndex - 1);

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\LogsJobRun;
 use App\Models\SystemUser;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -52,10 +53,33 @@ use Illuminate\Support\Facades\Log;
 */
 class TestBreakGlassAccess extends Command
 {
+    use LogsJobRun;
+
     protected $signature   = 'break-glass:test';
     protected $description = 'Verify all break-glass (local-auth) accounts are correctly configured';
 
+    /**
+     * Job-Health Monitoring: see LogsJobRun's docblock. This command has
+     * three intentional (non-exception) exit points below, so each one
+     * calls finishJobRun() directly with its own exit code and — for the
+     * failure path — a short summary, rather than relying on a single
+     * try/catch at the end. The outer try/catch still exists to catch
+     * genuine uncaught exceptions (e.g. a DB error), which failJobRun()
+     * handles distinctly from an intentional check failure.
+     */
     public function handle(): int
+    {
+        $this->startJobRun($this->getName());
+
+        try {
+            return $this->testBreakGlassAccounts();
+        } catch (\Throwable $e) {
+            $this->failJobRun($e);
+            throw $e;
+        }
+    }
+
+    private function testBreakGlassAccounts(): int
     {
         $accounts = SystemUser::where('local_auth_enabled', 1)->get();
 
@@ -65,6 +89,7 @@ class TestBreakGlassAccess extends Command
             // fallback at all if the IdP goes down.
             $this->warn('[break-glass:test] No break-glass accounts are configured (local_auth_enabled = 1 for 0 users).');
             Log::warning('[break-glass:test] no break-glass accounts configured');
+            $this->finishJobRun(self::SUCCESS, 0);
             return self::SUCCESS;
         }
 
@@ -97,10 +122,13 @@ class TestBreakGlassAccess extends Command
 
         if (empty($failures)) {
             $this->info('[break-glass:test] All break-glass accounts are correctly configured.');
+            $this->finishJobRun(self::SUCCESS, $accounts->count());
             return self::SUCCESS;
         }
 
         $this->error('[break-glass:test] ' . count($failures) . ' break-glass account(s) failed configuration checks:');
+
+        $failureSummaries = [];
 
         foreach ($failures as $userId => $failure) {
             $this->line("  - user_id={$userId} email={$failure['email']}: " . implode('; ', $failure['issues']));
@@ -110,7 +138,15 @@ class TestBreakGlassAccess extends Command
                 'email'   => $failure['email'],
                 'issues'  => $failure['issues'],
             ]);
+
+            $failureSummaries[] = "{$failure['email']}: " . implode('; ', $failure['issues']);
         }
+
+        $this->finishJobRun(
+            self::FAILURE,
+            count($failures),
+            count($failures) . ' account(s) misconfigured — ' . implode(' | ', $failureSummaries),
+        );
 
         return self::FAILURE;
     }

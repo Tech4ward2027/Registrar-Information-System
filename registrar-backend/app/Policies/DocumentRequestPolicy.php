@@ -118,4 +118,53 @@ class DocumentRequestPolicy
     {
         return $user->isStaff();
     }
+
+    // -------------------------------------------------------
+    // Withdraw a request (Deficiency Notice & Withdrawn Status — Phase 1)
+    // Same tier as other admin status actions — requires the 'Process'
+    // dashboard action, same as update() requires for every target
+    // status except Completed. Unlike update(), this is always exactly
+    // one action (never conditional on request content), same clean
+    // single-action shape as claim() above.
+    // -------------------------------------------------------
+    public function withdraw(SystemUser $user, DocumentRequest $request): bool
+    {
+        return $user->isStaff() && $user->hasModuleAccess('dashboard', 'Process');
+    }
+
+    // -------------------------------------------------------
+    // Issue a Deficiency Notice (Deficiency Notice & Withdrawn Status —
+    // Phase 3). Same tier as withdraw() above — always exactly
+    // 'Process', never conditional on request content, same clean
+    // single-action shape. Fine-grained business rules (archived/
+    // withdrawn parent, an already-open notice) are enforced by
+    // DeficiencyNoticeService::issue(), not here — this policy only
+    // answers "may this user issue notices at all."
+    // -------------------------------------------------------
+    public function issueDeficiencyNotice(SystemUser $user, DocumentRequest $request): bool
+    {
+        return $user->isStaff() && $user->hasModuleAccess('dashboard', 'Process');
+    }
+
+    // -------------------------------------------------------
+    // Close a request as "Closed — Unable to Process" (Data Retention &
+    // Disposal Policy §3.4). Same coarse tier as withdraw()/
+    // issueDeficiencyNotice() above — 'Process' module access — for
+    // consistency with every other admin status-write action on this
+    // resource. FLAG FOR FUTURE REVIEW: this action's real-world
+    // gravity (permanently closing a case on proof of a requestor's
+    // death or incapacity) may warrant a stricter capability than the
+    // same 'Process' tier that also covers routine actions like
+    // issuing a Deficiency Notice — e.g. requiring a distinct
+    // 'Close' action token, or restricting to Registrar Staff with a
+    // specific policy grant, or Super Admin only. Implemented at
+    // parity with the existing tier for now to avoid inventing a new
+    // permission primitive as a side effect of this feature; revisit
+    // with whoever owns the Policy/module-grant system if the
+    // Registrar's Office wants tighter gating here specifically.
+    // -------------------------------------------------------
+    public function closeUnableToProcess(SystemUser $user, DocumentRequest $request): bool
+    {
+        return $user->isStaff() && $user->hasModuleAccess('dashboard', 'Process');
+    }
 }

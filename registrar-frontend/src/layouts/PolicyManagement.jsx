@@ -24,7 +24,6 @@ import ErrorToast from "../components/ErrorToast.jsx";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { PolicyTableSkeleton } from "../components/LoadingSkeleton";
 import VoiceSearchInput from "../components/VoiceSearchInput.jsx";
-import { MODULE_ACTIONS } from "../utils/policy";
 import CreatePolicyModal from "../components/CreatePolicyModal";
 
 // Full module list — used for the "Filter by Module Access" dropdown
@@ -42,18 +41,9 @@ const MODULE_OPTIONS = [
   "Admin Profile",
   "Access Requests",
   "Business Calendar",
-  "Cashier OR Overrides"
+  "Cashier OR Overrides",
+  "Free Requests",
 ];
-
-// Work Item #1 — Granular Per-Action Permissions: Dashboard and Admin
-// Logbook are no longer simple on/off toggles in the create/edit
-// modal — each gets its own per-action checkbox group (see the
-// Dashboard/Logbook cards in the modal below) instead of appearing in
-// the single MultiSelection "Select a module" list. This is that
-// list with both removed.
-const SINGLE_TOKEN_MODULE_OPTIONS = MODULE_OPTIONS.filter(
-  (label) => label !== "Dashboard" && label !== "Admin Logbook"
-);
 
 const LABEL_TO_KEY = {
   "Dashboard": "dashboard",
@@ -63,20 +53,28 @@ const LABEL_TO_KEY = {
   "Admin Profile": "profile",
   "Access Requests": "access_requests",
   "Business Calendar": "business_calendar",
-  "Cashier OR Overrides": "cashier_overrides"
+  "Cashier OR Overrides": "cashier_overrides",
+  "Free Requests": "free_requests",
 };
 
-const KEY_TO_LABEL = {
-  "dashboard": "Dashboard",
-  "inbox": "Inbox",
-  "analytics": "Admin Analytics",
-  "logbook": "Admin Logbook",
-  "profile": "Admin Profile",
-  "access_requests": "Access Requests",
-  "business_calendar": "Business Calendar",
-  "cashier_overrides": "Cashier OR Overrides"
+const KEY_TO_LABEL = Object.fromEntries(
+  Object.entries(LABEL_TO_KEY).map(([label, key]) => [key, label])
+);
+
+const MODULE_ACTIONS = {
+  dashboard: ["View", "Process", "Complete"],
+  logbook: ["View", "Export"],
+  free_requests: ["View", "File", "Verify", "Override"],
 };
 
+// Granular modules get their own action segment controls in CreatePolicyModal;
+// single-token modules appear in the MultiSelection dropdown.
+const GRANULAR_MODULE_KEYS = Object.keys(MODULE_ACTIONS);
+const GRANULAR_MODULE_LABELS = GRANULAR_MODULE_KEYS.map((k) => KEY_TO_LABEL[k]);
+
+const SINGLE_TOKEN_MODULE_OPTIONS = MODULE_OPTIONS.filter(
+  (label) => !GRANULAR_MODULE_LABELS.includes(label)
+);
 
 const PolicyManagement = () => {
   const { isDark } = useTheme();
@@ -112,6 +110,7 @@ const PolicyManagement = () => {
   // toggle.
   const [dashboardActions, setDashboardActions] = useState([]);
   const [logbookActions, setLogbookActions] = useState([]);
+  const [freeRequestsActions, setFreeRequestsActions] = useState([]);
 
   // Admin list modal
   const [isAdminListOpen, setIsAdminListOpen] = useState(false);
@@ -175,15 +174,16 @@ const PolicyManagement = () => {
   }, [users]);
 
   // Generate rawPermissions object from selected module labels plus
-  // the granular dashboard/logbook action selections.
-  const buildPermissions = (selectedLabels, dashboardVal, logbookVal) => {
+  // the granular action selections.
+  const buildPermissions = (selectedLabels, dashboardVal, logbookVal, freeRequestsVal) => {
     const raw = {};
     Object.entries(LABEL_TO_KEY).forEach(([label, key]) => {
-      if (key === "dashboard" || key === "logbook") return; // set explicitly below
+      if (GRANULAR_MODULE_KEYS.includes(key)) return; // set explicitly below
       raw[key] = selectedLabels.includes(label) ? ["Access"] : [];
     });
     raw.dashboard = dashboardVal;
     raw.logbook = logbookVal;
+    raw.free_requests = freeRequestsVal;
     return raw;
   };
 
@@ -218,13 +218,33 @@ const PolicyManagement = () => {
     });
   };
 
+  const toggleFreeRequestsAction = (action) => {
+    setFreeRequestsActions((prev) => {
+      if (prev.includes(action)) {
+        return action === "View" ? [] : prev.filter((a) => a !== action);
+      }
+      const next = [...prev, action];
+      if ((action === "File" || action === "Verify" || action === "Override") && !next.includes("View")) {
+        next.push("View");
+      }
+      return next;
+    });
+  };
+
   const handleOpenCreate = () => {
     setIsEditMode(false);
     setPolicyName("");
     setSelectedModuleValues([]);
     setDashboardActions([]);
     setLogbookActions([]);
-    setInitialFormState({ name: "", modules: [], dashboardActions: [], logbookActions: [] });
+    setFreeRequestsActions([]);
+    setInitialFormState({
+      name: "",
+      modules: [],
+      dashboardActions: [],
+      logbookActions: [],
+      freeRequestsActions: [],
+    });
     setIsModalOpen(true);
   };
 
@@ -239,7 +259,7 @@ const PolicyManagement = () => {
     // action-array modules, not single on/off toggles.
     const labels = [];
     Object.entries(p.permissions || {}).forEach(([key, val]) => {
-      if (key === 'dashboard' || key === 'logbook') return;
+      if (GRANULAR_MODULE_KEYS.includes(key)) return;
       if (key !== 'student_staff_switch' && val && val.length > 0) {
         const label = KEY_TO_LABEL[key];
         if (label) labels.push(label);
@@ -251,21 +271,26 @@ const PolicyManagement = () => {
     // typo'd value from a raw API call) rather than rendering it as a
     // checked box for an action that doesn't exist.
     const dashboardVal = Array.isArray(p.permissions?.dashboard)
-      ? p.permissions.dashboard.filter((a) => MODULE_ACTIONS.dashboard.includes(a))
+      ? p.permissions.dashboard.filter((a) => MODULE_ACTIONS.dashboard?.includes(a))
       : [];
     const logbookVal = Array.isArray(p.permissions?.logbook)
-      ? p.permissions.logbook.filter((a) => MODULE_ACTIONS.logbook.includes(a))
+      ? p.permissions.logbook.filter((a) => MODULE_ACTIONS.logbook?.includes(a))
+      : [];
+    const freeRequestsVal = Array.isArray(p.permissions?.free_requests)
+      ? p.permissions.free_requests.filter((a) => MODULE_ACTIONS.free_requests?.includes(a))
       : [];
 
     setPolicyName(initialName);
     setSelectedModuleValues(labels);
     setDashboardActions(dashboardVal);
     setLogbookActions(logbookVal);
+    setFreeRequestsActions(freeRequestsVal);
     setInitialFormState({
       name: initialName,
       modules: labels,
       dashboardActions: dashboardVal,
       logbookActions: logbookVal,
+      freeRequestsActions: freeRequestsVal,
     });
     setIsModalOpen(true);
   };
@@ -282,7 +307,10 @@ const PolicyManagement = () => {
     const logbookChanged =
       logbookActions.length !== initialFormState.logbookActions.length ||
       !logbookActions.every((a) => initialFormState.logbookActions.includes(a));
-    return nameChanged || modulesChanged || dashboardChanged || logbookChanged;
+    const freeRequestsChanged =
+      freeRequestsActions.length !== initialFormState.freeRequestsActions.length ||
+      !freeRequestsActions.every((a) => initialFormState.freeRequestsActions.includes(a));
+    return nameChanged || modulesChanged || dashboardChanged || logbookChanged || freeRequestsChanged;
   };
 
   const handleCloseModal = () => {
@@ -354,7 +382,10 @@ const PolicyManagement = () => {
     }
 
     const hasAnySelection =
-      selectedModuleValues.length > 0 || dashboardActions.length > 0 || logbookActions.length > 0;
+      selectedModuleValues.length > 0 ||
+      dashboardActions.length > 0 ||
+      logbookActions.length > 0 ||
+      freeRequestsActions.length > 0;
 
     if (!hasAnySelection) {
       setErrorMsg("Please select at least one module.");
@@ -366,7 +397,7 @@ const PolicyManagement = () => {
       return;
     }
 
-    const permissions = buildPermissions(selectedModuleValues, dashboardActions, logbookActions);
+    const permissions = buildPermissions(selectedModuleValues, dashboardActions, logbookActions, freeRequestsActions);
     setSubmitting(true);
 
     try {
@@ -721,8 +752,10 @@ const PolicyManagement = () => {
         setSelectedModuleValues={setSelectedModuleValues}
         dashboardActions={dashboardActions}
         logbookActions={logbookActions}
+        freeRequestsActions={freeRequestsActions}
         toggleDashboardAction={toggleDashboardAction}
         toggleLogbookAction={toggleLogbookAction}
+        toggleFreeRequestsAction={toggleFreeRequestsAction}
         onClose={handleCloseModal}
         onSubmit={handleSavePolicy}
         singleTokenModuleOptions={SINGLE_TOKEN_MODULE_OPTIONS}

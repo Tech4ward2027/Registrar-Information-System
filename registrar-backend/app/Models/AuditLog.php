@@ -65,6 +65,29 @@ class AuditLog extends Model
     // never succeed against request_document/request_history's FK
     // constraints — see that method's docblock for the full reasoning.
     public const ACTION_REQUEST_DELETED        = 'request_deleted';
+    // Deficiency Notice & Withdrawn Status — Phase 1. Always logged (see
+    // DocumentRequestController::withdraw()) — unlike the single-item
+    // update() endpoint, which currently does not audit-log status
+    // changes at all (only bulk-ready/bulk-done and archive/restore do).
+    // Withdrawal is financially/audit-sensitive enough (wrong-item-paid
+    // reconciliation, duplicate-submission tracking) that it should not
+    // share that gap.
+    public const ACTION_REQUEST_WITHDRAWN      = 'request_withdrawn';
+    // Deficiency Notice & Withdrawn Status — Phase 3. Logged
+    // unconditionally by DeficiencyNoticeController, same "always audit,
+    // never conditionally" stance ACTION_REQUEST_WITHDRAWN documents
+    // above — a hold that pauses processing (and its resolution) is
+    // audit-sensitive for the same reason a terminal status change is.
+    public const ACTION_DEFICIENCY_NOTICE_ISSUED  = 'deficiency_notice_issued';
+    public const ACTION_DEFICIENCY_NOTICE_CLEARED = 'deficiency_notice_cleared';
+    public const ACTION_DEFICIENCY_NOTICE_VOIDED  = 'deficiency_notice_voided';
+    // Data Retention & Disposal Policy — Section 3.3/3.4. Logged
+    // unconditionally, same stance as every other status/notice action
+    // above — an escalation past the 30-day compliance window, and a
+    // permanent closure on proof of death/incapacity, are both
+    // maximally audit-sensitive events.
+    public const ACTION_DEFICIENCY_NOTICE_ESCALATED    = 'deficiency_notice_escalated';
+    public const ACTION_REQUEST_CLOSED_UNABLE_TO_PROCESS = 'request_closed_unable_to_process';
 
     // Document / certificate type management — archiving
     public const ACTION_DOCUMENT_TYPE_ARCHIVED    = 'document_type_archived';
@@ -180,6 +203,26 @@ class AuditLog extends Model
     public const ACTION_CASHIER_OVERRIDE_CREATED  = 'cashier_override_created';
     public const ACTION_CASHIER_OVERRIDE_CONSUMED = 'cashier_override_consumed';
     public const ACTION_CASHIER_OVERRIDE_REVOKED  = 'cashier_override_revoked';
+
+    // -------------------------------------------------------
+    // FESPEC-0008 — Free Document/Certificate Request.
+    //
+    // Every step of the admin-filed free-request flow is logged
+    // separately (Phase 7 — Security Hardening: "who searched for which
+    // account, who verified whose credentials, who approved"), rather
+    // than folded into the existing ACTION_REQUEST_STATUS_CHANGED /
+    // ACTION_ADMIN_UPDATED entries a self-service request would produce —
+    // this is a fraud-relevant surface (free-of-charge issuance) and
+    // needs its own distinctly filterable trail.
+    // -------------------------------------------------------
+    public const ACTION_FREE_REQUEST_ACCOUNT_SEARCHED = 'free_request_account_searched';
+    public const ACTION_FREE_REQUEST_GRADUATE_VERIFIED = 'free_request_graduate_verified';
+    public const ACTION_FREE_REQUEST_FILED             = 'free_request_filed';
+    // Written whenever FreeRequestEligibilityService returns ineligible
+    // and staff holding the 'free_requests','Override' capability file
+    // the request anyway — metadata always carries a 'reason' key (see
+    // FreeRequestPolicy::override()), never written without one.
+    public const ACTION_FREE_REQUEST_ELIGIBILITY_OVERRIDDEN = 'free_request_eligibility_overridden';
 
     // -------------------------------------------------------
     // Relationship back to the acting user (nullable — may be deleted)

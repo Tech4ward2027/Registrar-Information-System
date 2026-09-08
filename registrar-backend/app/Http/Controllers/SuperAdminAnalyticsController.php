@@ -104,6 +104,13 @@ class SuperAdminAnalyticsController extends Controller
      * docblock) — cached under a fixed key rather than one that varies by
      * ?range, since the query params are irrelevant to this endpoint.
      */
+    // Same reasoning as ROSTER_CACHE_TTL_MINUTES: scheduledJobsHealth()
+    // is documented as a "right now" snapshot, so it gets its own short
+    // TTL rather than the panels' 10-minute one — a SuperAdmin checking
+    // "did the 08:05 job run" a few minutes after 08:05 shouldn't be
+    // looking at a cached "no" from before it ran.
+    private const JOBS_HEALTH_CACHE_TTL_MINUTES = 1;
+
     public function adminRosterHealth(Request $request)
     {
         return response()->json(
@@ -133,6 +140,25 @@ class SuperAdminAnalyticsController extends Controller
                 $request,
                 'cashier-verification-health',
                 fn () => $this->superAdminAnalytics->cashierVerificationHealth($this->dateRange($request))
+            )
+        );
+    }
+
+    /**
+     * GET /system-analytics/scheduled-jobs-health
+     *
+     * Job-Health Monitoring — not date-ranged, same reasoning as
+     * adminRosterHealth() (see that method's docblock): a point-in-time
+     * "did each scheduled command last run, and did it succeed" snapshot,
+     * cached under a fixed key rather than one that varies by ?range.
+     */
+    public function scheduledJobsHealth(Request $request)
+    {
+        return response()->json(
+            Cache::tags(['analytics'])->remember(
+                'system-analytics:scheduled-jobs-health',
+                now()->addMinutes(self::JOBS_HEALTH_CACHE_TTL_MINUTES),
+                fn () => $this->superAdminAnalytics->scheduledJobsHealth(),
             )
         );
     }

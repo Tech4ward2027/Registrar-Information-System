@@ -36,13 +36,22 @@ const parsePeriod = (periodStr) => {
 const formatPeriod = ({ days, hours, minutes }) => {
   const parts = [];
   if (days !== "" && days !== undefined && days !== null) {
-    parts.push(`${days} working day/s`);
+    const d = parseFloat(days);
+    if (!isNaN(d)) {
+      parts.push(`${days} working ${d === 1 ? "day" : "days"}`);
+    }
   }
-  if (hours !== "" && hours !== undefined && hours !== null && parseFloat(hours) !== 0) {
-    parts.push(`${hours} hour/s`);
+  if (hours !== "" && hours !== undefined && hours !== null) {
+    const h = parseFloat(hours);
+    if (!isNaN(h) && h !== 0) {
+      parts.push(`${hours} ${h === 1 ? "hour" : "hours"}`);
+    }
   }
-  if (minutes !== "" && minutes !== undefined && minutes !== null && parseFloat(minutes) !== 0) {
-    parts.push(`${minutes} minute/s`);
+  if (minutes !== "" && minutes !== undefined && minutes !== null) {
+    const m = parseFloat(minutes);
+    if (!isNaN(m) && m !== 0) {
+      parts.push(`${minutes} ${m === 1 ? "minute" : "minutes"}`);
+    }
   }
   return parts.join(", ") || "";
 };
@@ -92,18 +101,21 @@ const ProcessPeriodInput = ({
           {required && (
             <span className={isDark ? "text-[#FFC72C] ml-1" : "text-red-400 ml-1"}>*</span>
           )}
+          {currentFormatted && (
+            <span className={`ml-2 text-xs font-normal ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+              {currentFormatted}
+            </span>
+          )}
         </label>
       </div>
+      
 
       {/* Responsive Wrapper Container */}
-      <div className="flex flex-col 2xl:flex-row gap-3 items-stretch 2xl:items-end">
-        {/* Input Steppers Row */}
-        <div className="grid grid-cols-3 gap-3 flex-1 w-full min-w-[220px] shrink-0">
+      <div className="flex flex-col gap-3 items-stretch">
+        {/* Inline Input Steppers Row */}
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4 flex-1 shrink-0">
           {/* Days */}
-          <div className="flex flex-col gap-1">
-            <span className={`text-[10px] uppercase font-bold tracking-wider whitespace-nowrap ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-              Working Days
-            </span>
+          <div className="flex items-center gap-1.5 shrink-0">
             <input
               type="number"
               min="1"
@@ -111,18 +123,18 @@ const ProcessPeriodInput = ({
               value={days || ""}
               onChange={(e) => handleDaysChange(e.target.value)}
               placeholder="0"
-              className={`w-full px-3 py-2 rounded-lg text-sm font-medium shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#FFC72C] ${isDark
+              className={`w-28 px-3 py-2 text-center rounded-lg text-sm font-medium shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#FFC72C] ${isDark
                 ? "bg-[#1f1f1f] text-[#e4e6eb] border border-[#3e4042] placeholder:text-[#8f949d]"
                 : "bg-white text-gray-700 border border-gray-200 placeholder:text-gray-400"
                 }`}
             />
+            <span className={`text-xs font-semibold whitespace-nowrap ${isDark ? "text-gray-300" : "text-gray-600"}`}>
+              Days
+            </span>
           </div>
 
           {/* Hours */}
-          <div className="flex flex-col gap-1">
-            <span className={`text-[10px] uppercase font-bold tracking-wider whitespace-nowrap ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-              Hours
-            </span>
+          <div className="flex items-center gap-1.5 shrink-0">
             <input
               type="number"
               min="0"
@@ -130,18 +142,18 @@ const ProcessPeriodInput = ({
               value={hours || ""}
               onChange={(e) => handleHoursChange(e.target.value)}
               placeholder="0"
-              className={`w-full px-3 py-2 rounded-lg text-sm font-medium shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#FFC72C] ${isDark
+              className={`w-28 px-3 py-2 text-center rounded-lg text-sm font-medium shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#FFC72C] ${isDark
                 ? "bg-[#1f1f1f] text-[#e4e6eb] border border-[#3e4042] placeholder:text-[#8f949d]"
                 : "bg-white text-gray-700 border border-gray-200 placeholder:text-gray-400"
                 }`}
             />
+            <span className={`text-xs font-semibold whitespace-nowrap ${isDark ? "text-gray-300" : "text-gray-600"}`}>
+              Hours
+            </span>
           </div>
 
           {/* Minutes */}
-          <div className="flex flex-col gap-1">
-            <span className={`text-[10px] uppercase font-bold tracking-wider whitespace-nowrap ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-              Minutes
-            </span>
+          <div className="flex items-center gap-1.5 shrink-0">
             <input
               type="number"
               min="0"
@@ -149,34 +161,15 @@ const ProcessPeriodInput = ({
               value={minutes || ""}
               onChange={(e) => handleMinutesChange(e.target.value)}
               placeholder="0"
-              className={`w-full px-3 py-2 rounded-lg text-sm font-medium shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#FFC72C] ${isDark
+              className={`w-28 px-3 py-2 text-center rounded-lg text-sm font-medium shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#FFC72C] ${isDark
                 ? "bg-[#1f1f1f] text-[#e4e6eb] border border-[#3e4042] placeholder:text-[#8f949d]"
                 : "bg-white text-gray-700 border border-gray-200 placeholder:text-gray-400"
                 }`}
             />
+            <span className={`text-xs font-semibold whitespace-nowrap ${isDark ? "text-gray-300" : "text-gray-600"}`}>
+              Mins
+            </span>
           </div>
-        </div>
-
-        <div
-          className={`flex items-center gap-2 p-2 px-3 rounded-lg border text-xs font-semibold transition-all duration-300 w-full 2xl:w-auto min-h-[38px] py-1.5 min-w-0 ${currentFormatted
-              ? isDark
-                ? "bg-[#4a120e]/10 border-[#4a120e]/30 text-white"
-                : "bg-[#4a120e]/5 border-[#4a120e]/20 text-[#4a120e]"
-              : isDark
-                ? "bg-[#1f1f1f]/50 border-dashed border-[#3e4042] text-gray-500"
-                : "bg-gray-50/50 border-dashed border-gray-200 text-gray-400"
-            }`}
-        >
-          <ClockIcon className="w-4 h-4 shrink-0 text-[#FFC72C]" />
-          <span className="min-w-0 break-words flex-1">
-            {currentFormatted ? (
-              <>
-                Format Preview: <span className="font-bold">{currentFormatted}</span>
-              </>
-            ) : (
-              "Enter a processing period..."
-            )}
-          </span>
         </div>
       </div>
     </div>

@@ -33,6 +33,37 @@ class DocumentRequest extends Model
         'archived_by',
         'restored_on',
         'restored_by',
+        // FESPEC-0008 — Free Document/Certificate Request. Was previously
+        // absent here, which meant the column could only ever be set via
+        // its DB default ('self_service') or a forceFill() — DocumentRequest
+        // ::create() would silently drop it. See RequestChannelEnum and
+        // DocumentRequestService::createRequest()'s $channel parameter,
+        // which is what actually writes 'admin_filed_free' for a free
+        // request filed via FreeRequestService.
+        'channel',
+        // Deficiency Notice & Withdrawn Status — Phase 1. Written only by
+        // DocumentRequestService::withdraw() (see migration
+        // 2026_09_05_000000_add_withdrawn_status). withdrawal_reason is a
+        // WithdrawalReasonEnum value; withdrawal_detail is the required
+        // free text when withdrawal_reason = 'other'; superseded_by_request_id
+        // optionally points at the request that actually proceeds when
+        // this one is withdrawn as a mistake/duplicate.
+        'withdrawal_reason',
+        'withdrawal_detail',
+        'superseded_by_request_id',
+        // Data Retention & Disposal Policy — Section 3.4. Written only
+        // by DocumentRequestService::closeUnableToProcess() (see
+        // migration 2026_09_07_000000_add_closed_unable_to_process_status).
+        // closure_reason is a ClosureReasonEnum value; closure_detail is
+        // the required free text when closure_reason = 'other';
+        // closure_proof_reference is a required description of the
+        // proof (e.g. death certificate) the Registrar Admin verified
+        // before closing the case.
+        'closure_reason',
+        'closure_detail',
+        'closure_proof_reference',
+        'closed_by',
+        'closed_at',
     ];
 
     protected $casts = [
@@ -42,6 +73,7 @@ class DocumentRequest extends Model
         'is_archived'  => 'boolean',
         'archived_on'  => 'datetime',
         'restored_on'  => 'datetime',
+        'closed_at'    => 'datetime',
     ];
 
     /**
@@ -105,6 +137,21 @@ class DocumentRequest extends Model
         );
 
         return $code;
+    }
+
+    /**
+     * FESPEC-0008 — Free Document/Certificate Request. Requests filed by
+     * a Registrar Admin on the requestor's behalf via the Free Request
+     * page (RequestChannelEnum::AdminFiledFree), as opposed to the
+     * default self_service channel every request used before this
+     * feature existed. Centralizes the raw channel string comparison so
+     * FreeRequestEligibilityService, FreeRequestService, and any future
+     * reporting query (Phase 8 — Observability) all agree on what
+     * counts as "a free request" without repeating the literal string.
+     */
+    public function scopeAdminFiledFree($query)
+    {
+        return $query->where('channel', \App\Enums\RequestChannelEnum::AdminFiledFree->value);
     }
 
     public function user()
@@ -177,6 +224,17 @@ class DocumentRequest extends Model
         return $this->hasMany(Notification::class, 'request_id');
     }
 
+    /**
+     * FESPEC-0008 — Free Document/Certificate Request. Present only for
+     * requests filed via the free channel that included a COG/TOR line
+     * item — see GraduateVerification's docblock. Null for every
+     * self-service request and for a free LOA-only request.
+     */
+    public function graduateVerification()
+    {
+        return $this->hasOne(GraduateVerification::class, 'document_request_id', 'request_id');
+    }
+
     // Named archivedByUser() (not archivedBy()) so it serializes to
     // "archived_by_user" — "archived_by" is already the raw FK column,
     // and Eloquent's relationsToArray() overwrites same-named attributes
@@ -192,5 +250,47 @@ class DocumentRequest extends Model
     public function restoredByUser()
     {
         return $this->belongsTo(SystemUser::class, 'restored_by', 'user_id');
+    }
+
+    // Deficiency Notice & Withdrawn Status — Phase 1. Named
+    // supersedingRequest() (not supersededByRequest()) for the same
+    // "*ing = the other end of the relation, raw column stays the FK
+    // name" reason archivedByUser()/restoredByUser() are named the way
+    // they are — "superseded_by_request_id" is the raw FK column, this
+    // is the relation that column points TO. Self-referencing on this
+    // same table; ExcludeArchivedScope still applies to the related
+    // model, so an archived superseding request resolves to null here
+    // same as any other query on this model — acceptable, since the
+    // withdrawal_reason/withdrawal_detail text on THIS row already
+    // explains the withdrawal on its own without needing that relation
+    // to resolve.
+    public function supersedingRequest()
+    {
+        return $this->belongsTo(self::class, 'superseded_by_request_id', 'request_id');
+    }
+
+    // Deficiency Notice & Withdrawn Status — Phase 3.
+    public function remarks()
+    {
+        return $this->hasMany(RequestRemark::class, 'request_id', 'request_id');
+    }
+
+    /**
+     * The single currently-open Deficiency Notice for this request, if
+     * any — almost always null. Scoped hasOne (rather than resolving
+     * "the open one" out of remarks() in PHP) so DocumentRequestController
+     * ::show() can eager-load it directly (see that controller's
+     * RELATIONS constant) at no extra round trip, per this feature's
+     * Phase 3 exit criteria. Safe to eager-load unconditionally: at most
+     * one row can ever match (enforced by DeficiencyNoticeService::
+     * issue()'s row-locked guard — see the create_request_remarks_table
+     * migration's docblock for why that's a service-level check rather
+     * than a DB constraint), so this is a cheap single-row lookup even
+     * though it's phrased as a hasOne over a hasMany relation.
+     */
+    public function openDeficiencyNotice()
+    {
+        return $this->hasOne(RequestRemark::class, 'request_id', 'request_id')
+            ->where('status', RequestRemark::STATUS_OPEN);
     }
 }

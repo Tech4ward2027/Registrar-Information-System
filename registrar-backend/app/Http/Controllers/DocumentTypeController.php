@@ -9,6 +9,7 @@ use App\Models\AuditLog;
 use App\Models\DocumentType;
 use App\Models\SystemUser;
 use App\Services\AuditLogger;
+use App\Services\CashierPatternSanitizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -58,7 +59,9 @@ class DocumentTypeController extends Controller
 
     public function store(StoreDocumentTypeRequest $request)
     {
-        $docType = DocumentType::create($request->validated());
+        $validated = $this->withSanitizedPatterns($request->validated());
+
+        $docType = DocumentType::create($validated);
 
         /** @var SystemUser $actor */
         $actor = Auth::user();
@@ -81,7 +84,7 @@ class DocumentTypeController extends Controller
             return response()->json(['message' => 'Document type not found'], 404);
         }
 
-        $validated = $request->validated();
+        $validated = $this->withSanitizedPatterns($request->validated());
         $docType->update($validated);
 
         /** @var SystemUser $actor */
@@ -214,5 +217,30 @@ class DocumentTypeController extends Controller
         ]);
 
         return response()->json($docType->fresh(), 200);
+    }
+
+    /**
+     * If the validated payload included cashier_document_patterns, replace
+     * it with the sanitized version (trimmed, blanks dropped, de-duplicated
+     * by normalised form — see CashierPatternSanitizer) before it's ever
+     * written to the DB.
+     *
+     * By the time we get here, App\Rules\CashierPatternsAreConflictFree has
+     * already rejected blanks, in-submission duplicates, and cross-type
+     * conflicts as validation errors — this is a final, idempotent cleanup
+     * pass (e.g. trimming stray whitespace), not the primary line of
+     * defence. Left absent entirely from $validated when the client didn't
+     * send the field at all, so a partial update() never accidentally
+     * clears existing patterns.
+     */
+    private function withSanitizedPatterns(array $validated): array
+    {
+        if (array_key_exists('cashier_document_patterns', $validated)) {
+            $validated['cashier_document_patterns'] = CashierPatternSanitizer::sanitize(
+                $validated['cashier_document_patterns'] ?? []
+            );
+        }
+
+        return $validated;
     }
 }

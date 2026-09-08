@@ -12,9 +12,11 @@ use App\Models\CashierOrOverride;
 use App\Contracts\DocumentRequestServiceInterface;
 use App\Http\Requests\DocumentRequest\BulkRequestIdsRequest;
 use App\Http\Requests\DocumentRequest\ClaimDocumentRequestRequest;
+use App\Http\Requests\DocumentRequest\CloseRequestUnableToProcessRequest;
 use App\Http\Requests\DocumentRequest\StoreDocumentRequestRequest;
 use App\Http\Requests\DocumentRequest\UpdateDocumentRequestRequest;
 use App\Http\Requests\DocumentRequest\VerifyOfficialReceiptRequest;
+use App\Http\Requests\DocumentRequest\WithdrawDocumentRequestRequest;
 use App\Http\Requests\RequestItem\UpdateRequestCertificateStatusRequest;
 use App\Http\Requests\RequestItem\UpdateRequestDocumentStatusRequest;
 use App\Services\DocumentRequestService;
@@ -60,11 +62,25 @@ class DocumentRequestController extends Controller
         'certificates.certificationType',
         'certificates.status',
         'archivedByUser',
+        // Deficiency Notice & Withdrawn Status — Phase 1. Nearly always
+        // null (only set when withdrawal_reason implies a duplicate/
+        // corrected resubmission) — cheap to always eager-load since
+        // it's a single nullable belongsTo, same reasoning as
+        // archivedByUser above.
+        'supersedingRequest',
         // Phase 3 — see DocumentRequest::releaseGroups(). Nearly always
         // empty; only populated for requests whose items span more than
         // one fulfillment_track. Loading fulfillmentTrack alongside it
         // so the frontend can label each ticket without a second call.
         'releaseGroups.fulfillmentTrack',
+        // Deficiency Notice & Withdrawn Status — Phase 3. Almost always
+        // null — cheap single-row nullable hasOne lookup, same
+        // "always eager-load, it's cheap" reasoning as supersedingRequest
+        // above. Lets the frontend render the hold banner/staleness
+        // badge (Phase 4) straight from show()'s payload, at no extra
+        // round trip — see DocumentRequest::openDeficiencyNotice()'s
+        // docblock and this feature's Phase 3 exit criteria.
+        'openDeficiencyNotice.issuedByUser',
     ];
 
     public function __construct(
@@ -638,6 +654,103 @@ class DocumentRequestController extends Controller
         $validated = $request->validated();
 
         $documentRequest = $this->requestService->updateRequest($documentRequest, $validated);
+
+        return response()->json($documentRequest->load(self::RELATIONS), 200);
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /document-requests/{documentRequest}/withdraw
+    //
+    // Deficiency Notice & Withdrawn Status — Phase 1. Deliberately a
+    // separate route/method from update() (same reasoning as archive()/
+    // restore() being separate from update()) — see
+    // WithdrawDocumentRequestRequest and DocumentRequestService::withdraw().
+    //
+    // Always logged to audit_logs, unconditionally — unlike update(),
+    // which currently only logs a status change via the bulk-ready/
+    // bulk-done endpoints (see AuditLog::ACTION_REQUEST_WITHDRAWN's
+    // docblock). Withdrawal closes out a request permanently and is
+    // financially/audit-sensitive (wrong-item-paid reconciliation,
+    // duplicate-submission tracking), so it should not inherit that gap.
+    // -------------------------------------------------------------------------
+    public function withdraw(WithdrawDocumentRequestRequest $request, DocumentRequest $documentRequest)
+    {
+        $validated = $request->validated();
+
+        /** @var SystemUser $actor */
+        $actor = Auth::user();
+
+        $documentRequest = $this->requestService->withdraw($documentRequest, $validated);
+
+        // Deficiency Notice & Withdrawn Status — Phase 5 ("Withdraw while
+        // a Deficiency Notice is open"). DocumentRequestService::
+        // withdraw() auto-voids an open notice (if any) as part of this
+        // same staff action — see that method's docblock for why block-
+        // vs-auto-void was decided in favor of auto-void. Read via the
+        // transient (never-persisted) attribute it sets on the returned
+        // model rather than issuing a second query for it.
+        $autoVoidedRemarkId = $documentRequest->getAttribute('auto_voided_deficiency_notice_id');
+
+        $this->auditLogger->log($request, $actor, AuditLog::ACTION_REQUEST_WITHDRAWN, [
+            'request_id'                       => $documentRequest->request_id,
+            'withdrawal_reason'                => $documentRequest->withdrawal_reason,
+            'superseded_by_request_id'         => $documentRequest->superseded_by_request_id,
+            'auto_voided_deficiency_notice_id' => $autoVoidedRemarkId,
+        ]);
+
+        // A second, distinct audit entry for the notice itself — so
+        // anyone auditing request_remarks activity specifically (e.g.
+        // "show me every time notice #N changed state") sees this
+        // resolution too, exactly as they would had staff called
+        // DeficiencyNoticeController::void() directly instead of it
+        // happening automatically. Keeps both audit trails (the
+        // request's and the notice's) independently complete.
+        if ($autoVoidedRemarkId) {
+            $this->auditLogger->log($request, $actor, AuditLog::ACTION_DEFICIENCY_NOTICE_VOIDED, [
+                'request_id'  => $documentRequest->request_id,
+                'remark_id'   => $autoVoidedRemarkId,
+                'auto_voided' => true,
+            ]);
+        }
+
+        return response()->json($documentRequest->load(self::RELATIONS), 200);
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /document-requests/{documentRequest}/close-unable-to-process
+    //
+    // Data Retention & Disposal Policy — Section 3.4. Closes a request
+    // whose open Deficiency Notice can never be complied with (deceased
+    // or permanently incapacitated requestor). Mirrors withdraw()'s
+    // controller shape exactly — see that method's comments for the
+    // reasoning behind the transient-attribute read and the second,
+    // distinct audit entry for the auto-voided notice.
+    // -------------------------------------------------------------------------
+    public function closeUnableToProcess(CloseRequestUnableToProcessRequest $request, DocumentRequest $documentRequest)
+    {
+        $validated = $request->validated();
+
+        /** @var SystemUser $actor */
+        $actor = Auth::user();
+
+        $documentRequest = $this->requestService->closeUnableToProcess($documentRequest, $validated);
+
+        $voidedRemarkId = $documentRequest->getAttribute('closed_deficiency_notice_id');
+
+        $this->auditLogger->log($request, $actor, AuditLog::ACTION_REQUEST_CLOSED_UNABLE_TO_PROCESS, [
+            'request_id'               => $documentRequest->request_id,
+            'closure_reason'           => $documentRequest->closure_reason,
+            'closure_proof_reference'  => $documentRequest->closure_proof_reference,
+            'voided_deficiency_notice_id' => $voidedRemarkId,
+        ]);
+
+        if ($voidedRemarkId) {
+            $this->auditLogger->log($request, $actor, AuditLog::ACTION_DEFICIENCY_NOTICE_VOIDED, [
+                'request_id'  => $documentRequest->request_id,
+                'remark_id'   => $voidedRemarkId,
+                'auto_voided' => true,
+            ]);
+        }
 
         return response()->json($documentRequest->load(self::RELATIONS), 200);
     }

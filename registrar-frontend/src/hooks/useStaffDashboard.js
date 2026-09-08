@@ -30,6 +30,10 @@ const DASHBOARD_REFETCH_TRIGGERS = new Set([
   'ready_to_claim',
   'request_completed',
   'request_forfeited',
+  'request_withdrawn',
+  'deficiency_notice_issued',
+  'deficiency_notice_cleared',
+  'deficiency_notice_voided',
 ]);
 
 export const useStaffDashboard = (viewMode) => {

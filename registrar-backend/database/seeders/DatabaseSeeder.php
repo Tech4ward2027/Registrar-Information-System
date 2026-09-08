@@ -138,6 +138,23 @@ class DatabaseSeeder extends Seeder
     // with no later step to fix it. Seeding the target shape directly
     // here is what keeps a fresh install and an already-migrated
     // production DB converging on the same final state.
+    //
+    // FESPEC-0008 — Free Document/Certificate Request: "Registrar
+    // Staff" is granted 'View' and 'File' on 'free_requests' below,
+    // deliberately WITHOUT 'Verify' or 'Override'. Those two gate the
+    // in-person graduate-verification and eligibility-override actions
+    // (see Policy::MODULE_ACTIONS's docblock) and were confirmed with
+    // Registrar leadership to be restricted to a narrower group than
+    // "everyone who can use the Free Request page" — today exactly one
+    // person. Granting them here to every Registrar Staff account by
+    // default would defeat that restriction the moment this seeder
+    // runs. Assign Verify/Override to the specific staff account(s)
+    // that need them via Policy Management after seeding, not here.
+    // Also note: even with these two actions granted, the free-request
+    // routes stay 404 in every environment until that environment's
+    // FEATURE_FREE_REQUEST_PAGE env var is explicitly set to true (see
+    // config/features.php) — this seeder only prepares the policy
+    // side, not the environment-wide switch.
     // ─────────────────────────────────────────────
     private function seedPolicies(): void
     {
@@ -146,11 +163,12 @@ class DatabaseSeeder extends Seeder
             [
                 'name'        => 'Registrar Staff',
                 'permissions' => json_encode([
-                    'inbox'      => ['Access'],
-                    'logbook'    => ['View', 'Export'],
-                    'profile'    => ['Access'],
-                    'analytics'  => ['Access'],
-                    'dashboard'  => ['View', 'Process', 'Complete'],
+                    'inbox'          => ['Access'],
+                    'logbook'        => ['View', 'Export'],
+                    'profile'        => ['Access'],
+                    'analytics'      => ['Access'],
+                    'dashboard'      => ['View', 'Process', 'Complete'],
+                    'free_requests'  => ['View', 'File'],
                 ]),
                 'is_system'   => 1,
                 'created_at'  => now(),

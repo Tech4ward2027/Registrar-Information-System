@@ -73,6 +73,31 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // FESPEC-0008 — Phase 8 Observability.
+        //
+        // Structured, ops-facing log for every free-request action
+        // (search, eligibility check, verify, file, override, reject),
+        // written by App\Services\FreeRequestLogger. Deliberately its
+        // own file/channel rather than sharing 'daily' with everything
+        // else in the app, specifically so this flow can be tailed,
+        // grepped, or shipped to a log aggregator independently of the
+        // paid/self-service request flow's logs — the Phase 8 plan's
+        // "filterable separately from paid requests" requirement.
+        //
+        // This is NOT a replacement for the audit_logs table (see
+        // AuditLogger / AuditLog model): audit_logs is the tamper-
+        // evident, hash-chained, queryable-in-app compliance record.
+        // This channel is a plain, ops-facing log file for the kind of
+        // "what is this flow doing right now" visibility a database
+        // table is the wrong tool for.
+        'free_requests' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/free-requests.log'),
+            'level' => env('LOG_LEVEL', 'info'),
+            'days' => env('LOG_FREE_REQUESTS_DAYS', 90),
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

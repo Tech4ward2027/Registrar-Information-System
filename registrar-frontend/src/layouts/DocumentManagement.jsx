@@ -315,9 +315,8 @@ const DocumentManagement = ({
         <form
           onSubmit={handleSave}
           noValidate
-          className={`rounded-xl p-6 sm:p-10 py-4 w-full flex flex-col gap-5 shadow h-fit ${
-            isDark ? "bg-[#242526] border border-[#3e4042]" : "bg-white border border-gray-200"
-          }`}
+          className={`rounded-xl p-6 sm:p-10 py-4 w-full flex flex-col gap-5 shadow h-fit ${isDark ? "bg-[#242526] border border-[#3e4042]" : "bg-white border border-gray-200"
+            }`}
         >
           <h2 className={`font-bold text-xl mb-2 ${isDark ? "text-white" : "text-pup-dark-maroon"}`}>
             {isAdding
@@ -325,8 +324,8 @@ const DocumentManagement = ({
                 ? "Add Document"
                 : "Add Certificate"
               : selectedType === "document"
-              ? "Edit Document"
-              : "Edit Certificate"}
+                ? "Edit Document"
+                : "Edit Certificate"}
           </h2>
 
           <InputGroup
@@ -338,6 +337,169 @@ const DocumentManagement = ({
             required
             labelColor={isDark ? "text-[#b0b3b8]" : "text-gray-600"}
           />
+
+          {/* Logbook Category & Fulfillment Track — key classification fields placed high in the form for easy visibility */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+            {/* Logbook Category */}
+            <div className="flex flex-col gap-1.5 w-full">
+              <label className={`text-sm font-medium ${isDark ? "text-[#e4e6eb]" : "text-gray-700"}`}>
+                Logbook category
+              </label>
+              {!addingCategory ? (
+                <div className="flex items-center gap-2 w-full">
+                  <div className="flex-1">
+                    <DropdownGroup
+                      name="logbook_category_id"
+                      value={
+                        logbookCategories.find((c) => String(c.logbook_category_id) === String(form.logbook_category_id))?.name ||
+                        "None"
+                      }
+                      onChange={(e) => {
+                        const selectedName = e.target.value;
+                        const matched = logbookCategories.find((c) => c.name === selectedName);
+                        setForm((prev) => ({
+                          ...prev,
+                          logbook_category_id: matched ? matched.logbook_category_id : "",
+                        }));
+                      }}
+                      options={[
+                        "None",
+                        ...logbookCategories.map((c) => c.name),
+                      ]}
+                      labelColor={isDark ? "text-[#b0b3b8]" : "text-gray-600"}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAddingCategory(true)}
+                    className={`px-4 py-3 rounded-lg text-sm font-medium border whitespace-nowrap transition-colors cursor-pointer shrink-0 ${isDark
+                        ? "bg-[#1f1f1f] border-[#3e4042] text-[#e4e6eb] hover:bg-[#2a2a2f]"
+                        : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 shadow-xs"
+                      }`}
+                  >
+                    + New
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 w-full">
+                  <div className="flex gap-2 w-full">
+                    <input
+                      type="text"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      placeholder="e.g. Certified True Copy of Records"
+                      className={`flex-1 px-4 py-2.5 rounded-lg text-sm border transition-colors ${isDark
+                          ? "bg-[#1f1f1f] border-[#3e4042] text-[#e4e6eb] placeholder-[#6b6b6b]"
+                          : "bg-white border-gray-200 text-gray-700 placeholder-gray-400"
+                        }`}
+                    />
+                    <button
+                      type="button"
+                      disabled={categorySaving}
+                      onClick={handleCreateCategory}
+                      className={`px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 ${isDark ? "bg-yellow-400 text-gray-900" : "bg-pup-dark-maroon text-white"
+                        }`}
+                    >
+                      {categorySaving ? "Saving..." : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddingCategory(false);
+                        setNewCategoryName("");
+                        setCategoryError("");
+                      }}
+                      className={`px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${isDark ? "text-[#b0b3b8] hover:bg-[#2a2a2f]" : "text-gray-600 hover:bg-gray-100"
+                        }`}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {categoryError && <span className="text-xs text-red-400">{categoryError}</span>}
+                </div>
+              )}
+            </div>
+
+            {/* Fulfillment Track */}
+            <div className="flex flex-col gap-1.5 w-full">
+              <label className={`text-sm font-medium ${isDark ? "text-[#e4e6eb]" : "text-gray-700"}`}>
+                Fulfillment track
+              </label>
+              {!addingTrack ? (
+                <div className="flex items-center gap-2 w-full">
+                  <div className="flex-1">
+                    <DropdownGroup
+                      name="fulfillment_track_id"
+                      value={
+                        fulfillmentTracks.find((t) => String(t.fulfillment_track_id) === String(form.fulfillment_track_id))?.name ||
+                        "Standard"
+                      }
+                      onChange={(e) => {
+                        const selectedName = e.target.value;
+                        const matched = fulfillmentTracks.find((t) => t.name === selectedName);
+                        setForm((prev) => ({
+                          ...prev,
+                          fulfillment_track_id: matched ? matched.fulfillment_track_id : "",
+                        }));
+                      }}
+                      options={[
+                        "Standard",
+                        ...fulfillmentTracks.map((t) => t.name),
+                      ]}
+                      labelColor={isDark ? "text-[#b0b3b8]" : "text-gray-600"}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAddingTrack(true)}
+                    className={`px-4 py-3 rounded-lg text-sm font-medium border whitespace-nowrap transition-colors cursor-pointer shrink-0 ${isDark
+                        ? "bg-[#1f1f1f] border-[#3e4042] text-[#e4e6eb] hover:bg-[#2a2a2f]"
+                        : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 shadow-xs"
+                      }`}
+                  >
+                    + New
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 w-full">
+                  <div className="flex gap-2 w-full">
+                    <input
+                      type="text"
+                      value={newTrackName}
+                      onChange={(e) => setNewTrackName(e.target.value)}
+                      placeholder="e.g. Awaiting Submission"
+                      className={`flex-1 px-4 py-2.5 rounded-lg text-sm border transition-colors ${isDark
+                          ? "bg-[#1f1f1f] border-[#3e4042] text-[#e4e6eb] placeholder-[#6b6b6b]"
+                          : "bg-white border-gray-200 text-gray-700 placeholder-gray-400"
+                        }`}
+                    />
+                    <button
+                      type="button"
+                      disabled={trackSaving}
+                      onClick={handleCreateTrack}
+                      className={`px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 ${isDark ? "bg-yellow-400 text-gray-900" : "bg-pup-dark-maroon text-white"
+                        }`}
+                    >
+                      {trackSaving ? "Saving..." : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddingTrack(false);
+                        setNewTrackName("");
+                        setTrackError("");
+                      }}
+                      className={`px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${isDark ? "text-[#b0b3b8] hover:bg-[#2a2a2f]" : "text-gray-600 hover:bg-gray-100"
+                        }`}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {trackError && <span className="text-xs text-red-400">{trackError}</span>}
+                </div>
+              )}
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {selectedType === "document" ? (
@@ -379,241 +541,46 @@ const DocumentManagement = ({
             )}
           </div>
 
-          <ProcessPeriodInput
-            label="Process Period"
-            name="document_process_period"
-            value={form.document_process_period}
-            onChange={handleChange}
-            labelColor={isDark ? "text-[#b0b3b8]" : "text-gray-600"}
-            required
-          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+            <ProcessPeriodInput
+              label="Process Period"
+              name="document_process_period"
+              value={form.document_process_period}
+              onChange={handleChange}
+              labelColor={isDark ? "text-[#b0b3b8]" : "text-gray-600"}
+              required
+            />
 
-          <div className="flex flex-col gap-1.5 w-full">
-            <span className={`text-sm font-medium ${isDark ? "text-[#b0b3b8]" : "text-gray-600"}`}>
-              Exclusive For <span className="text-red-400">*</span>
-            </span>
-            <div className="flex gap-3">
-              {EXCLUSIVE_FOR.map((option) => {
-                const isActive = form.access_id === option;
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setForm((prev) => ({ ...prev, access_id: option }))}
-                    className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold border transition-all duration-200 cursor-pointer ${
-                      isActive
-                        ? isDark
-                          ? "bg-yellow-400 border-yellow-400 text-gray-900 shadow-md scale-[1.02]"
-                          : "bg-pup-dark-maroon border-pup-dark-maroon text-white shadow-sm scale-[1.02]"
-                        : isDark
-                        ? "bg-[#1f1f1f] border-[#3e4042] text-[#e4e6eb] hover:bg-[#2a2a2f] hover:text-white"
-                        : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                    }`}
-                  >
-                    {option}
-                  </button>
-                );
-              })}
+            <div className="flex flex-col gap-3 w-full">
+              <span className={`text-sm font-medium ${isDark ? "text-[#b0b3b8]" : "text-gray-600"}`}>
+                Exclusive For <span className="text-red-400">*</span>
+              </span>
+              <div className="flex gap-3">
+                {EXCLUSIVE_FOR.map((option) => {
+                  const isActive = form.access_id === option;
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, access_id: option }))}
+                      className={`flex-1 px-4 py-2 rounded-lg text-sm font-semibold border transition-all duration-200 cursor-pointer flex items-center justify-center ${isActive
+                          ? isDark
+                            ? "bg-yellow-400 border-yellow-400 text-gray-900 shadow-md scale-[1.02]"
+                            : "bg-pup-dark-maroon border-pup-dark-maroon text-white shadow-sm scale-[1.02]"
+                          : isDark
+                            ? "bg-[#1f1f1f] border-[#3e4042] text-[#e4e6eb] hover:bg-[#2a2a2f] hover:text-white"
+                            : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                        }`}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          {/* Logbook Category — nullable FK. Most document/certificate
-              types don't collapse with anything else, so "None" (log
-              under this row's own name) is the common, valid default —
-              see the logbook_category migration docblock. Only types
-              that genuinely share a logbook line with others (e.g. every
-              "Certified True Copy of X" variant) need one assigned. */}
-          {/* 2-Column Grid Row for Logbook Category & Fulfillment Track */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
-            {/* Logbook Category */}
-            <div className="flex flex-col gap-1.5 w-full">
-              <label className={`text-sm font-medium ${isDark ? "text-[#e4e6eb]" : "text-gray-700"}`}>
-                Logbook category
-              </label>
-              {!addingCategory ? (
-                <div className="flex flex-col gap-1.5 w-full">
-                  <div className="flex items-center gap-2 w-full">
-                    <div className="flex-1">
-                      <DropdownGroup
-                        name="logbook_category_id"
-                        value={
-                          logbookCategories.find((c) => String(c.logbook_category_id) === String(form.logbook_category_id))?.name ||
-                          "None"
-                        }
-                        onChange={(e) => {
-                          const selectedName = e.target.value;
-                          const matched = logbookCategories.find((c) => c.name === selectedName);
-                          setForm((prev) => ({
-                            ...prev,
-                            logbook_category_id: matched ? matched.logbook_category_id : "",
-                          }));
-                        }}
-                        options={[
-                          "None",
-                          ...logbookCategories.map((c) => c.name),
-                        ]}
-                        labelColor={isDark ? "text-[#b0b3b8]" : "text-gray-600"}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setAddingCategory(true)}
-                      className={`px-4 py-3 rounded-lg text-sm font-medium border whitespace-nowrap transition-colors cursor-pointer shrink-0 ${
-                        isDark
-                          ? "bg-[#1f1f1f] border-[#3e4042] text-[#e4e6eb] hover:bg-[#2a2a2f]"
-                          : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 shadow-xs"
-                      }`}
-                    >
-                      + New
-                    </button>
-                  </div>
-                  <p className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                    {form.logbook_category_id
-                      ? `Logged under ${logbookCategories.find((c) => String(c.logbook_category_id) === String(form.logbook_category_id))?.name || 'this category'}.`
-                      : "Logged under this item's own name."}
-                  </p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2 w-full">
-                  <div className="flex gap-2 w-full">
-                    <input
-                      type="text"
-                      value={newCategoryName}
-                      onChange={(e) => setNewCategoryName(e.target.value)}
-                      placeholder="e.g. Certified True Copy of Records"
-                      className={`flex-1 px-4 py-2.5 rounded-lg text-sm border transition-colors ${
-                        isDark
-                          ? "bg-[#1f1f1f] border-[#3e4042] text-[#e4e6eb] placeholder-[#6b6b6b]"
-                          : "bg-white border-gray-200 text-gray-700 placeholder-gray-400"
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      disabled={categorySaving}
-                      onClick={handleCreateCategory}
-                      className={`px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 ${
-                        isDark ? "bg-yellow-400 text-gray-900" : "bg-pup-dark-maroon text-white"
-                      }`}
-                    >
-                      {categorySaving ? "Saving..." : "Save"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAddingCategory(false);
-                        setNewCategoryName("");
-                        setCategoryError("");
-                      }}
-                      className={`px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-                        isDark ? "text-[#b0b3b8] hover:bg-[#2a2a2f]" : "text-gray-600 hover:bg-gray-100"
-                      }`}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                  {categoryError && <span className="text-xs text-red-400">{categoryError}</span>}
-                </div>
-              )}
-            </div>
 
-          {/* Fulfillment Track — nullable FK, same shape and defaulting
-              as Logbook Category above. NULL means "standard track": the
-              overwhelming majority of types should stay this way. Only
-              assign a track when this type's items genuinely need to be
-              claimable separately from a request's other items — see
-              RequestReleaseGroupService::assignReleaseGroups(), which
-              only splits a request into more than one claim ticket when
-              its items span more than one distinct track. */}
-            <div className="flex flex-col gap-1.5 w-full">
-              <label className={`text-sm font-medium ${isDark ? "text-[#e4e6eb]" : "text-gray-700"}`}>
-                Fulfillment track
-              </label>
-              {!addingTrack ? (
-                <div className="flex flex-col gap-1.5 w-full">
-                  <div className="flex items-center gap-2 w-full">
-                    <div className="flex-1">
-                      <DropdownGroup
-                        name="fulfillment_track_id"
-                        value={
-                          fulfillmentTracks.find((t) => String(t.fulfillment_track_id) === String(form.fulfillment_track_id))?.name ||
-                          "Standard"
-                        }
-                        onChange={(e) => {
-                          const selectedName = e.target.value;
-                          const matched = fulfillmentTracks.find((t) => t.name === selectedName);
-                          setForm((prev) => ({
-                            ...prev,
-                            fulfillment_track_id: matched ? matched.fulfillment_track_id : "",
-                          }));
-                        }}
-                        options={[
-                          "Standard",
-                          ...fulfillmentTracks.map((t) => t.name),
-                        ]}
-                        labelColor={isDark ? "text-[#b0b3b8]" : "text-gray-600"}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setAddingTrack(true)}
-                      className={`px-4 py-3 rounded-lg text-sm font-medium border whitespace-nowrap transition-colors cursor-pointer shrink-0 ${
-                        isDark
-                          ? "bg-[#1f1f1f] border-[#3e4042] text-[#e4e6eb] hover:bg-[#2a2a2f]"
-                          : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 shadow-xs"
-                      }`}
-                    >
-                      + New
-                    </button>
-                  </div>
-                  <p className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                    {form.fulfillment_track_id
-                      ? `Claimed under ${fulfillmentTracks.find((t) => String(t.fulfillment_track_id) === String(form.fulfillment_track_id))?.name || 'this track'}.`
-                      : "Claimed together with everything else."}
-                  </p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2 w-full">
-                  <div className="flex gap-2 w-full">
-                    <input
-                      type="text"
-                      value={newTrackName}
-                      onChange={(e) => setNewTrackName(e.target.value)}
-                      placeholder="e.g. Awaiting Submission"
-                      className={`flex-1 px-4 py-2.5 rounded-lg text-sm border transition-colors ${
-                        isDark
-                          ? "bg-[#1f1f1f] border-[#3e4042] text-[#e4e6eb] placeholder-[#6b6b6b]"
-                          : "bg-white border-gray-200 text-gray-700 placeholder-gray-400"
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      disabled={trackSaving}
-                      onClick={handleCreateTrack}
-                      className={`px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 ${
-                        isDark ? "bg-yellow-400 text-gray-900" : "bg-pup-dark-maroon text-white"
-                      }`}
-                    >
-                      {trackSaving ? "Saving..." : "Save"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAddingTrack(false);
-                        setNewTrackName("");
-                        setTrackError("");
-                      }}
-                      className={`px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-                        isDark ? "text-[#b0b3b8] hover:bg-[#2a2a2f]" : "text-gray-600 hover:bg-gray-100"
-                      }`}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                  {trackError && <span className="text-xs text-red-400">{trackError}</span>}
-                </div>
-              )}
-            </div>
-          </div>
 
           {/* Divider line */}
           <div className={`h-px w-full my-1 ${isDark ? "bg-[#3e4042]" : "bg-gray-200"}`} />
@@ -645,20 +612,18 @@ const DocumentManagement = ({
               <button
                 type="button"
                 onClick={handleCancel}
-                className={`px-5 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                  isDark ? "text-[#b0b3b8] hover:bg-[#2a2a2f]" : "text-gray-600 hover:bg-gray-100"
-                }`}
+                className={`px-5 py-2 rounded-lg text-sm font-semibold transition-colors ${isDark ? "text-[#b0b3b8] hover:bg-[#2a2a2f]" : "text-gray-600 hover:bg-gray-100"
+                  }`}
               >
                 Cancel
               </button>
             )}
             <button
               type="submit"
-              className={`px-6 py-2.5 rounded-full text-sm font-bold transition-all shadow cursor-pointer ${
-                isDark
+              className={`px-6 py-2.5 rounded-full text-sm font-bold transition-all shadow cursor-pointer ${isDark
                   ? "bg-[#2a2a2f] text-[#e4e6eb] hover:bg-[#353539] border border-[#3e4042]"
                   : "bg-pup-dark-maroon text-white hover:bg-[#3a0303]"
-              }`}
+                }`}
             >
               {isAdding ? (selectedType === "document" ? "Add Document" : "Add Certificate") : "Save Changes"}
             </button>

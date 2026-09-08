@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\CertificationType;
 
+use App\Rules\CashierPatternsAreConflictFree;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreCertificationTypeRequest extends FormRequest
@@ -28,6 +29,14 @@ class StoreCertificationTypeRequest extends FormRequest
             // regardless of what the client sent).
             'fulfillment_track_id'        => 'nullable|integer|exists:fulfillment_track,fulfillment_track_id',
             'requires_source_submission'  => 'nullable|boolean',
+
+            // See StoreDocumentTypeRequest (same field, same rule, mirrored
+            // on the certificate side of the catalog).
+            'cashier_document_patterns'   => [
+                'sometimes', 'nullable', 'array', 'max:50',
+                new CashierPatternsAreConflictFree('certificate'),
+            ],
+            'cashier_document_patterns.*' => ['string', 'max:255'],
         ];
     }
 }

@@ -20,13 +20,16 @@ const ACTION_LABELS = {
   Process: "Process",
   Complete: "Complete",
   Export: "Export",
+  File: "File",
+  Verify: "Verify",
+  Override: "Override",
 };
 
 // Segmented button group for a single granular-action module
-// (Dashboard or Admin Logbook).
+// (Dashboard, Admin Logbook, or Free Requests).
 const ActionSegmentGroup = ({ actions, selectedActions, onToggle, isDark }) => (
   <div
-    className={`flex rounded-xl overflow-hidden border ${
+    className={`flex flex-wrap rounded-xl overflow-hidden border ${
       isDark ? "border-[#3e4042] bg-[#1c1c1e]" : "border-gray-200 bg-gray-100"
     }`}
   >
@@ -39,7 +42,7 @@ const ActionSegmentGroup = ({ actions, selectedActions, onToggle, isDark }) => (
           key={action}
           type="button"
           onClick={() => onToggle(action)}
-          className={`flex-1 px-3 py-2.5 text-sm font-semibold transition-all duration-200 cursor-pointer
+          className={`flex-1 min-w-18.75 px-3 py-2.5 text-sm font-semibold transition-all duration-200 cursor-pointer
             ${!isFirst ? (isDark ? "border-l border-[#3e4042]" : "border-l border-gray-200") : ""}
             ${isFirst ? "rounded-l-xl" : ""}
             ${isLast ? "rounded-r-xl" : ""}
@@ -70,8 +73,10 @@ const CreatePolicyModal = ({
   setSelectedModuleValues,
   dashboardActions,
   logbookActions,
+  freeRequestsActions,
   toggleDashboardAction,
   toggleLogbookAction,
+  toggleFreeRequestsAction,
   onClose,
   onSubmit,
   singleTokenModuleOptions,
@@ -89,7 +94,7 @@ const CreatePolicyModal = ({
         onClick={onClose}
       />
       <div
-        className={`relative rounded-2xl shadow-2xl w-full max-w-2xl mx-auto flex flex-col overflow-visible ${
+        className={`relative rounded-2xl shadow-2xl w-full max-w-2xl mx-auto flex flex-col max-h-[90vh] overflow-hidden ${
           isDark ? "bg-[#242526] border border-[#3e4042]" : "bg-white"
         }`}
       >
@@ -128,7 +133,7 @@ const CreatePolicyModal = ({
         <form
           onSubmit={onSubmit}
           noValidate
-          className="flex flex-col overflow-visible"
+          className="flex flex-col flex-1 overflow-y-auto"
         >
           <div className="p-6 space-y-5 overflow-visible">
             {/* Policy Name */}
@@ -245,6 +250,38 @@ const CreatePolicyModal = ({
                 actions={MODULE_ACTIONS.logbook}
                 selectedActions={logbookActions}
                 onToggle={toggleLogbookAction}
+                isDark={isDark}
+              />
+            </div>
+
+            {/* Free Requests — segmented button permissions */}
+            <div
+              className={`p-4 rounded-xl border flex flex-col ${
+                isDark
+                  ? "bg-[#1f1f1f] border-[#3e4042]"
+                  : "bg-gray-50 border-gray-200"
+              }`}
+            >
+              <div className="flex justify-between items-center mb-1">
+                <span
+                  className={`text-sm font-bold ${
+                    isDark ? "text-white" : "text-gray-900"
+                  }`}
+                >
+                  Free Requests
+                </span>
+              </div>
+              <p
+                className={`text-xs mb-3 ${
+                  isDark ? "text-[#9a9a9a]" : "text-gray-500"
+                }`}
+              >
+                Configure capabilities for filing free requests, performing graduate verification (COG/TOR), and overriding eligibility rules.
+              </p>
+              <ActionSegmentGroup
+                actions={MODULE_ACTIONS.free_requests || ["View", "File", "Verify", "Override"]}
+                selectedActions={freeRequestsActions || []}
+                onToggle={toggleFreeRequestsAction}
                 isDark={isDark}
               />
             </div>

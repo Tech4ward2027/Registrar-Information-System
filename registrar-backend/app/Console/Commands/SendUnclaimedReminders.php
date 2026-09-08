@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\LogsJobRun;
 use App\Enums\RequestStatusEnum;
 use App\Models\DocumentRequest;
 use App\Models\SystemUser;
@@ -36,10 +37,31 @@ use Illuminate\Support\Facades\Log;
 
 class SendUnclaimedReminders extends Command
 {
+    use LogsJobRun;
+
     protected $signature   = 'notifications:send-unclaimed-reminders';
     protected $description = 'Remind students whose ReadyToClaim request has been unclaimed for 7 days';
 
+    /**
+     * Job-Health Monitoring: see LogsJobRun's docblock. Logic below is
+     * unchanged; only the outer try/catch and the two logging calls
+     * around it are new.
+     */
     public function handle(NotificationServiceInterface $notificationService): int
+    {
+        $this->startJobRun($this->getName());
+
+        try {
+            $sent = $this->sendReminders($notificationService);
+            $this->finishJobRun(self::SUCCESS, $sent);
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            $this->failJobRun($e);
+            throw $e;
+        }
+    }
+
+    private function sendReminders(NotificationServiceInterface $notificationService): int
     {
         $windowEnd   = Carbon::now()->subDays(7);
         $windowStart = Carbon::now()->subDays(8);
@@ -81,6 +103,6 @@ class SendUnclaimedReminders extends Command
         }
 
         $this->info("[SendUnclaimedReminders] {$sent} reminder(s) sent.");
-        return self::SUCCESS;
+        return $sent;
     }
 }

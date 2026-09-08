@@ -32,7 +32,7 @@ class Policy extends Model
      * touching this array (plus the frontend's mirrored MODULE_KEYS in
      * src/utils/policy.js).
      */
-    public const MODULE_KEYS = ['dashboard', 'inbox', 'analytics', 'logbook', 'profile', 'access_requests', 'business_calendar', 'cashier_overrides'];
+    public const MODULE_KEYS = ['dashboard', 'inbox', 'analytics', 'logbook', 'profile', 'access_requests', 'business_calendar', 'cashier_overrides', 'free_requests'];
 
     /**
      * Per-module action vocabulary — the single source of truth for
@@ -62,6 +62,34 @@ class Policy extends Model
     public const MODULE_ACTIONS = [
         'dashboard' => ['View', 'Process', 'Complete'],
         'logbook'   => ['View', 'Export'],
+        // FESPEC-0008 — Free Document/Certificate Request.
+        //   View     — see the Free Request page and its account-search /
+        //              eligibility results (read-only).
+        //   File     — search an account, select a document/certificate,
+        //              and confirm a free request (the ordinary staff
+        //              action every Free Request page user needs).
+        //   Verify   — perform the in-person graduate verification step
+        //              for Certificate of Graduation / TOR requests (2x2
+        //              toga picture + credentials + records check, per
+        //              the First Copy Free Issuance for Graduates Policy
+        //              §3.3–3.4). Leave of Absence requests never require
+        //              this action — see FreeRequestService.
+        //   Override — file a free request that FreeRequestEligibilityService
+        //              has flagged ineligible, when staff have determined
+        //              via other means that the requestor genuinely
+        //              qualifies. Requires a reason (see FreeRequestPolicy)
+        //              and is always audit-logged.
+        //
+        // Verify/Override exist as their own tokens (rather than being
+        // implied by File) specifically so this capability can be
+        // restricted to a narrower group of staff than "everyone who can
+        // use the Free Request page at all" — confirmed with Registrar
+        // leadership that today exactly one person performs graduate
+        // verification, but that authorization should live in policy
+        // configuration (this module/action, attached via a Policy row)
+        // rather than a hardcoded permission or user ID, so reassigning
+        // it later never requires a deployment.
+        'free_requests' => ['View', 'File', 'Verify', 'Override'],
     ];
 
     /**

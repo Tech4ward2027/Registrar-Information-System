@@ -1172,16 +1172,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: 16px;
   animation: modalFadeIn 0.3s ease-out;
+  overflow-y: auto;
 }
 
 .lp-modal {
-  background: #ffffff;
+  background: #ffffff !important;
+  color: #1e293b !important;
+  color-scheme: light !important;
   border-radius: 20px;
-  padding: 48px 40px;
+  padding: 40px 32px;
   width: 100%;
   max-width: 440px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   position: relative;
   box-shadow: 0 20px 50px rgba(102, 0, 0, 0.25);
   display: flex;
@@ -1189,6 +1194,16 @@
   align-items: center;
   text-align: center;
   animation: modalScaleUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (max-width: 480px) {
+  .lp-modal {
+    padding: 32px 20px;
+    border-radius: 16px;
+  }
+  .lp-modal-title {
+    font-size: 1.35rem;
+  }
 }
 
 .lp-modal-close {
@@ -1252,20 +1267,30 @@
 /* Force modal input fields to be white background with dark text always */
 .lp-modal input {
   background-color: #ffffff !important;
-  color: #333333 !important;
+  color: #1e293b !important;
   border-color: #cbd5e1 !important;
-  /* slate-300 */
+  color-scheme: light !important;
 }
 
 .lp-modal input::placeholder {
   color: #94a3b8 !important;
-  /* slate-400 */
 }
 
 .lp-modal input:focus {
   background-color: #ffffff !important;
   border-color: #F8BF1E !important;
   box-shadow: 0 0 0 2px rgba(248, 191, 30, 0.25) !important;
+}
+
+/* Fix browser autofill dark/blue-gray background overriding light styles */
+.lp-modal input:-webkit-autofill,
+.lp-modal input:-webkit-autofill:hover,
+.lp-modal input:-webkit-autofill:focus,
+.lp-modal input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0px 1000px #ffffff inset !important;
+  -webkit-text-fill-color: #1e293b !important;
+  border-color: #cbd5e1 !important;
+  transition: background-color 5000s ease-in-out 0s;
 }
 
 .lp-input-eye svg {

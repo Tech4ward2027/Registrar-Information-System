@@ -9,6 +9,8 @@ use App\Models\DocumentType;
 use App\Models\SystemUser;
 use App\Models\UnmatchedCashierItem;
 use App\Services\AuditLogger;
+use App\Services\CashierLabelNormalizer;
+use App\Services\CashierPatternConflictChecker;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +25,10 @@ use Illuminate\Support\Facades\DB;
  */
 class UnmatchedCashierItemController extends Controller
 {
-    public function __construct(private AuditLogger $auditLogger) {}
+    public function __construct(
+        private AuditLogger $auditLogger,
+        private CashierPatternConflictChecker $conflictChecker,
+    ) {}
 
     /**
      * List unmatched items. Defaults to unresolved-only, most-frequent
@@ -69,6 +74,18 @@ class UnmatchedCashierItemController extends Controller
      * CashierDocumentSuggester itself uses, so attaching a label that's
      * (post-normalisation) already present is a harmless no-op rather
      * than a literal-duplicate array entry.
+     *
+     * Cross-type conflict check (added alongside the admin-typed pattern
+     * feature on DocumentType/CertificationType create & edit): this is
+     * the OTHER place a pattern gets attached to a type, so it's held to
+     * the same invariant — App\Rules\CashierPatternsAreConflictFree
+     * enforces "a label belongs to at most one type" on the create/edit
+     * forms, and without checking here too, an admin could recreate the
+     * exact same conflict by resolving a queue item onto a type that
+     * doesn't currently surface in CashierDocumentSuggester::
+     * buildPatternIndex() (e.g. an archived type, or one outside the
+     * visible access ids) but still holds the pattern in its own
+     * cashier_document_patterns column.
      */
     public function resolve(ResolveUnmatchedCashierItemRequest $request, $id)
     {
@@ -86,12 +103,31 @@ class UnmatchedCashierItemController extends Controller
         /** @var SystemUser $actor */
         $actor = Auth::user();
 
-        $target = filled($validated['document_type_id'] ?? null)
+        $isDocument = filled($validated['document_type_id'] ?? null);
+        $target = $isDocument
             ? DocumentType::find($validated['document_type_id'])
             : CertificationType::find($validated['certificate_type_id']);
 
         if (!$target) {
             return response()->json(['message' => 'Target document/certificate type not found'], 404);
+        }
+
+        $normalisedLabel = CashierLabelNormalizer::normalize($item->raw_label);
+
+        $conflicts = $this->conflictChecker->findConflicts(
+            [$normalisedLabel],
+            $isDocument ? 'document' : 'certificate',
+            (int) $target->getKey(),
+        );
+
+        if (!empty($conflicts)) {
+            $conflictingTypeName = reset($conflicts);
+
+            return response()->json([
+                'message' => "\"{$item->raw_label}\" is already registered as a cashier match for "
+                    . "\"{$conflictingTypeName}\". A cashier label can only be linked to one "
+                    . 'document/certificate type — remove it from the other one first.',
+            ], 422);
         }
 
         DB::transaction(function () use ($item, $target, $actor) {
@@ -116,7 +152,7 @@ class UnmatchedCashierItemController extends Controller
             'unmatched_cashier_item_id' => $item->unmatched_cashier_item_id,
             'raw_label'                 => $item->raw_label,
             'occurrence_count'          => $item->occurrence_count,
-            'attached_to_type'          => filled($validated['document_type_id'] ?? null) ? 'document' : 'certificate',
+            'attached_to_type'          => $isDocument ? 'document' : 'certificate',
             'attached_to_id'            => $target->getKey(),
             'attached_to_name'          => $target->document_name ?? $target->certificate_name,
         ]);

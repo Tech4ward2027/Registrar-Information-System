@@ -20,6 +20,8 @@ class CertificationType extends Model
         'layout_header_logo_size', 'layout_footer_logo_size',
         'cashier_document_patterns', 'is_archived', 'archived_on', 'archived_by',
         'logbook_category_id', 'requires_source_submission', 'fulfillment_track_id',
+        // FESPEC-0008 — see DocumentType's matching comment.
+        'is_free_eligible', 'free_issuance_limit',
     ];
 
     protected $casts = [
@@ -27,6 +29,8 @@ class CertificationType extends Model
         'is_archived'                => 'boolean',
         'archived_on'                => 'datetime',
         'requires_source_submission' => 'boolean',
+        'is_free_eligible'           => 'boolean',
+        'free_issuance_limit'        => 'integer',
     ];
 
     // layout_footer_urls is stored as a JSON array of bare paths.

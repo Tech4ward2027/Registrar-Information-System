@@ -127,7 +127,7 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     await expect(page.locator('textarea#document_description')).toHaveValue('Official academic transcript');
     await expect(page.locator('textarea#document_requirements')).toHaveValue('Clearance, dry seal request');
     await expect(page.locator('input[type="number"]').nth(0)).toHaveValue('5');
-    await expect(page.locator('text=Format Preview: 5 working day/s')).toBeVisible();
+    await expect(page.locator('text=5 working days')).toBeVisible();
   });
 
   test('should validate process period and allow saving edits', async ({ page }) => {
@@ -185,7 +185,7 @@ test.describe('Document and Certificate Management E2E Tests', () => {
 
     expect(putRequestPayload).not.toBeNull();
     expect(putRequestPayload.document_name).toBe('Official Transcript of Records (Updated)');
-    expect(putRequestPayload.document_process_period).toBe('10 working day/s');
+    expect(putRequestPayload.document_process_period).toBe('10 working days');
   });
 
   test('should support creating a new certificate', async ({ page }) => {
@@ -236,7 +236,7 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     expect(postRequestPayload).not.toBeNull();
     expect(postRequestPayload.certificate_name).toBe('New Custom Certificate');
     expect(postRequestPayload.certificate_requirements).toBe('ID and proof of payment');
-    expect(postRequestPayload.certificate_process_period).toBe('2 working day/s');
+    expect(postRequestPayload.certificate_process_period).toBe('2 working days');
   });
 
   test('should display confirmation modal and delete a document', async ({ page }) => {
