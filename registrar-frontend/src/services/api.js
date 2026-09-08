@@ -233,15 +233,25 @@ export const searchCashierOverrideUsers = (q) =>
 // rather than trying to pre-guess it client-side.
 // -------------------------------------------------------
 
-// GET /free-requests/search-accounts?q=... — typeahead lookup for the
-// student/alumni account staff are filing on behalf of. Distinct from
-// searchGrantableUsers()/searchCashierOverrideUsers() above: this one
-// returns FreeRequestAccountResource, which additionally carries
-// student_number / program / year_of_graduation — the exact fields the
-// First Copy policy's in-person records-check step (§3.4) is verified
+// GET /free-requests/search-accounts?q=...&student_number=...&program=...
+// — typeahead lookup for the student/alumni account staff are filing on
+// behalf of. Distinct from searchGrantableUsers()/searchCashierOverrideUsers()
+// above: this one returns FreeRequestAccountResource, which additionally
+// carries student_number / program / year_of_graduation — the exact fields
+// the First Copy policy's in-person records-check step (§3.4) is verified
 // against, not just a name/email picker.
-export const searchFreeRequestAccounts = (q) =>
-  api.get("/free-requests/search-accounts", { params: { q } });
+//
+// Free Documents/Certificates Request Policy §3.3: "Full Name (required),
+// Student Number (optional), Program (optional)". `q` is the required name
+// search; `studentNumber`/`program` are optional disambiguation filters for
+// when a name search returns more than one plausible match (e.g. two
+// students sharing a name) — both default to undefined so this call stays
+// backward-compatible with existing single-argument callers, and axios
+// omits a param entirely from the querystring when its value is undefined.
+export const searchFreeRequestAccounts = (q, studentNumber = undefined, program = undefined) =>
+  api.get("/free-requests/search-accounts", {
+    params: { q, student_number: studentNumber, program },
+  });
 
 // POST /free-requests/eligibility — read-only pre-check. Shows staff the
 // eligibility indicator for every item under consideration BEFORE they

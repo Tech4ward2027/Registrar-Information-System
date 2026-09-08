@@ -53,27 +53,40 @@ class FreeRequestController extends Controller
     ) {}
 
     /**
-     * GET /free-requests/search-accounts?q=...
+     * GET /free-requests/search-accounts?q=...&student_number=...&program=...
      *
      * Typeahead lookup so staff can find the student/alumni account
-     * they're filing on behalf of. Mirrors CashierOrOverrideController::
-     * searchUsers()'s inline validate() — this is a simple single-field
-     * lookup, not worth a dedicated FormRequest class.
+     * they're filing on behalf of. Free Documents/Certificates Request
+     * Policy §3.3: "Full Name (required), Student Number (optional),
+     * Program (optional)" — `q` carries the name search (kept as the
+     * existing param name for frontend backward-compatibility);
+     * `student_number`/`program` are optional disambiguation filters on
+     * top of it. Still a simple enough shape to inline-validate rather
+     * than add a dedicated FormRequest class, matching
+     * CashierOrOverrideController::searchUsers()'s convention.
      */
     public function searchAccounts(Request $request)
     {
         $validated = $request->validate([
-            'q' => 'required|string|min:2|max:100',
+            'q'              => 'required|string|min:2|max:100',
+            'student_number' => 'nullable|string|max:50',
+            'program'        => 'nullable|string|max:255',
         ]);
 
-        $accounts = $this->freeRequestService->searchAccounts($validated['q']);
+        $accounts = $this->freeRequestService->searchAccounts(
+            $validated['q'],
+            $validated['student_number'] ?? null,
+            $validated['program'] ?? null,
+        );
 
         /** @var SystemUser $actor */
         $actor = Auth::user();
 
         $this->auditLogger->log($request, $actor, AuditLog::ACTION_FREE_REQUEST_ACCOUNT_SEARCHED, [
-            'query'        => $validated['q'],
-            'result_count' => $accounts->count(),
+            'query'         => $validated['q'],
+            'student_number'=> $validated['student_number'] ?? null,
+            'program'       => $validated['program'] ?? null,
+            'result_count'  => $accounts->count(),
         ]);
 
         // Phase 8 — structured, ops-facing log (see FreeRequestLogger's

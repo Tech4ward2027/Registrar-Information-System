@@ -61,6 +61,15 @@ class FreeRequestService
      * student/alumni account a staff member is about to file a free
      * request on behalf of.
      *
+     * Per Free Documents/Certificates Request Policy §3.3, the Admin
+     * enters "Full Name (required), Student Number (optional), Program
+     * (optional)" and the system auto-matches the registered account.
+     * $name drives the base match (email / first / last name); the two
+     * extra params exist purely to disambiguate when a name search
+     * returns more than one plausible account (e.g. two students named
+     * "Juan Dela Cruz") — both are optional filters layered on top of
+     * the name match with AND semantics, not alternate search modes.
+     *
      * Scoped to Activated student/alumni accounts only, same as
      * CashierOrOverrideController::searchUsers(). Eager-loads the
      * academic info needed both for display (student number, program,
@@ -68,28 +77,62 @@ class FreeRequestService
      * check downstream — the caller shouldn't need a second query per
      * result to get eligibility-relevant context.
      */
-    public function searchAccounts(string $query): Collection
+    public function searchAccounts(string $name, ?string $studentNumber = null, ?string $program = null): Collection
     {
-        $query = trim($query);
+        $name = trim($name);
 
         // Escape LIKE metacharacters in the raw input so a literal '%'
         // or '_' typed by staff is matched literally — same guard
         // CashierOrOverrideController::searchUsers() already applies.
-        $escaped = addcslashes($query, '%_\\');
-        $prefix  = $escaped . '%';
+        // Applied identically to all three fields below.
+        $namePrefix = addcslashes($name, '%_\\') . '%';
 
-        return SystemUser::query()
+        $query = SystemUser::query()
             ->where('status', 'Activated')
             ->whereIn('role_id', [SystemUser::ROLE_STUDENT, SystemUser::ROLE_ALUMNI])
-            ->where(function ($q) use ($prefix) {
-                $q->where('email', 'like', $prefix)
+            ->where(function ($q) use ($namePrefix) {
+                $q->where('email', 'like', $namePrefix)
                     ->orWhereHas('studentProfile', fn ($p) => $p
-                        ->where('first_name', 'like', $prefix)
-                        ->orWhere('last_name', 'like', $prefix))
+                        ->where('first_name', 'like', $namePrefix)
+                        ->orWhere('last_name', 'like', $namePrefix))
                     ->orWhereHas('alumniProfile', fn ($p) => $p
-                        ->where('first_name', 'like', $prefix)
-                        ->orWhere('last_name', 'like', $prefix));
-            })
+                        ->where('first_name', 'like', $namePrefix)
+                        ->orWhere('last_name', 'like', $namePrefix));
+            });
+
+        $studentNumber = trim((string) $studentNumber);
+
+        if ($studentNumber !== '') {
+            // student_academic_record.student_number and
+            // alumni_academic_record.student_number are the same logical
+            // field on two different tables (a student's academic record
+            // is renamed/carried forward, not replaced, on graduation —
+            // see AlumniProvisioningService) — match against whichever
+            // one this account actually has.
+            $numberPrefix = addcslashes($studentNumber, '%_\\') . '%';
+
+            $query->where(function ($q) use ($numberPrefix) {
+                $q->whereHas('academicRecord', fn ($r) => $r->where('student_number', 'like', $numberPrefix))
+                    ->orWhereHas('alumniProfile.academicRecord', fn ($r) => $r->where('student_number', 'like', $numberPrefix));
+            });
+        }
+
+        $program = trim((string) $program);
+
+        if ($program !== '') {
+            // 'course' is this schema's actual column for a student/
+            // alumni's program (see StudentAcademicRecord's docblock —
+            // it's a point-in-time snapshot of programs.name, not a live
+            // FK lookup), which is what the policy calls "Program".
+            $programPrefix = addcslashes($program, '%_\\') . '%';
+
+            $query->where(function ($q) use ($programPrefix) {
+                $q->whereHas('academicRecord', fn ($r) => $r->where('course', 'like', $programPrefix))
+                    ->orWhereHas('alumniProfile.academicRecord', fn ($r) => $r->where('course', 'like', $programPrefix));
+            });
+        }
+
+        return $query
             ->with([
                 'studentProfile',
                 'academicRecord',

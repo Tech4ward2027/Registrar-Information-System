@@ -135,6 +135,71 @@ test('search-accounts rejects a query shorter than 2 characters', function () {
     $this->getJson('/api/free-requests/search-accounts?q=z')->assertStatus(422);
 });
 
+test('search-accounts narrows a name match to the correct account using student_number', function () {
+    frcMakeAdmin(['View']);
+
+    $studentA = frcMakeStudent();
+    $studentA->studentProfile->update(['first_name' => 'Juan', 'last_name' => 'Dela Cruz']);
+    $studentA->academicRecord->update(['student_number' => '2021-00001']);
+
+    $studentB = frcMakeStudent();
+    $studentB->studentProfile->update(['first_name' => 'Juan', 'last_name' => 'Dela Cruz']);
+    $studentB->academicRecord->update(['student_number' => '2021-00002']);
+
+    // Both share the same name — a plain name search would return both.
+    $unfiltered = $this->getJson('/api/free-requests/search-accounts?q=Dela Cruz');
+    $unfiltered->assertOk();
+    expect(count($unfiltered->json('data')))->toBe(2);
+
+    // Adding student_number narrows to exactly one.
+    $filtered = $this->getJson('/api/free-requests/search-accounts?q=Dela Cruz&student_number=2021-00002');
+    $filtered->assertOk();
+    $filtered->assertJsonFragment(['user_id' => $studentB->user_id]);
+    expect(count($filtered->json('data')))->toBe(1);
+});
+
+test('search-accounts narrows a name match to the correct account using program', function () {
+    frcMakeAdmin(['View']);
+
+    $studentA = frcMakeStudent();
+    $studentA->studentProfile->update(['first_name' => 'Maria', 'last_name' => 'Santos']);
+    $studentA->academicRecord->update(['course' => 'BSIT']);
+
+    $studentB = frcMakeStudent();
+    $studentB->studentProfile->update(['first_name' => 'Maria', 'last_name' => 'Santos']);
+    $studentB->academicRecord->update(['course' => 'BSCS']);
+
+    $filtered = $this->getJson('/api/free-requests/search-accounts?q=Santos&program=BSCS');
+
+    $filtered->assertOk();
+    $filtered->assertJsonFragment(['user_id' => $studentB->user_id]);
+    expect(count($filtered->json('data')))->toBe(1);
+});
+
+test('search-accounts filters are AND, not OR — a student_number that matches no result for this name returns empty', function () {
+    frcMakeAdmin(['View']);
+
+    $student = frcMakeStudent();
+    $student->studentProfile->update(['first_name' => 'Pedro', 'last_name' => 'Reyes']);
+    $student->academicRecord->update(['student_number' => '2021-00099']);
+
+    $response = $this->getJson('/api/free-requests/search-accounts?q=Reyes&student_number=9999999');
+
+    $response->assertOk();
+    expect($response->json('data'))->toBeEmpty();
+});
+
+test('search-accounts matches an alumni by student_number carried on their alumni academic record', function () {
+    frcMakeAdmin(['View']);
+
+    $alumni = frcMakeAlumni(); // fixture default student_number is '2018-00001'
+
+    $response = $this->getJson('/api/free-requests/search-accounts?q=Alumna&student_number=2018-00001');
+
+    $response->assertOk();
+    $response->assertJsonFragment(['user_id' => $alumni->user_id]);
+});
+
 // ── POST /free-requests/eligibility ─────────────────────────────────
 
 test('eligibility check returns a per-item result without creating a request', function () {
