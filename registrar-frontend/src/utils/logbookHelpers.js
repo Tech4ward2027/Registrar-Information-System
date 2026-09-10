@@ -289,7 +289,16 @@ export const getCertificationNames = (row) =>
  * @returns {string} Always a non-empty, trimmed string.
  */
 export const resolveLogbookLabel = (categoryId, ownName, categoryNameById) => {
-  const fallback = String(ownName ?? '').trim() || 'Unspecified';
+  let fallback = String(ownName ?? '').trim() || 'Unspecified';
+
+  const lower = fallback.toLowerCase();
+  if (lower.includes('transcript') || lower.includes('tor')) {
+    fallback = 'Transcript of Records';
+  } else if (lower.includes('completion') || lower.includes('incomplete') || lower.includes('correction of entry')) {
+    fallback = 'Completion Fee';
+  } else if (lower.includes('certified true copy') || lower.includes('ctc')) {
+    fallback = 'Certified True Copy of Records';
+  }
 
   if (categoryId === null || categoryId === undefined || categoryId === '') {
     return fallback;
