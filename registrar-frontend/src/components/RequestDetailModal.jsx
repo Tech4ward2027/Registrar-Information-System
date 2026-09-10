@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDownIcon, XCircleIcon, ArrowRightIcon, PrinterIcon } from '@heroicons/react/24/solid';
+import { ChevronDownIcon, ChevronUpIcon, XCircleIcon, ArrowRightIcon, PrinterIcon, ArrowDownTrayIcon } from '@heroicons/react/24/solid';
+import { toPng } from 'html-to-image';
 import { getDocumentTypes, getDocumentRequest, updateRequestDocumentStatus, updateRequestCertificateStatus, withdrawDocumentRequest, issueDeficiencyNotice, clearDeficiencyNotice, voidDeficiencyNotice, closeRequestUnableToProcess } from "../services/api";
 import { PROGRESS_MAP } from '../utils/constants';
 import { useTheme } from '../context/ThemeContext';
@@ -91,6 +92,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
 
   const canProcess  = hasModuleAction(user, 'dashboard', 'Process');
   const canComplete = hasModuleAction(user, 'dashboard', 'Complete');
+  const isAdmin     = ['admin', 'super_admin'].includes(user?.role_name) || canProcess || canComplete;
 
   useEffect(() => {
     const fetchTypes = async () => {
@@ -136,13 +138,12 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
     };
   }, [request]);
 
-  if (!request) return null; //To identify the role of the user
   const activeRequest = liveRequest ?? request?.rawRequest ?? request;
-  const isStudent = activeRequest.student_profile != null || request?.userType === 'Student';
-  const isAlumni = activeRequest.alumni_profile != null || request?.userType === 'Alumni'; 
-  const progress = PROGRESS_MAP[activeRequest.status_id ?? request?.statusId] ?? 0;
-  const requestDocs = activeRequest.documents ?? activeRequest.rawRequest?.documents ?? request?.documents ?? request?.rawRequest?.documents ?? [];
-  const requestCerts = activeRequest.certificates ?? activeRequest.rawRequest?.certificates ?? request?.certificates ?? request?.rawRequest?.certificates ?? [];
+  const isStudent = activeRequest?.student_profile != null || request?.userType === 'Student';
+  const isAlumni = activeRequest?.alumni_profile != null || request?.userType === 'Alumni'; 
+  const progress = activeRequest ? (PROGRESS_MAP[activeRequest.status_id ?? request?.statusId] ?? 0) : 0;
+  const requestDocs = activeRequest?.documents ?? activeRequest?.rawRequest?.documents ?? request?.documents ?? request?.rawRequest?.documents ?? [];
+  const requestCerts = activeRequest?.certificates ?? activeRequest?.rawRequest?.certificates ?? request?.certificates ?? request?.rawRequest?.certificates ?? [];
 
   // Re-fetches the whole request after a single item's status changes,
   // so the progress bar / aggregate status / other items all reflect
@@ -150,6 +151,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
   // on server-side, rather than trying to predict the aggregate
   // client-side.
   const refreshRequest = async () => {
+    if (!activeRequest?.request_id) return;
     try {
       const res = await getDocumentRequest(activeRequest.request_id);
       setLiveRequest(res.data);
@@ -159,7 +161,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
   };
 
   const advanceDocumentItem = async (item, targetStatusId) => {
-    if (isTerminalRequest(activeRequest)) return;
+    if (!activeRequest || isTerminalRequest(activeRequest)) return;
     const key = `doc-${item.request_document_id}`;
     setUpdatingItemKey(key);
     setItemError(null);
@@ -176,7 +178,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
   };
 
   const advanceCertificateItem = async (item, targetStatusId) => {
-    if (isTerminalRequest(activeRequest)) return;
+    if (!activeRequest || isTerminalRequest(activeRequest)) return;
     const key = `cert-${item.request_certificate_id}`;
     setUpdatingItemKey(key);
     setItemError(null);
@@ -202,20 +204,78 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
           "Unknown Document";
   };
 
-  const displayStatus = activeRequest.status?.status_name || activeRequest.status || 'N/A';
-  const statusId = Number(activeRequest.status_id ?? request?.statusId);
-  const openNotice = activeRequest.open_deficiency_notice ?? activeRequest.openDeficiencyNotice;
+  const displayStatus = activeRequest?.status?.status_name || activeRequest?.status || 'N/A';
+  const statusId = Number(activeRequest?.status_id ?? request?.statusId);
+  const openNotice = activeRequest?.open_deficiency_notice ?? activeRequest?.openDeficiencyNotice;
   const isWithdrawn = statusId === 13 || String(displayStatus).toLowerCase() === 'withdrawn';
   const isClosedUnableToProcess = statusId === 14 || String(displayStatus).toLowerCase() === 'closed - unable to process';
   const isTerminal = isWithdrawn || isClosedUnableToProcess;
-  const canWithdraw = canProcess && !activeRequest.is_archived && [1, 6, 12].includes(statusId) && !isTerminal;
-  const canManageNotice = canProcess && !activeRequest.is_archived && !isTerminal;
+  const canWithdraw = canProcess && Boolean(activeRequest) && !activeRequest.is_archived && [1, 6, 12].includes(statusId) && !isTerminal;
+  const canManageNotice = canProcess && Boolean(activeRequest) && !activeRequest.is_archived && !isTerminal;
   const noticeIsStale = openNotice?.issued_at
     ? Date.now() - new Date(openNotice.issued_at).getTime() >= STALE_NOTICE_DAYS * 24 * 60 * 60 * 1000
     : false;
   const noticeIsEscalated = Boolean(openNotice?.escalated_at || openNotice?.is_escalated);
-  const releaseGroups = activeRequest.release_groups ?? [];
+  const releaseGroups = activeRequest?.release_groups ?? [];
   const hasReleaseGroups = releaseGroups.length > 0;
+
+  const ticketsList = useMemo(() => {
+    if (!activeRequest) return [];
+    if (hasReleaseGroups) {
+      return releaseGroups.map((group) => {
+        const groupStatus = statusConfig(group.status_id);
+        const trackLabel = group.fulfillment_track?.name ?? 'Standard';
+        return {
+          id: group.request_release_group_id,
+          trackLabel,
+          statusLabel: groupStatus?.label ?? 'Processing',
+          claimCode: group.claim_code,
+          uuid: group.uuid,
+        };
+      });
+    }
+
+    const docs = requestDocs || [];
+    const certs = requestCerts || [];
+
+    const hasCtc = docs.some((d) => {
+      const name = String(d.document_type?.document_name || d.document_name || '').toLowerCase();
+      return name.includes('ctc') || name.includes('certified true copy');
+    }) || certs.some((c) => {
+      const name = String(c.certification_type?.certificate_name || c.certificate_name || c.name || '').toLowerCase();
+      return name.includes('ctc') || name.includes('certified true copy');
+    });
+
+    const hasStandard = docs.some((d) => {
+      const name = String(d.document_type?.document_name || d.document_name || '').toLowerCase();
+      return !name.includes('ctc') && !name.includes('certified true copy');
+    }) || certs.length > 0;
+
+    const list = [];
+    if (hasCtc) {
+      list.push({
+        id: 'ctc-ticket',
+        trackLabel: 'CTC',
+        statusLabel: displayStatus,
+        claimCode: activeRequest.claim_code,
+        uuid: activeRequest.uuid,
+      });
+    }
+
+    if (hasStandard || !hasCtc) {
+      list.push({
+        id: 'standard-ticket',
+        trackLabel: 'Standard',
+        statusLabel: displayStatus,
+        claimCode: activeRequest.claim_code,
+        uuid: activeRequest.uuid,
+      });
+    }
+
+    return list;
+  }, [hasReleaseGroups, releaseGroups, requestDocs, requestCerts, displayStatus, activeRequest, statusConfig]);
+
+  if (!request) return null;
 
   const updateRequestFromResponse = (response) => {
     const updatedRequest = response?.data ?? response;
@@ -394,33 +454,53 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
               majority of requests have zero release groups and fall
               through to the single request-level ticket exactly as
               before. */}
-          {progress !== 0 && progress !== 100 && (
-            <Section title={hasReleaseGroups ? 'Claim Tickets' : 'Claim Ticket'} isDark={isDark}>
-              {hasReleaseGroups ? (
-                <div className="flex flex-col gap-4 w-full">
-                  {releaseGroups.map((group) => {
-                    const groupStatus = statusConfig(group.status_id);
-                    const trackLabel = group.fulfillment_track?.name ?? 'Standard';
-                    return (
-                      <div key={group.request_release_group_id} className={`rounded-lg border p-3 ${isDark ? 'border-[#3e4042]' : 'border-gray-200'}`}>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-bold uppercase tracking-wide">{trackLabel}</span>
-                          <span className={`inline-flex text-xs font-semibold px-2 py-0.5 rounded-full border ${groupStatus.classes}`}>
-                            {groupStatus.label}
+          {/* Claim Tickets Section (Student/Alumni view only) */}
+          {!isAdmin && progress !== 0 && progress !== 100 && (
+            <Section title="Claim Tickets" isDark={isDark}>
+              <div className="space-y-1">
+                {ticketsList.map((ticket, index) => {
+                  const isCtc = ticket.trackLabel.toLowerCase().includes('ctc');
+                  return (
+                    <div
+                      key={ticket.id || index}
+                      className={`flex items-center justify-between gap-3 py-3 border-b ${
+                        isDark ? 'border-[#3e4042]' : 'border-gray-200'
+                      } last:border-b-0 last:pb-0 first:pt-0`}
+                    >
+                      {/* Left: Icon & Title/Status */}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                          isCtc
+                            ? (isDark ? 'bg-red-950/50 text-red-300' : 'bg-red-50 text-[#800000]')
+                            : (isDark ? 'bg-amber-950/40 text-amber-300' : 'bg-amber-50 text-[#800000]')
+                        }`}>
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                          </svg>
+                        </div>
+
+                        <div className="flex flex-col min-w-0">
+                          <span className={`font-bold text-sm sm:text-base leading-tight truncate ${
+                            isDark ? 'text-white' : 'text-gray-900'
+                          }`}>
+                            {ticket.trackLabel}
+                          </span>
+                          <span className={`text-xs mt-0.5 truncate ${
+                            isDark ? 'text-gray-400' : 'text-gray-500'
+                          }`}>
+                            {ticket.statusLabel} &middot; code <strong className={isDark ? 'text-gray-200' : 'text-gray-700'}>{ticket.claimCode}</strong>
                           </span>
                         </div>
-                        <div className="flex justify-center w-full py-1">
-                          <ClaimTicket uuid={group.uuid} claimCode={group.claim_code} small />
-                        </div>
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="flex justify-center w-full py-1 sm:py-2">
-                  <ClaimTicket uuid={activeRequest.uuid} claimCode={activeRequest.claim_code} />
-                </div>
-              )}
+
+                      {/* Right: Download Action Button */}
+                      <div className="shrink-0">
+                        <TicketDownloadButton ticket={ticket} isDark={isDark} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </Section>
           )}
 
@@ -760,6 +840,58 @@ const getProgressLabel = (progress, isWithdrawn = false) => {
   }
 };
 
+const TicketDownloadButton = ({ ticket, isDark }) => {
+  const contentRef = React.useRef(null);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async (e) => {
+    e.stopPropagation();
+    if (!contentRef.current) return;
+    setDownloading(true);
+    try {
+      const dataUrl = await toPng(contentRef.current, {
+        backgroundColor: '#ffffff',
+        cacheBust: true,
+        pixelRatio: 2,
+        style: { borderRadius: '16px' },
+        filter: (node) => !(node.classList && node.classList.contains('download-btn-hide')),
+      });
+      const link = document.createElement('a');
+      link.download = `claim-ticket-${ticket.claimCode}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error('Failed to download ticket:', err);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={handleDownload}
+        disabled={downloading}
+        className={`px-3.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer ${
+          isDark
+            ? 'border-amber-400/50 text-amber-300 hover:bg-amber-400 hover:text-black'
+            : 'border-[#660000]/60 text-[#660000] hover:bg-[#660000] hover:text-white'
+        }`}
+      >
+        <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+        <span>{downloading ? 'Downloading...' : 'Download'}</span>
+      </button>
+
+      <div className="fixed -left-[9999px] -top-[9999px] pointer-events-none opacity-100 w-[480px] z-[-9999]">
+        <div ref={contentRef} className="bg-white p-2 rounded-2xl">
+          <ClaimTicket uuid={ticket.uuid} claimCode={ticket.claimCode} small />
+        </div>
+      </div>
+    </>
+  );
+};
+
 const Section = ({ title, children, isDark }) => {
   const [open, setOpen] = useState(true);
 
@@ -768,7 +900,7 @@ const Section = ({ title, children, isDark }) => {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className={`w-full flex justify-between items-center px-3 sm:px-4 py-3 font-bold text-sm ${open ? 'rounded-t-lg' : 'rounded-lg'} ${isDark ? 'bg-[#3a3b3c] text-white' : 'bg-yellow-50 text-pup-maroon'}`}
+        className={`w-full flex justify-between items-center px-3 sm:px-4 py-3 font-bold text-sm ${open ? 'rounded-t-lg' : 'rounded-lg'} ${isDark ? 'bg-[#3a3b3c]' : 'bg-yellow-50 text-pup-maroon'}`}
       >
         {title}
         <ChevronDownIcon
