@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import InputGroup from "../components/InputGroup.jsx";
 import CheckboxItem from "../components/Checkbox.jsx";
@@ -60,7 +60,6 @@ const AlumniRequestForm = () => {
     documentOptions,
     combinedOptions,
     handleCombinedItemsChange,
-    hasTOR,
     finalStep,
     orStep,
     docStep,
@@ -68,41 +67,19 @@ const AlumniRequestForm = () => {
     autoFilledNames,
   } = useAlumniRequest({ showProfileStep: false });
 
-  const wizardSteps = useMemo(() => {
-    if (hasTOR) {
-      return [
-        { id: 1, label: "Terms" },
-        { id: 2, label: "Receipt" },
-        { id: 3, label: "Documents" },
-        { id: 4, label: "TOR" },
-        { id: 5, label: "Review" },
-      ];
-    }
-    return [
-      { id: 1, label: "Terms" },
-      { id: 2, label: "Receipt" },
-      { id: 3, label: "Documents" },
-      { id: 4, label: "Review" },
-    ];
-  }, [hasTOR]);
+  const wizardSteps = [
+    { id: 1, label: "Terms" },
+    { id: 2, label: "Receipt" },
+    { id: 3, label: "Documents" },
+    { id: 4, label: "Review" },
+  ];
 
-  const stepTitles = useMemo(() => {
-    if (hasTOR) {
-      return {
-        1: { title: "Terms & Conditions", subtitle: "Please review and accept our data privacy and release guidelines." },
-        2: { title: "Official Receipt", subtitle: "Verify your receipt from the Cashier's Office." },
-        3: { title: "Select documents", subtitle: "Choose what you're requesting based on your receipt." },
-        4: { title: "TOR Requirements", subtitle: "Please confirm your Honorable Dismissal status for TOR requests." },
-        5: { title: "Review & Copies", subtitle: "Specify number of copies and check required documents." },
-      };
-    }
-    return {
-      1: { title: "Terms & Conditions", subtitle: "Please review and accept our data privacy and release guidelines." },
-      2: { title: "Official Receipt", subtitle: "Verify your receipt from the Cashier's Office." },
-      3: { title: "Select documents", subtitle: "Choose what you're requesting based on your receipt." },
-      4: { title: "Review & Copies", subtitle: "Specify number of copies and check required documents." },
-    };
-  }, [hasTOR]);
+  const stepTitles = {
+    1: { title: "Terms & Conditions", subtitle: "Please review and accept our data privacy and release guidelines." },
+    2: { title: "Official Receipt", subtitle: "Verify your receipt from the Cashier's Office." },
+    3: { title: "Select documents", subtitle: "Choose what you're requesting based on your receipt." },
+    4: { title: "Review & Copies", subtitle: "Specify number of copies and check required documents." },
+  };
 
   const handleGoToDashboard = () => {
     if (window.location.pathname.startsWith('/staff')) {
@@ -393,39 +370,6 @@ const AlumniRequestForm = () => {
                 </div>
               )}
 
-              {/* STEP 4: TOR Requirements (conditional — only when hasTOR) */}
-              {hasTOR && currentStep === 4 && (
-                <div className="space-y-6 animate-fadeIn">
-                  <div className={`p-5 rounded-2xl border ${
-                    isDark ? "bg-[#242526] border-[#3e4042]" : "bg-white/10 border-white/20"
-                  }`}>
-                    <h3 className="text-[#FFC72C] font-bold mb-3 uppercase text-xs sm:text-sm tracking-wider">
-                      Transcript of Records (TOR) Requirement
-                    </h3>
-                    <p className={`text-xs sm:text-sm text-justify leading-relaxed mb-4 ${
-                      isDark ? "text-gray-300" : "text-white/90"
-                    }`}>
-                      For TOR request for further studies, please secure an <strong>HONORABLE DISMISSAL</strong> first.
-                      Once processed and submitted back to the University, you may request for TOR with copy
-                      for remarks.
-                    </p>
-                    <div className="space-y-3 pt-3 border-t border-white/10">
-                      <CheckboxItem
-                        text="No Request Yet"
-                        name="noRequests"
-                        checked={formData.noRequests}
-                        onChange={handleCheckboxChange}
-                      />
-                      <CheckboxItem
-                        text="Done Honorable Dismissal Request"
-                        name="doneRequest"
-                        checked={formData.doneRequest}
-                        onChange={handleCheckboxChange}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* STEP: Number of Copies & Claim Ticket (final step) */}
               {currentStep === finalStep && (

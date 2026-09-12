@@ -40,13 +40,6 @@ export const validateRequestDetailsStep = (formData) => {
   return null;
 };
 
-export const validateTORStep = (formData, hasTOR) => {
-  if (hasTOR && !formData.noRequests && !formData.doneRequest) {
-    return "Please select at least one TOR option to proceed.";
-  }
-  return null;
-};
-
 export const validateReceiptStep = (formData) => {
   if (!(formData.receiptNumber || "").trim()) {
     return "Please enter the Official Receipt Number.";

@@ -33,12 +33,20 @@ function Header({ onMenuClick }) {
             className="w-16 h-16 lg:w-20 lg:h-20 drop-shadow-lg dark:drop-shadow-2xl transition-all duration-200"
           />
           <div className="flex flex-col justify-center grow">
-            <h1 className="text-white dark:text-white font-semibold text-[13px] lg:text-[22px] leading-tight font-lucida tracking-wider">
-              Polytechnic University of the Philippines
+            <h1 className="sm:hidden text-white dark:text-white font-bold text-xs sm:text-base font-lucida tracking-wider leading-tight">
+              PUP-TAGUIG
             </h1>
-            <p className="text-[#e6e0e0] dark:text-gray-300 text-[9px] lg:text-[13px] font-lucida tracking-widest mt-0.5">
+            <p className="sm:hidden text-[#e6e0e0] dark:text-gray-300 text-[8px] lg:text-[13px] font-lucida tracking-widest mt-0.5">
               The Country's 1st PolytechnicU
             </p>
+            <div className="hidden sm:flex flex-col">
+              <h1 className="text-white dark:text-white font-semibold text-[13px] lg:text-[22px] leading-tight font-lucida tracking-wider">
+                Polytechnic University of the Philippines
+              </h1>
+              <p className="text-[#e6e0e0] dark:text-gray-300 text-[9px] lg:text-[13px] font-lucida tracking-widest mt-0.5">
+                The Country's 1st PolytechnicU
+              </p>
+            </div>
           </div>
         </div>
         <div className="relative flex items-center space-x-2 lg:space-x-3">

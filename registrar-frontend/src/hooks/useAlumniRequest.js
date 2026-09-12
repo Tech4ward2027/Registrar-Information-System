@@ -8,7 +8,6 @@ import {
   ALUMNI_ACCESS_IDS,
   validateProfileStep,
   validateRequestDetailsStep,
-  validateTORStep,
 } from "../utils/alumniRequestUtils";
 import { getTodayDate } from "../utils/helpers";
 
@@ -174,10 +173,6 @@ export const useAlumniRequest = ({ showProfileStep = false }) => {
     });
   };
 
-  const hasTOR = formData.documentsRequested.some(
-    (doc) => doc.toLowerCase().includes("tor") || doc.toLowerCase().includes("transcript")
-  );
-
   const showCertificationDropdown = formData.documentsRequested.some((doc) => {
     return doc.toLowerCase().includes("certif");
   });
@@ -186,13 +181,10 @@ export const useAlumniRequest = ({ showProfileStep = false }) => {
   //   1: Terms & Conditions
   //   2 (or 3 with profile): Official Receipt Verification
   //   3 (or 4 with profile): Alumni Request (Document & Purpose Selection)
-  //   4 (or 5 with profile, only if hasTOR): TOR Requirements
   //   last: Number of Copies & Claim Ticket
   const orStep = showProfileStep ? 3 : 2;
   const docStep = showProfileStep ? 4 : 3;
-  const finalStep = showProfileStep
-    ? (hasTOR ? 6 : 5)
-    : (hasTOR ? 5 : 4);
+  const finalStep = showProfileStep ? 5 : 4;
 
   // --- OR Verification Mutation ---
   const verifyOrMutation = useMutation({
@@ -319,15 +311,6 @@ export const useAlumniRequest = ({ showProfileStep = false }) => {
       }
     }
 
-    // TOR step validation (only present when hasTOR is true)
-    const torStepNum = showProfileStep ? 5 : 4;
-    if (currentStep === torStepNum && hasTOR) {
-      const torError = validateTORStep(formData, hasTOR);
-      if (torError) {
-        setErrorMessage(torError);
-        return;
-      }
-    }
 
     if (currentStep < finalStep) {
       setCurrentStep(currentStep + 1);
@@ -496,31 +479,13 @@ export const useAlumniRequest = ({ showProfileStep = false }) => {
   // (optional) 2: Alumni Profile
   // OR Verification
   // Alumni Request (Document & Purpose Selection)
-  // (conditional) TOR Requirements
   // Number of Copies & Claim Ticket
   const stepLabels = showProfileStep
-    ? hasTOR
-      ? [
-          "Terms & Conditions",
-          "Alumni Profile",
-          "Official Receipt Verification",
-          "Alumni Request",
-          "TOR Requirements",
-          "Number of Copies & Claim Ticket",
-        ]
-      : [
-          "Terms & Conditions",
-          "Alumni Profile",
-          "Official Receipt Verification",
-          "Alumni Request",
-          "Number of Copies & Claim Ticket",
-        ]
-    : hasTOR
     ? [
         "Terms & Conditions",
+        "Alumni Profile",
         "Official Receipt Verification",
         "Alumni Request",
-        "TOR Requirements",
         "Number of Copies & Claim Ticket",
       ]
     : [
@@ -566,7 +531,6 @@ export const useAlumniRequest = ({ showProfileStep = false }) => {
     handleCombinedItemsChange,
     stepLabels,
     totalSteps,
-    hasTOR,
     showCertificationDropdown,
     certificationLabel,
     finalStep,
