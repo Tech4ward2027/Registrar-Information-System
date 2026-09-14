@@ -186,16 +186,69 @@ const buildReportTable = (rows) => {
   const avgMinutesPerRequest = totalRequests > 0 ? (totalMinutes / totalRequests) : 0;
   const hours = Math.floor(avgMinutesPerRequest / 60);
   const minutes = Math.round(avgMinutesPerRequest - (hours * 60));
-  // FE-4 migration: computeOpcRating replaces hardcoded 5.0
-  // Rating thresholds (minutes per request) — confirm with registrar's performance standards.
-  const computeOpcRating = (avgMins) => {
-    if (avgMins <= 15)  return 5.0;
-    if (avgMins <= 30)  return 4.0;
-    if (avgMins <= 60)  return 3.0;
-    if (avgMins <= 120) return 2.0;
-    return 1.0;
+
+  // SLA-Aware OPC Rating: Parses process period SLA (1 working day = 480 business minutes).
+  // Supports formats like "2 working day/s, 23 minute/s", "3-5 business days", etc.
+  // Automatically returns 1.0 if average processing time exceeds allowed SLA days/time.
+  const parseSlaMinutes = (estimatedProcessStr) => {
+    if (!estimatedProcessStr) return 480;
+    const str = String(estimatedProcessStr).trim().toLowerCase();
+    let totalMinutes = 0;
+
+    // Range days: e.g. "3-5 business days" -> 5 days
+    const rangeDayMatch = str.match(/(\d+)\s*-\s*(\d+)\s*(?:working|business)?\s*day/i);
+    if (rangeDayMatch) {
+      const maxDays = Math.max(Number(rangeDayMatch[1]), Number(rangeDayMatch[2]));
+      totalMinutes += maxDays * 8 * 60;
+    } else {
+      // Single days: e.g. "2 working day/s", "1 day"
+      const singleDayMatch = str.match(/(\d+)\s*(?:working|business)?\s*day/i);
+      if (singleDayMatch) {
+        totalMinutes += Number(singleDayMatch[1]) * 8 * 60;
+      }
+    }
+
+    // Hours: e.g. "2 hour/s", "5 hours"
+    const hourMatch = str.match(/(\d+)\s*hour/i);
+    if (hourMatch) {
+      totalMinutes += Number(hourMatch[1]) * 60;
+    }
+
+    // Minutes: e.g. "23 minute/s", "15 minutes"
+    const minuteMatch = str.match(/(\d+)\s*minute/i);
+    if (minuteMatch) {
+      totalMinutes += Number(minuteMatch[1]);
+    }
+
+    // Fallback for raw numbers without unit labels (assume working days)
+    if (totalMinutes === 0) {
+      const rawMatch = str.match(/\d+/);
+      if (rawMatch) {
+        totalMinutes = Number(rawMatch[0]) * 8 * 60;
+      }
+    }
+
+    return totalMinutes > 0 ? totalMinutes : 480;
   };
-  const numericValue = computeOpcRating(avgMinutesPerRequest);
+
+  const computeOpcRating = (avgMins, estimatedProcessStr) => {
+    if (avgMins <= 0) return 5.0;
+    const slaMins = parseSlaMinutes(estimatedProcessStr);
+
+    // Automatic 1.0 if average time exceeds allowed document SLA target
+    if (avgMins > slaMins) {
+      return 1.0;
+    }
+
+    const ratio = avgMins / slaMins;
+    if (ratio <= 0.25) return 5.0;
+    if (ratio <= 0.50) return 4.0;
+    if (ratio <= 0.75) return 3.0;
+    return 2.0;
+  };
+
+  const sampleEstimatedProcess = rows.find((r) => r.estimatedProcess)?.estimatedProcess || '';
+  const numericValue = computeOpcRating(avgMinutesPerRequest, sampleEstimatedProcess).toFixed(1);
   let timeText;
   if (hours <= 0) {
     timeText = `${minutes} MINUTE${minutes !== 1 ? 'S' : ''}`;

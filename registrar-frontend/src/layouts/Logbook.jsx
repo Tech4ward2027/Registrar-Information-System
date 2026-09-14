@@ -460,18 +460,18 @@ const LogbookRecords = () => {
 
   return (
     <div className={`relative min-h-full font-sans text-left ${isDark ? 'bg-[#18191a] text-[#e4e6eb]' : 'bg-white text-gray-900'}`}>
-      <div className={`max-w-350 mx-auto shadow-md rounded-sm flex flex-col min-h-150 print:p-0 print:shadow-none ${isDark ? 'bg-[#242526]' : 'bg-white'}`}>
+      <div className={`w-full max-w-7xl mx-auto shadow-xs sm:shadow-md rounded-lg flex flex-col min-h-150 print:p-0 print:shadow-none ${isDark ? 'bg-[#242526]' : 'bg-white'}`}>
 
-        <div className="px-8 lg:mt-10">
+        <div className="p-3.5 sm:p-6 md:p-8 lg:mt-4">
 
           {/* ── Controls Panel ── */}
-          <div className={`mb-6 print:hidden rounded-xl border p-4 sm:p-5 ${isDark ? 'bg-[#1e1f20] border-[#3e4042]' : 'bg-gray-50 border-gray-200'}`}>
+          <div className={`mb-6 print:hidden rounded-xl border p-3.5 sm:p-5 ${isDark ? 'bg-[#1e1f20] border-[#3e4042]' : 'bg-gray-50 border-gray-200'}`}>
 
             {/* Controls Row */}
-            <div className="flex flex-wrap items-end gap-3 w-full">
+            <div className="flex flex-col sm:flex-row flex-wrap items-end gap-3.5 w-full">
 
               {/* Document Type multi-select checkbox dropdown */}
-              <div className="w-full md:w-85 shrink-0">
+              <div className="w-full sm:w-72 shrink-0">
                 <MultiSelectDropdown
                   label="Document Category"
                   name="docCategory"
@@ -491,7 +491,7 @@ const LogbookRecords = () => {
 
               {/* Certification Type dropdown (conditional) */}
               {isCertificationMode && (
-                <div className="w-full md:w-75 shrink-0">
+                <div className="w-full sm:w-64 shrink-0">
                   <DropDown
                     label="Certification Type"
                     name="certificationType"
@@ -506,11 +506,8 @@ const LogbookRecords = () => {
                 </div>
               )}
 
-              {/* Vertical divider */}
-              <div className={`hidden md:block self-stretch w-px mx-1 ${isDark ? 'bg-[#3e4042]' : 'bg-gray-200'}`} />
-              
               {/* Date Filter Button */}
-              <div className="w-full md:w-65 shrink-0 flex flex-col">
+              <div className="w-full sm:w-60 shrink-0 flex flex-col">
                 <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}`}>
                   Date Range
                 </label>
@@ -518,11 +515,11 @@ const LogbookRecords = () => {
                   type="button"
                   onClick={() => setIsDateModalOpen(true)}
                   className={`
-                    w-full flex items-center justify-between gap-2 pl-3 pr-3 py-3 rounded-lg text-sm font-medium 
-                    shadow-sm focus:outline-none border transition-colors text-left cursor-pointer
+                    w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-sm font-medium 
+                    shadow-xs focus:outline-none border transition-colors text-left cursor-pointer min-h-[46px]
                     ${isDark
                       ? 'bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042] hover:border-gray-200'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-gray-200'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
                     }
                   `}
                 >
@@ -531,7 +528,7 @@ const LogbookRecords = () => {
                       ? `${dateFrom} to ${dateTo}`
                       : (dateFrom ? `From ${dateFrom}` : (dateTo ? `To ${dateTo}` : 'All Time'))}
                   </span>
-                  <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <svg className="w-4 h-4 shrink-0 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                 </button>
@@ -541,16 +538,17 @@ const LogbookRecords = () => {
                   the policy lacks Export, since this is documented as a soft/
                   UI-only gate rather than a hard boundary. */}
               {canExport && (
-                <div className="w-full md:w-60 md:ml-auto shrink-0">
+                <div className="w-full sm:w-48 sm:ml-auto shrink-0">
                   <button
                     data-voice-action="export"
                     onClick={handleExportDocx}
                     disabled={loading || exporting || sortedData.length === 0}
-                    className={`w-full flex items-center justify-center px-3 py-3 
-                      rounded-lg text-sm font-black uppercase tracking-wide shadow 
-                      transition-colors bg-[#800000] text-white hover:bg-[#6b0000]
-                      ${isDark ? 'bg-[#3a3b3c] text-[#e4e6eb] hover:bg-[#4e4f50]' : 
-                      'bg-[#800000] text-white hover:bg-[#6b0000]'}`}
+                    className={`w-full flex items-center justify-center px-4 py-3 min-h-11.5
+                      rounded-lg text-xs font-black uppercase tracking-wider shadow-xs 
+                      transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
+                      ${isDark 
+                        ? 'bg-[#3a3b3c] text-[#e4e6eb] hover:bg-[#4e4f50]' 
+                        : 'bg-[#800000] text-white hover:bg-[#6b0000]'}`}
                   >
                     <span>{exporting ? 'Exporting…' : 'Export DOCX'}</span>
                   </button>
@@ -573,8 +571,9 @@ const LogbookRecords = () => {
           </div>
         </div>
 
-        {/* ── Original Table ── */}
-        <div className="flex-1 overflow-x-auto px-4 sm:px-6 md:px-8">
+        {/* ── Table Container (Desktop: Table, Mobile: Card List) ── */}
+        {/* Desktop Table View (hidden on mobile, visible md and up) */}
+        <div className="hidden md:block flex-1 overflow-x-auto px-4 sm:px-6 md:px-8">
           <table className="w-full min-w-225 border-collapse md:min-w-full">
             <thead>
               <tr className={`border-b-2 uppercase text-center ${isDark ? 'border-[#3e4042] text-[#9a9a9a]' : 'border-gray-300 text-gray-400'}`}>
@@ -643,6 +642,92 @@ const LogbookRecords = () => {
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Card View (visible on mobile, hidden md and up) */}
+        <div className="block md:hidden flex-1 px-4 py-2 space-y-3">
+          {currentData.length === 0 && !loading && (
+            <div className={`text-center py-8 text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              No logbook records found for this period.
+            </div>
+          )}
+
+          {currentData.map((row) => {
+            const processedAt = getProcessedAt(row);
+            const claimedAt = getClaimedAt(row);
+
+            return (
+              <div
+                key={row.request_id || row.id}
+                className={`p-4 rounded-xl border transition-all shadow-sm ${
+                  isDark
+                    ? 'bg-[#1e1f20] border-[#3e4042] text-[#e4e6eb]'
+                    : 'bg-white border-gray-200 text-gray-800'
+                }`}
+              >
+                {/* Header: Name & Gender Badge */}
+                <div className="flex items-center justify-between border-b pb-2.5 mb-3 border-gray-100 dark:border-[#3e4042]">
+                  <span className={`font-bold text-sm ${isDark ? 'text-[#f5c542]' : 'text-[#800000]'}`}>
+                    {getFullName(row)}
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                    isDark ? 'bg-[#3a3b3c] text-[#b0b3b8]' : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {getGender(row) || 'N/A'}
+                  </span>
+                </div>
+
+                {/* Details Grid */}
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2.5 text-xs">
+                  <div>
+                    <span className="block text-[10px] uppercase font-bold tracking-wider text-gray-400 mb-0.5">
+                      Course
+                    </span>
+                    <span className="font-semibold">{getCourse(row) || 'N/A'}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] uppercase font-bold tracking-wider text-gray-400 mb-0.5">
+                      Email
+                    </span>
+                    <span className="font-semibold truncate block" title={getEmail(row)}>
+                      {getEmail(row) || 'N/A'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] uppercase font-bold tracking-wider text-gray-400 mb-0.5">
+                      Requested
+                    </span>
+                    <span>{formatDateTimeLong(row.requested_at) || 'N/A'}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] uppercase font-bold tracking-wider text-gray-400 mb-0.5">
+                      Processed
+                    </span>
+                    <span>{formatDateTimeLong(processedAt) || '---'}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] uppercase font-bold tracking-wider text-gray-400 mb-0.5">
+                      Business Minutes
+                    </span>
+                    <span className={`font-bold ${isDark ? 'text-[#f5c542]' : 'text-[#800000]'}`}>
+                      {formatMinutesDuration(getProcessingDuration(row))}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] uppercase font-bold tracking-wider text-gray-400 mb-0.5">
+                      Date Claimed
+                    </span>
+                    <span className="italic text-gray-400">{formatDateLong(claimedAt) || 'Pending'}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         {/* ── Original Pagination Footer ── */}
