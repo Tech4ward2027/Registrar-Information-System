@@ -350,3 +350,66 @@ test('a subsequent login while PUPTAPS is unreachable leaves an already-provisio
     $profile = AlumniProfile::where('alumni_id', $alumni->alumni_id)->first();
     expect($profile->first_name)->toBe('Existing'); // untouched, not overwritten with a stub
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Non-SIS alumnus: PUPTAPS confirms them (post-verification) but with no
+// student number — regression coverage for the AlumniDTO null-stud_number
+// fix, exercised through the real provisioning path an actual login takes,
+// not just the DTO in isolation.
+// ═════════════════════════════════════════════════════════════════════════════
+
+test('a verified Non-SIS alumnus with no PUPTAPS student number provisions successfully with an empty student_number', function () {
+    $email = 'non.sis.alumnus@example.com';
+
+    mockOgosMiss($this, $email);
+
+    // Built via AlumniDTO::fromArray() from a raw, snake_case payload
+    // shaped exactly like a real PUPTAPS HTTP response — not the
+    // sampleAlumniDto() constructor helper — since the null-to-''
+    // coalescing this test guards lives in fromArray(), not the
+    // constructor itself (which intentionally stays a strict
+    // non-nullable string; PUPTAPS JSON is the only untrusted boundary).
+    $dto = AlumniDTO::fromArray([
+        'alumni_id'      => 909,
+        'stud_number'    => null,
+        'last_name'      => 'Dela Cruz',
+        'first_name'     => 'Juan',
+        'middle_name'    => 'Reyes',
+        'suffix'         => null,
+        'course_id'      => 'BSIT',
+        'course_desc'    => 'Bachelor of Science in Information Technology',
+        'batch'          => 2022,
+        'year_graduated' => '2022',
+        'sex'            => null,
+        'birthday'       => null,
+        'email'          => $email,
+        'number'         => '09171234567',
+        'profile_status' => 'Verified',
+    ]);
+
+    $alumniClient = Mockery::mock(AlumniSystemClientInterface::class);
+    $alumniClient->shouldReceive('tryLookupAlumniByEmail')
+        ->once()
+        ->with($email)
+        ->andReturn($dto);
+    $this->app->instance(AlumniSystemClientInterface::class, $alumniClient);
+
+    $result = app(UserProvisioningService::class)->provision(
+        ['id' => 'idp-non-sis-909', 'email' => $email],
+        alumniSsoRequest(),
+    );
+
+    expect($result->user->role_id)->toBe(SystemUser::ROLE_ALUMNI);
+
+    $alumni = Alumni::where('user_id', $result->user->user_id)->first();
+    expect($alumni->alumni_type_id)->toBe(Alumni::TYPE_SIS); // PUPTAPS confirmed them, regardless of stud number
+
+    $profile = AlumniProfile::where('alumni_id', $alumni->alumni_id)->first();
+    $record  = AlumniAcademicRecord::where('alumni_profile_id', $profile->alumni_profile_id)->first();
+
+    expect($record)->not->toBeNull();
+    // '' — the FakeAlumniSystemClient convention for "no student number",
+    // not the TypeError this used to throw before AlumniDTO::fromArray()
+    // coalesced a null stud_number.
+    expect($record->student_number)->toBe('');
+});

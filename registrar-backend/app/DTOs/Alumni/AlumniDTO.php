@@ -26,7 +26,17 @@ class AlumniDTO
     {
         return new self(
             alumniId:      $data['alumni_id'],
-            studNumber:    $data['stud_number'],
+            // Non-SIS alumni (self-registered, pending/awaiting a
+            // Registrar Admin's manual verification against legacy
+            // records) have no student number by design — PUPTAPS
+            // returns stud_number: null for them on every endpoint,
+            // not just /lookup. Coalescing to '' here matches the
+            // existing convention already used by
+            // FakeAlumniSystemClient::toDto() (empty string = "no
+            // student number"), so every downstream consumer already
+            // treats this correctly (nullable DB column, falsy checks
+            // in the frontend) without needing its own null handling.
+            studNumber:    $data['stud_number'] ?? '',
             lastName:      $data['last_name'],
             firstName:     $data['first_name'],
             middleName:    $data['middle_name'] ?? null,
