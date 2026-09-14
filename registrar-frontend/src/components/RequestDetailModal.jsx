@@ -297,8 +297,15 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
       setShowWithdrawForm(false);
       setActionSuccess("Request withdrawn successfully.");
     } catch (err) {
-      setActionError(err.response?.data?.message || Object.values(err.response?.data?.errors ?? {}).flat().join(' ') || 'Unable to withdraw this request.');
-    } finally {
+      let rawMsg = err.response?.data?.message || Object.values(err.response?.data?.errors ?? {}).flat().join(' ') || 'Unable to withdraw this request.';
+      if (rawMsg.includes('superseded_by_request_id does not reference an existing request')) {
+        rawMsg = 'The replacement request ID could not be found. Please check the ID and try again.';
+      } else if (rawMsg.includes('cannot supersede itself')) {
+        rawMsg = 'A request cannot be superseded by itself. Please enter a different request ID.';
+      }
+      setActionError(rawMsg);
+    }
+ finally {
       setActionLoading(false);
     }
   };
