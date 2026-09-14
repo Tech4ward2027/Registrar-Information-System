@@ -60,7 +60,7 @@ const STATUS_DISPLAY = {
   // Fee starting status. Given its own color (not reused from Pending
   // Signature's orange) so staff can tell the two "waiting on something
   // outside our control" states apart at a glance.
-  12: { label: "Awaiting Submission", classes: "bg-purple-100 text-purple-700 border-purple-200" },
+  12: { label: "Awaiting Submission", classes: "bg-emerald-100 text-emerald-700 border-emerald-200" },
 };
 
 const ReferenceDataContext = createContext(null);
