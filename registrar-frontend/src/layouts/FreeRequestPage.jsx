@@ -39,8 +39,16 @@ const FreeRequestPageContent = () => {
   // Can this user perform eligibility overrides?
   const canOverride = hasModuleAction(currentUser, MODULE_KEYS.FREE_REQUESTS, "Override");
 
+  const getAccountInitial = (acc) => {
+    if (!acc) return "U";
+    const name = acc.first_name || acc.full_name || acc.name || acc.email || "";
+    const trimmed = name.trim();
+    return trimmed ? trimmed.charAt(0).toUpperCase() : "U";
+  };
+
   // Step 1: Account Search
   const [searchQuery, setSearchQuery] = useState("");
+
   const [selectedAccount, setSelectedAccount] = useState(null);
 
   // TanStack Query: Reference catalog
@@ -499,7 +507,7 @@ const FreeRequestPageContent = () => {
               }`}>
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-pup-dark-maroon text-white flex items-center justify-center font-extrabold text-xs shadow-sm shrink-0">
-                  {(selectedAccount.first_name?.[0] || selectedAccount.email?.[0] || "U").toUpperCase()}
+                  {getAccountInitial(selectedAccount)}
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -559,7 +567,7 @@ const FreeRequestPageContent = () => {
                     >
                       <div className="flex items-center gap-2.5">
                         <div className="w-7 h-7 rounded-full bg-pup-dark-maroon/20 text-pup-dark-maroon dark:text-rose-400 font-bold flex items-center justify-center text-[11px] shrink-0">
-                          {(account.first_name?.[0] || account.email?.[0] || "U").toUpperCase()}
+                          {getAccountInitial(account)}
                         </div>
                         <div>
                           <p className={`text-xs font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
@@ -606,7 +614,7 @@ const FreeRequestPageContent = () => {
             {/* Reusable DropdownGroup for Purpose Selection */}
             <div className="mb-4">
               <DropdownGroup
-                label="Purpose of Request *"
+                label="Purpose of Request"
                 name="purpose"
                 value={selectedPurposeName}
                 onChange={handlePurposeDropdownChange}
@@ -720,13 +728,8 @@ const FreeRequestPageContent = () => {
                                 Recommended
                               </span>
                             )}
-
-                            {isSelected && evalResult && !evalResult.eligible && (
-                              <span className="text-[11px] font-bold text-rose-500">
-                                Limit Exceeded
-                              </span>
-                            )}
                           </div>
+
                         </div>
                       );
                     })}

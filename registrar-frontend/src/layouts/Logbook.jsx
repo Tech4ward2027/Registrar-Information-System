@@ -20,6 +20,7 @@ import {
 } from '../utils/logbookHelpers.js';
 
 import DropDown from '../components/DropDown';
+import MultiSelectDropdown from '../components/MultiSelection.jsx';
 import LogbookDateRangeModal from '../components/LogbookDateRangeModal';
 import { LogbookSkeleton } from '../components/LoadingSkeleton';
 import SuccessToast from '../components/SuccessToast.jsx';
@@ -54,7 +55,8 @@ const LogbookRecords = () => {
   const [historyByRequestId, setHistoryByRequestId] = useState({});
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedExportOption, setSelectedExportOption] = useState('All Document');
+  const [selectedDocCategories, setSelectedDocCategories] = useState([]);
+  const [selectedCertificationLabel, setSelectedCertificationLabel] = useState('');
   const [exporting, setExporting] = useState(false);
   const [toastSuccess, setToastSuccess] = useState('');
   const [toastError, setToastError] = useState('');
@@ -167,10 +169,22 @@ const LogbookRecords = () => {
   }, [availableCertifications, logbookCategoryNameById]);
 
   // Build document filter dropdown options — one entry per distinct
-  // logbook label (post-rollup), not per raw document type.
+  // Build document filter dropdown options — one entry per distinct
+  // logbook label (post-rollup), plus mandatory logbook category options
+  // ("Completion Fee", "Transcript of Records", "Certified True Copy of Records").
   const docOptions = useMemo(() => {
     const options = ['All Document'];
     const seen = new Set(['all document']);
+
+    (logbookCategories || []).forEach((c) => {
+      const name = String(c?.name || '').trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        options.push(name);
+      }
+    });
 
     Object.values(docLogbookLabelById).forEach((label) => {
       const normalized = String(label || '').trim();
@@ -179,6 +193,20 @@ const LogbookRecords = () => {
       if (seen.has(key)) return;
       seen.add(key);
       options.push(normalized);
+    });
+
+    const requiredCategories = [
+      'Completion Fee',
+      'Transcript of Records',
+      'Certified True Copy of Records',
+    ];
+
+    requiredCategories.forEach((cat) => {
+      const key = cat.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        options.push(cat);
+      }
     });
 
     // Structural marker, unrelated to logbook_category rollup: a document
@@ -191,7 +219,7 @@ const LogbookRecords = () => {
     }
 
     return options;
-  }, [docLogbookLabelById, activeDocMap]);
+  }, [docLogbookLabelById, activeDocMap, logbookCategories]);
 
   // List of distinct certification logbook labels (post-rollup)
   const certificationOptions = useMemo(() => {
@@ -210,24 +238,25 @@ const LogbookRecords = () => {
     return options;
   }, [certLogbookLabelById]);
 
-  // Label displayed for the currently selected document/export option.
-  // docOptions/certificationOptions are already resolved logbook labels,
-  // so the dropdown's raw selected value IS the label — no id lookup
-  // needed (and none is possible 1:1 once a label can represent more
-  // than one underlying document/certificate type).
-  const selectedDocLabel = useMemo(() => {
-    if (selectedExportOption === 'All Certification') return 'All Certification';
-    return selectedExportOption || 'All Document';
-  }, [selectedExportOption]);
-
   // Whether the UI is currently focused on certification-specific filters/exports
   const isCertificationMode = useMemo(() => {
-    const sel = String(selectedExportOption || '').trim().toLowerCase();
-    const label = String(selectedDocLabel || '').trim().toLowerCase();
-    return sel === 'certification' || (label === 'certification' && sel !== 'all certification');
-  }, [selectedExportOption, selectedDocLabel]);
+    return (selectedDocCategories || []).includes('All Certification');
+  }, [selectedDocCategories]);
 
-  const [selectedCertificationLabel, setSelectedCertificationLabel] = useState('');
+  // Label displayed for the currently selected document/export option.
+  const selectedDocLabel = useMemo(() => {
+    if (isCertificationMode) {
+      return selectedCertificationLabel || 'All Certification';
+    }
+    if (!selectedDocCategories || selectedDocCategories.length === 0 || selectedDocCategories.includes('All Document')) {
+      return 'All Document';
+    }
+    if (selectedDocCategories.length === 1) {
+      return selectedDocCategories[0];
+    }
+    return selectedDocCategories.join(', ');
+  }, [selectedDocCategories, isCertificationMode, selectedCertificationLabel]);
+
 
   useEffect(() => {
     if (isCertificationMode) {
@@ -264,14 +293,35 @@ const LogbookRecords = () => {
       });
     }
 
-    if (!selectedExportOption || selectedExportOption === 'All Document') return completedOnly;
+    if (!selectedDocCategories || selectedDocCategories.length === 0 || selectedDocCategories.includes('All Document')) {
+      return completedOnly;
+    }
 
-    const targetLabel = String(selectedExportOption).trim().toLowerCase();
-    return completedOnly.filter((item) =>
-      getDocumentLogbookLabels(item, logbookCategoryNameById)
-        .some((label) => label.trim().toLowerCase() === targetLabel)
-    );
-  }, [selectedExportOption, data, isCertificationMode, selectedCertificationLabel, logbookCategoryNameById, dateFrom, dateTo]);
+    const selectedKeys = selectedDocCategories.map((c) => c.trim().toLowerCase());
+
+    return completedOnly.filter((item) => {
+      const labels = getDocumentLogbookLabels(item, logbookCategoryNameById).map((l) => l.trim().toLowerCase());
+      if (labels.some((label) => selectedKeys.includes(label))) {
+        return true;
+      }
+      const docs = Array.isArray(item.documents) ? item.documents : [];
+      return docs.some((doc) => {
+        const name = String(doc?.documentType?.document_name || doc?.document_name || doc?.name || '').toLowerCase();
+        return selectedKeys.some((targetLabel) => {
+          if (targetLabel === 'completion fee') {
+            return name.includes('completion') || name.includes('incomplete') || name.includes('correction of entry');
+          }
+          if (targetLabel === 'transcript of records') {
+            return name.includes('transcript') || name.includes('tor');
+          }
+          if (targetLabel === 'certified true copy of records') {
+            return name.includes('certified true copy') || name.includes('ctc');
+          }
+          return name === targetLabel;
+        });
+      });
+    });
+  }, [selectedDocCategories, data, isCertificationMode, selectedCertificationLabel, logbookCategoryNameById, dateFrom, dateTo]);
 
   // Sort filtered data by request timestamp (most recent first)
   const sortedData = useMemo(() => {
@@ -310,8 +360,25 @@ const LogbookRecords = () => {
       }));
     }
 
-    if (selectedExportOption && selectedExportOption !== 'All Document') {
-      return [{ title: selectedDocLabel, rows: sortedData }];
+    if (selectedDocCategories && selectedDocCategories.length > 0 && !selectedDocCategories.includes('All Document')) {
+      return selectedDocCategories.map((catName) => {
+        const targetLabel = catName.trim().toLowerCase();
+        return {
+          title: catName,
+          rows: sortedData.filter((item) => {
+            const labels = getDocumentLogbookLabels(item, logbookCategoryNameById).map((l) => l.trim().toLowerCase());
+            if (labels.includes(targetLabel)) return true;
+            const docs = Array.isArray(item.documents) ? item.documents : [];
+            return docs.some((doc) => {
+              const name = String(doc?.documentType?.document_name || doc?.document_name || doc?.name || '').toLowerCase();
+              if (targetLabel === 'completion fee') return name.includes('completion') || name.includes('incomplete') || name.includes('correction of entry');
+              if (targetLabel === 'transcript of records') return name.includes('transcript') || name.includes('tor');
+              if (targetLabel === 'certified true copy of records') return name.includes('certified true copy') || name.includes('ctc');
+              return name === targetLabel;
+            });
+          }),
+        };
+      }).filter((sec) => sec.rows.length > 0);
     }
 
     const docLabels = Object.values(docLogbookLabelById).map(n => String(n || '').trim()).filter(Boolean);
@@ -403,22 +470,19 @@ const LogbookRecords = () => {
             {/* Controls Row */}
             <div className="flex flex-wrap items-end gap-3 w-full">
 
-              {/* Document Type dropdown */}
-              <div className="w-full md:w-75 shrink-0">
-                <DropDown
-                  label="Document Type"
-                  name="docType"
-                  value={selectedExportOption}
+              {/* Document Type multi-select checkbox dropdown */}
+              <div className="w-full md:w-85 shrink-0">
+                <MultiSelectDropdown
+                  label="Document Category"
+                  name="docCategory"
+                  placeholder="All Categories"
                   labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}
+                  selectedValues={selectedDocCategories}
                   onChange={(e) => {
-                    // docOptions/certificationOptions values are already
-                    // resolved logbook labels (see docLogbookLabelById /
-                    // certLogbookLabelById above), so the selected value
-                    // can be used directly for filtering — no id lookup
-                    // needed, and none is possible 1:1 once a label can
-                    // represent more than one underlying type.
-                    setSelectedExportOption(e.target.value);
-                    setSelectedCertificationLabel('');
+                    setSelectedDocCategories(e.target.value);
+                    if (!e.target.value.includes('All Certification')) {
+                      setSelectedCertificationLabel('');
+                    }
                     setCurrentPage(1);
                   }}
                   options={docOptions}

@@ -148,18 +148,26 @@ const LandingPage = () => {
             className="w-16 h-16 lg:w-20 lg:h-20 drop-shadow-lg dark:drop-shadow-2xl transition-all duration-200"
           />
           <div className="flex flex-col justify-center grow">
-            <h1 className="text-white dark:text-white font-semibold text-[13px] lg:text-[22px] leading-tight font-lucida tracking-wider">
-              Polytechnic University of the Philippines
+            <h1 className="sm:hidden text-white dark:text-white font-bold text-xs sm:text-base font-lucida tracking-wider leading-tight">
+              PUP-TAGUIG
             </h1>
-            <p className="text-[#e6e0e0] dark:text-gray-300 text-[9px] lg:text-[13px] font-lucida tracking-widest mt-0.5">
+            <p className="sm:hidden text-[#e6e0e0] dark:text-gray-300 text-[8px] lg:text-[13px] font-lucida tracking-widest mt-0.5">
               The Country's 1st PolytechnicU
             </p>
+            <div className="hidden sm:flex flex-col">
+              <h1 className="text-white dark:text-white font-semibold text-[13px] lg:text-[22px] leading-tight font-lucida tracking-wider">
+                Polytechnic University of the Philippines
+              </h1>
+              <p className="text-[#e6e0e0] dark:text-gray-300 text-[9px] lg:text-[13px] font-lucida tracking-widest mt-0.5">
+                The Country's 1st PolytechnicU
+              </p>
+            </div>
           </div>
         </div>
 
-          {/* Right: nav links + sign in — hidden on mobile */}
+          {/* Right: nav links */}
           <div className="hidden md:relative md:flex items-center space-x-2 lg:space-x-3">
-            <div className="hidden md:flex items-center gap-1">
+            <div className="flex items-center gap-1">
               {NAV_ITEMS.map(({ id, label }) => (
                 <button
                   key={id}
@@ -170,13 +178,6 @@ const LandingPage = () => {
                 </button>
               ))}
             </div>
-
-            <button
-              onClick={openModal}
-              className="px-6 py-2.5 text-sm font-semibold rounded-lg border border-yellow-400 text-yellow-400 hover:bg-yellow-400 hover:text-[#660000] active:scale-95 transition-all font-inter cursor-pointer"
-            >
-              Sign In
-            </button>
           </div>
         </div>
       </header>
@@ -208,26 +209,30 @@ const LandingPage = () => {
               Academic Request. Redefined Simplicity.
             </p>
             {/* Yellow line */}
-            <div className="w-48 h-2.5 bg-[#F8BF1E] my-8 rounded-full shadow-lg" />
-            
-            <div className="lp-hero-btns">
-              <a href={SSO_LOGIN_URL} className="lp-btn-primary">
+            <div className="w-30 h-2.5 bg-[#F8BF1E] my-5 rounded-full shadow-lg" />
+
+            <div className="lp-hero-btns flex flex-col items-center md:items-start gap-1.5 w-full md:w-auto text-center md:text-left">
+              <a href={SSO_LOGIN_URL} className="lp-btn-primary mx-auto md:mx-0">
                 Log in with IDP
               </a>
-              <button className="lp-btn-outline" onClick={openModal}>
-                Sign In Locally
+              <button
+                type="button"
+                onClick={openModal}
+                className="text-xs text-gray-300 hover:text-yellow-400 underline underline-offset-4 transition-colors font-inter cursor-pointer mt-0.5 text-center md:text-left mx-auto md:mx-0"
+              >
+                Need to log in locally?
               </button>
             </div>
             
             {/* Clickable icons under buttons */}
             <div className="lp-hero-contact-links">
               <a href={GMAIL_COMPOSE_URL} target="_blank" rel="noopener noreferrer" className="lp-hero-contact-link" title="Email: tech4ward.bsit2027@gmail.com">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
                 </svg>
               </a>
               <a href="https://www.facebook.com/profile.php?id=61592440295541" target="_blank" rel="noopener noreferrer" className="lp-hero-contact-link" title="Facebook: PUP Taguig Official">
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4.5 h-4.5" fill="currentColor" viewBox="0 0 24 24">
                   <path fillRule="evenodd" d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.991 22 12z" clipRule="evenodd" />
                 </svg>
               </a>
