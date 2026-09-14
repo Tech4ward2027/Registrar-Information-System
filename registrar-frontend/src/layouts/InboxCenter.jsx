@@ -10,7 +10,6 @@ import {
   MegaphoneIcon,
   DocumentTextIcon,
   MapPinIcon,
-  EllipsisHorizontalIcon,
   ArrowTopRightOnSquareIcon,
   InformationCircleIcon,
 } from '@heroicons/react/24/outline';
@@ -522,14 +521,6 @@ const InboxCenter = () => {
                         </p>
                       </div>
                     </div>
-
-                    <button
-                      type="button"
-                      className={`p-1.5 rounded-lg transition-colors cursor-pointer shrink-0 ${isDark ? 'hover:bg-[#3a3b3c] text-[#b0b3b8]' : 'hover:bg-gray-100 text-gray-600'}`}
-                      title="Options"
-                    >
-                      <EllipsisHorizontalIcon className="w-5 h-5" />
-                    </button>
                   </header>
 
                   <div className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-4 ${isDark ? 'bg-[#1a1b1e]' : 'bg-gray-50'}`}>
