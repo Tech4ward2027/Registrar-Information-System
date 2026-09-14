@@ -78,7 +78,7 @@ const MainPage = () => {
       <div className="relative min-h-screen w-full overflow-x-hidden bg-white z-30">
         <Tech4wardProfile bgImage={risImage} />
       </div>
-      <div className="w-full relative z-40 bg-gray-50/50 py-20 border-t border-gray-100">
+      <div id="about" className="w-full relative z-40 bg-gray-50/50 py-20 border-t border-gray-100 scroll-mt-28">
         <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-start justify-start gap-12 md:gap-16 text-[#800000]">
           {/* Logo container with hover effects */}
           <div className="shrink-0 relative group">
