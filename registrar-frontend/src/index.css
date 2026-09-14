@@ -506,8 +506,9 @@
 
 .lp-hero-btns {
   display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .lp-btn-primary {
@@ -563,8 +564,8 @@
 
 .lp-hero-contact-links {
   display: flex;
-  gap: 20px;
-  margin-top: 32px;
+  gap: 14px;
+  margin-top: 20px;
 }
 
 .lp-hero-contact-link {
@@ -573,16 +574,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 52px;
-  height: 52px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .lp-hero-contact-link svg {
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
 }
 
 .lp-hero-contact-link:hover {
@@ -1201,6 +1202,7 @@
     padding: 32px 20px;
     border-radius: 16px;
   }
+
   .lp-modal-title {
     font-size: 1.35rem;
   }
