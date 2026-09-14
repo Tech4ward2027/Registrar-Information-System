@@ -36,12 +36,18 @@ class SystemUser extends Authenticatable
 
     // -------------------------------------------------------
     // Role constants — must match your roles table:
-    // 1 = student, 2 = alumni, 3 = admin, 4 = super_admin
+    // 1 = student, 2 = alumni, 3 = admin, 4 = super_admin,
+    // 5 = undergrad_requestor
     // -------------------------------------------------------
-    public const ROLE_STUDENT     = 1;
-    public const ROLE_ALUMNI      = 2;
-    public const ROLE_ADMIN       = 3;
-    public const ROLE_SUPER_ADMIN = 4;
+    public const ROLE_STUDENT             = 1;
+    public const ROLE_ALUMNI              = 2;
+    public const ROLE_ADMIN               = 3;
+    public const ROLE_SUPER_ADMIN         = 4;
+    // Undergrad Requestor Registration — Phase 1 (D1). IDP is the sole
+    // authenticator for this role (D3) — never given local_auth_enabled,
+    // same exclusion as Student/Alumni. See UndergradRequestorVerification
+    // for the Admin-decision-final gate on login/request-flow access.
+    public const ROLE_UNDERGRAD_REQUESTOR = 5;
 
     protected $fillable = [
         'email',
@@ -79,6 +85,26 @@ class SystemUser extends Authenticatable
     public function studentProfile()
     {
         return $this->hasOne(StudentProfile::class, 'user_id', 'user_id');
+    }
+
+    /**
+     * Undergrad Requestor Registration — Phase 1 (D5). Self-declared,
+     * unverified profile data collected at public onboarding (Phase 2).
+     * Only meaningful for role_id = ROLE_UNDERGRAD_REQUESTOR.
+     */
+    public function undergradRequestorProfile()
+    {
+        return $this->hasOne(UndergradRequestorProfile::class, 'user_id', 'user_id');
+    }
+
+    /**
+     * Undergrad Requestor Registration — Phase 1 (D6, D8). The single
+     * Admin-decision-final verification record gating this account's
+     * SSO activation (Phase 3) and request-flow access (Phase 5).
+     */
+    public function undergradRequestorVerification()
+    {
+        return $this->hasOne(UndergradRequestorVerification::class, 'user_id', 'user_id');
     }
 
     public function documentRequests()
@@ -269,6 +295,18 @@ class SystemUser extends Authenticatable
     public function isStaff(): bool
     {
         return in_array($this->assumedRoleId(), [self::ROLE_ADMIN, self::ROLE_SUPER_ADMIN]);
+    }
+
+    /**
+     * Undergrad Requestor Registration — Phase 1 (D1). Reads the
+     * assumed role like every other role helper here — an Undergrad
+     * Requestor account has no role-switching use case today, but this
+     * keeps the helper consistent with isStudent()/isAlumni()/etc.
+     * should that ever change.
+     */
+    public function isUndergradRequestor(): bool
+    {
+        return $this->assumedRoleId() === self::ROLE_UNDERGRAD_REQUESTOR;
     }
 
     // -------------------------------------------------------
