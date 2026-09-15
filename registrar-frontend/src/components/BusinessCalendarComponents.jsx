@@ -35,6 +35,82 @@ export const formatTime = (timeStr) => {
   return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 };
 
+/**
+ * Today's date formatted as a local 'YYYY-MM-DD' string.
+ * Uses local getFullYear/getMonth/getDate to avoid UTC date boundary shifts.
+ */
+export const getTodayDateString = (refDate = new Date()) => {
+  const d = refDate instanceof Date ? refDate : new Date(refDate);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+/**
+ * Filter, enrich, and sort incoming (upcoming or active today) holidays & closures.
+ *
+ * @param {Array} exceptions - List of calendar exceptions / closures
+ * @param {Object} [options]
+ * @param {number} [options.limit] - Max number of items to return
+ * @param {boolean} [options.holidayOnly=false] - If true, only return type === 'holiday'
+ * @param {string|Date} [options.referenceDate=new Date()] - Reference date (defaults to today)
+ * @returns {Array} Array of incoming holiday objects enriched with metadata (daysUntil, isToday, etc.)
+ */
+export const getIncomingHolidays = (exceptions = [], options = {}) => {
+  const { limit, holidayOnly = false, referenceDate = new Date() } = options;
+  const todayStr = getTodayDateString(referenceDate);
+  const todayMs = new Date(todayStr).getTime();
+
+  const incoming = (exceptions || [])
+    .filter((e) => {
+      if (!e || e.enabled === false) return false;
+      if (holidayOnly && e.type !== "holiday") return false;
+      const endStr = (e.end_date || e.date)?.slice(0, 10);
+      return Boolean(endStr && endStr >= todayStr);
+    })
+    .map((e) => {
+      const startStr = e.date?.slice(0, 10) ?? todayStr;
+      const endStr = (e.end_date || e.date)?.slice(0, 10) ?? startStr;
+      const startMs = new Date(startStr).getTime();
+      const diffMs = startMs - todayMs;
+      const daysUntil = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      const isToday = startStr <= todayStr && endStr >= todayStr;
+
+      return {
+        ...e,
+        startDateStr: startStr,
+        endDateStr: endStr,
+        daysUntil: Math.max(0, daysUntil),
+        isToday,
+        isMultiDay: startStr !== endStr,
+      };
+    })
+    .sort((a, b) => a.startDateStr.localeCompare(b.startDateStr));
+
+  return typeof limit === "number" && limit > 0 ? incoming.slice(0, limit) : incoming;
+};
+
+/**
+ * Get the next immediate incoming holiday or closure.
+ */
+export const getNextHoliday = (exceptions = [], options = {}) => {
+  const incoming = getIncomingHolidays(exceptions, { ...options, limit: 1 });
+  return incoming[0] || null;
+};
+
+/**
+ * Check if a specific date (YYYY-MM-DD or Date object) falls on an active holiday/closure exception.
+ */
+export const isHolidayDate = (targetDate, exceptions = []) => {
+  if (!targetDate) return false;
+  const dateStr = typeof targetDate === "string" ? targetDate.slice(0, 10) : getTodayDateString(targetDate);
+
+  return (exceptions || []).some((e) => {
+    if (!e || e.enabled === false) return false;
+    const start = e.date?.slice(0, 10);
+    const end = (e.end_date || e.date)?.slice(0, 10);
+    return Boolean(start && end && start <= dateStr && end >= dateStr);
+  });
+};
+
 const formatNextOpen = (iso) => {
   if (!iso) return "";
   return new Date(iso).toLocaleString("en-US", {
@@ -50,11 +126,12 @@ const formatNextOpen = (iso) => {
 /**
  * Three status summary cards at the top
  */
-export const OfficeStatusCards = ({ isDark, officeStatus, upcomingCount, weeklyScheduleCount }) => {
+export const OfficeStatusCards = ({ isDark, officeStatus, upcomingCount, weeklyScheduleCount, calendarExceptions = [] }) => {
   const isOpen = officeStatus?.is_open;
   const reason = officeStatus?.reason || (isOpen ? "Regular Hours" : "Closed");
   const nextOpen = officeStatus?.next_open_at;
   const closesAt = officeStatus?.closes_at;
+  const nextHoliday = getNextHoliday(calendarExceptions);
 
   const yellowColorClass = isDark ? "border-l-yellow-400 text-yellow-400" : "border-l-yellow-400 text-yellow-500";
   const blueColorClass = isDark ? "border-l-blue-400 text-blue-400" : "border-l-blue-500 text-blue-500";
@@ -109,7 +186,14 @@ export const OfficeStatusCards = ({ isDark, officeStatus, upcomingCount, weeklyS
           </div>
         </div>
         <p className={`text-xs mt-3 leading-relaxed ${isDark ? "text-[#b0b3b8]" : "text-gray-500"}`}>
-          Declared exceptions for specific dates
+          {nextHoliday ? (
+            <span>
+              Next: <strong className={isDark ? "text-white" : "text-gray-800"}>{nextHoliday.label}</strong> ({formatDate(nextHoliday.date)}
+              {nextHoliday.isToday ? " — Today" : nextHoliday.daysUntil > 0 ? ` — in ${nextHoliday.daysUntil} day${nextHoliday.daysUntil > 1 ? "s" : ""}` : ""})
+            </span>
+          ) : (
+            "Declared exceptions for specific dates"
+          )}
         </p>
       </div>
 
