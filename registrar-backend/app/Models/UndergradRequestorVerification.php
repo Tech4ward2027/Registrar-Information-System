@@ -37,6 +37,9 @@ class UndergradRequestorVerification extends Model
         'reviewed_by',
         'reviewed_at',
         'rejection_reason',
+        // Phase 4/D9 — set once by undergrad-requestors:purge-rejected-pii.
+        // Never accepted as client input; no endpoint writes it.
+        'pii_purged_at',
     ];
 
     protected $casts = [
@@ -45,6 +48,7 @@ class UndergradRequestorVerification extends Model
         'ogos_match_found'           => 'boolean',
         'ogos_lookup_performed_at'   => 'datetime',
         'reviewed_at'                => 'datetime',
+        'pii_purged_at'              => 'datetime',
         'created_at'                 => 'datetime',
         'updated_at'                 => 'datetime',
     ];
@@ -99,6 +103,42 @@ class UndergradRequestorVerification extends Model
     public function ogosLookupWasPerformed(): bool
     {
         return $this->ogos_lookup_performed_at !== null;
+    }
+
+    /**
+     * Phase 4/D9 — whether this record's supporting personal data has
+     * already been disposed of by the 90-day rejected-PII purge.
+     *
+     * A purged record is deliberately still readable: status,
+     * reviewed_by, reviewed_at and this timestamp together answer "was
+     * this person refused, by whom, when, and was their data disposed of
+     * on schedule" without retaining the data itself.
+     */
+    public function isPiiPurged(): bool
+    {
+        return $this->pii_purged_at !== null;
+    }
+
+    /**
+     * Phase 4 — the exact predicate the retention sweep selects on,
+     * defined once here rather than inline in the command: rejected
+     * records that have not yet been purged and whose retention window
+     * has elapsed.
+     *
+     * reviewed_at (not created_at) starts the clock: the retention
+     * window runs from the Registrar's decision, so a submission that
+     * sat in the queue for two months still gets its full window after
+     * refusal.
+     */
+    public function scopeDueForPiiPurge($query, ?\DateTimeInterface $cutoff = null)
+    {
+        $cutoff ??= now()->subDays((int) config('undergrad_requestor.rejected_retention_days', 90));
+
+        return $query
+            ->where('status', UndergradRequestorVerificationStatusEnum::Rejected->value)
+            ->whereNull('pii_purged_at')
+            ->whereNotNull('reviewed_at')
+            ->where('reviewed_at', '<', $cutoff);
     }
 
     protected static function newFactory()

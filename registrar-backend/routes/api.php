@@ -37,6 +37,7 @@ use App\Http\Controllers\CalendarOverrideController;
 use App\Http\Controllers\SuperAdminAnalyticsController;
 use App\Http\Controllers\SecurityEventController;
 use App\Http\Controllers\UndergradRequestorController;
+use App\Http\Controllers\UndergradRequestorVerificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -574,6 +575,56 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::post('{accessRequest}/approve', [AccessRequestController::class, 'approve']);
             Route::post('{accessRequest}/reject',  [AccessRequestController::class, 'reject']);
         });
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Undergrad Requestor verification queue — Phase 4
+    |--------------------------------------------------------------------------
+    |
+    | Registrar Admin review of the public onboarding submissions created
+    | by the unauthenticated POST /undergrad-requestors/register endpoint
+    | at the top of this file.
+    |
+    | Gated by BOTH 'role:3,4' (what kind of account is this) and
+    | 'module:undergrad_verification,<Action>' (has this specific admin's
+    | policy been granted this action) — the two-layer model described in
+    | EnsureModuleAccess's docblock. The module identifier was reserved in
+    | Phase 0 and its action vocabulary lives in Policy::MODULE_ACTIONS.
+    |
+    | View / Approve / Reject are separate action tokens rather than one
+    | 'Manage' for the same reason free_requests splits Verify/Override:
+    | today one Registrar Admin group does all three, but "who may look at
+    | the queue" vs "who may grant someone RIS access" is a policy
+    | question, not something that should be frozen into a role check.
+    |
+    | Approve/Reject accept either token via '|' (OR semantics) rather
+    | than each requiring its own — a reviewer must already hold View to
+    | have reached the record, and splitting further would make the common
+    | "can decide" policy require two toggles to express one intent.
+    |
+    | Note these are NOT under the role:4 (Super Admin) group below:
+    | reviewing undergrad registrations is routine Registrar Admin work,
+    | unlike access requests, where approval creates a staff account.
+    |--------------------------------------------------------------------------
+    */
+    Route::prefix('admin/undergrad-requestors')->group(function () {
+        Route::get('/', [UndergradRequestorVerificationController::class, 'index'])
+            ->middleware(['role:3,4', 'module:undergrad_verification,View']);
+
+        // {undergradRequestor} binds to SystemUser by primary key
+        // (user_id). The service asserts the bound account is genuinely a
+        // reviewable Undergrad Requestor submission — an arbitrary
+        // user_id belonging to another role gets a validation error, not
+        // a leaked record.
+        Route::get('{undergradRequestor}', [UndergradRequestorVerificationController::class, 'show'])
+            ->middleware(['role:3,4', 'module:undergrad_verification,View']);
+
+        Route::post('{undergradRequestor}/approve', [UndergradRequestorVerificationController::class, 'approve'])
+            ->middleware(['role:3,4', 'module:undergrad_verification,Approve']);
+
+        Route::post('{undergradRequestor}/reject', [UndergradRequestorVerificationController::class, 'reject'])
+            ->middleware(['role:3,4', 'module:undergrad_verification,Reject']);
     });
 
     // Role assignments — onboarding/offboarding a secondary role onto an

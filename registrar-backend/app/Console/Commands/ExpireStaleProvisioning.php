@@ -22,6 +22,25 @@ use Illuminate\Http\Request;
 |      trail, per spec. A Super Admin can manually re-open one back to
 |      'Pending Activation' via the normal edit endpoint if needed.
 |
+|      Undergrad Requestor Registration — Phase 4 (D9): WIDENED, not
+|      cloned, to also sweep an Undergrad Requestor still sitting at
+|      'Pending Verification' past the same pending_expires_at column
+|      (set at onboarding submission time — see
+|      UndergradRequestorRegistrationService::register()). Same column,
+|      same 14-day window, same target status, same "never delete, keep
+|      the audit trail" rule. The plan allowed either extending this
+|      command or cloning it; extending keeps one implementation of
+|      "pending things time out," which is the same reasoning
+|      UserProvisioningService used for its live, on-login variant of
+|      this check.
+|
+|      Note an APPROVED Undergrad Requestor is never caught here: the
+|      approve action clears pending_expires_at, because that column
+|      encodes ABANDONMENT ("nobody acted on this"), and someone just
+|      did. Without that, the Registrar could approve an account and
+|      then have this sweep expire it a few days later purely because
+|      the person had not logged in yet.
+|
 |   2. Any access_requests row still 'Requested' past expires_at
 |      (7 days from creation) -> 'Expired'.
 |
@@ -71,12 +90,23 @@ class ExpireStaleProvisioning extends Command
 
     private function expireStaleUsers(AuditLogger $auditLogger, Request $request): int
     {
-        $stale = SystemUser::where('status', 'Pending Activation')
+        $stale = SystemUser::query()
+            // 'Pending Verification' is only ever set on an Undergrad
+            // Requestor (D2), so no role filter is needed alongside it —
+            // but the pairing is asserted per-row below when choosing the
+            // audit action, rather than assumed here.
+            ->whereIn('status', ['Pending Activation', 'Pending Verification'])
             ->whereNotNull('pending_expires_at')
             ->where('pending_expires_at', '<', now())
-            ->get(['user_id', 'email', 'role_id']);
+            ->get(['user_id', 'email', 'role_id', 'status']);
 
         foreach ($stale as $user) {
+            // Captured before the write — the audit entry records WHICH
+            // kind of pending thing lapsed, which is no longer inferable
+            // once the column reads 'Expired'.
+            $isUndergradRequestor = $user->status === 'Pending Verification'
+                && (int) $user->role_id === SystemUser::ROLE_UNDERGRAD_REQUESTOR;
+
             $user->update(['status' => 'Expired']);
 
             // System action, no human actor — pass the expired user itself
@@ -84,10 +114,23 @@ class ExpireStaleProvisioning extends Command
             // SystemUser). Matches how UserProvisioningService attributes
             // the equivalent auto-activation event to the account it
             // happened to.
-            $auditLogger->log($request, $user, AuditLog::ACTION_ADMIN_EXPIRED, [
-                'target_user_id' => $user->user_id,
-                'target_email'   => $user->email,
-            ]);
+            //
+            // Distinct action constants (Phase 4/D9): an abandoned public
+            // onboarding submission and a lapsed staff invite are
+            // different events with different follow-up, so an auditor
+            // filtering on one must never silently get the other — even
+            // though the mechanic and this loop are shared.
+            $auditLogger->log(
+                $request,
+                $user,
+                $isUndergradRequestor
+                    ? AuditLog::ACTION_UNDERGRAD_REQUESTOR_EXPIRED
+                    : AuditLog::ACTION_ADMIN_EXPIRED,
+                [
+                    'target_user_id' => $user->user_id,
+                    'target_email'   => $user->email,
+                ]
+            );
         }
 
         return $stale->count();

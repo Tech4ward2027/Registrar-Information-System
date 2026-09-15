@@ -45,6 +45,15 @@ class DatabaseSeeder extends Seeder
         // unclaimed-document policy, on top of the base set seeded above.
         $this->call(NotificationTypeSeeder::class);
 
+        // Undergrad Requestor Registration — Phase 4. Adds the
+        // approved/rejected decision notification types. Keyed on
+        // trigger_event rather than an explicit notification_type_id —
+        // see that seeder's docblock for why. Must be called from here
+        // (not only run by hand) or NotificationService::send() logs
+        // "unknown trigger_event" and the decision notification silently
+        // never exists, including in every RefreshDatabase test run.
+        $this->call(UndergradRequestorNotificationTypeSeeder::class);
+
         // LocalAuthPasswordSeeder was removed — it contained real plaintext
         // passwords committed to source control. Do not recreate it with
         // real credentials. For local dev accounts, use LocalDevSeeder,

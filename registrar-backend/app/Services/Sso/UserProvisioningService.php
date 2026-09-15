@@ -192,10 +192,30 @@ class UserProvisioningService
             // AccountPendingVerificationException's docblock for why
             // this is deliberately NOT left to EnsureAccountActive to
             // catch on a later request.
+            //
+            // BUG FIX (Phase 4): this guard previously keyed on
+            // status + role alone, with no reference to the verification
+            // record — which made it fire for APPROVED requestors too,
+            // before execution could ever reach the auto-activation
+            // branch below. An approved person could never log in.
+            //
+            // Two changes fix it, and they are deliberately belt-and-
+            // braces rather than either alone:
+            //   (a) Phase 4's approve action now moves the account to
+            //       'Pending Activation' — "approved, awaiting the
+            //       person's first IDP login" — so 'Pending Verification'
+            //       means exactly one thing again: awaiting a human
+            //       reviewer. That is what D2 specified when it
+            //       distinguished the two statuses by CAUSE.
+            //   (b) The isApproved() check below, so any row left at
+            //       'Pending Verification' by an older code path (or a
+            //       manual DB fix) still self-heals into the activation
+            //       branch instead of being permanently locked out.
             if (
                 $existing
                 && $existing->status === 'Pending Verification'
                 && (int) $existing->role_id === SystemUser::ROLE_UNDERGRAD_REQUESTOR
+                && !$existing->undergradRequestorVerification?->isApproved()
             ) {
                 throw new AccountPendingVerificationException(
                     'Your Undergrad Requestor registration is still under review by the Registrar\'s Office. You\'ll be notified once a decision has been made.'
@@ -294,8 +314,24 @@ class UserProvisioningService
                 && (!$existing->pending_expires_at || $existing->pending_expires_at->isFuture())
                 && in_array($roleId, [SystemUser::ROLE_ADMIN, SystemUser::ROLE_SUPER_ADMIN], true);
 
+            // Phase 4: an approved Undergrad Requestor sits at
+            // 'Pending Activation' — the SAME status an admin invite
+            // occupies between creation and first SSO login, which is the
+            // whole point: one status, one meaning, one activation
+            // mechanic. 'Pending Verification' is still accepted here so
+            // any row approved before that change (or repaired by hand)
+            // activates on next login rather than needing a data fix; the
+            // guard above has already ensured only APPROVED rows can
+            // reach this line in that state.
+            //
+            // The pending_expires_at condition mirrors
+            // $isAdminPendingActivation's: approve() clears that column,
+            // so in practice it is null here and the check is a
+            // formality — kept explicit so this branch never depends on
+            // reasoning about what an earlier line did.
             $isUndergradRequestorPendingApproval = $existing
-                && $existing->status === 'Pending Verification'
+                && in_array($existing->status, ['Pending Activation', 'Pending Verification'], true)
+                && (!$existing->pending_expires_at || $existing->pending_expires_at->isFuture())
                 && $isApprovedUndergradRequestor;
 
             if ($isAdminPendingActivation || $isUndergradRequestorPendingApproval) {

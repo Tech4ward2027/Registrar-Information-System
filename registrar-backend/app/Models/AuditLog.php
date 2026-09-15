@@ -246,6 +246,37 @@ class AuditLog extends Model
     // per domain even when two flows share an implementation.
     public const ACTION_UNDERGRAD_REQUESTOR_ACTIVATED       = 'undergrad_requestor_activated';
 
+    // Phase 4 — the Admin verification decisions. Both log the
+    // REVIEWING ADMIN as the actor and the requestor as target_user_id,
+    // matching ACTION_ACCESS_REQUEST_APPROVED/REJECTED's shape above
+    // (and deliberately the opposite attribution from REGISTERED /
+    // EMAIL_VERIFIED, which have no staff actor to record).
+    //
+    // Both entries carry the state of the two advisory checks (D6) AT
+    // THE MOMENT OF DECISION in their metadata, in addition to the
+    // mutable copy on undergrad_requestor_verifications — so a later
+    // re-run of those checks can never rewrite what the reviewer was
+    // actually looking at when they decided.
+    public const ACTION_UNDERGRAD_REQUESTOR_APPROVED        = 'undergrad_requestor_approved';
+    public const ACTION_UNDERGRAD_REQUESTOR_REJECTED        = 'undergrad_requestor_rejected';
+
+    // Phase 4/D9 — the 14-day abandonment sweep. Kept distinct from
+    // ACTION_ADMIN_EXPIRED (which ExpireStaleProvisioning writes for a
+    // lapsed admin invite) even though the same command writes both and
+    // the mechanic is identical: an abandoned public onboarding
+    // submission and a lapsed staff invite are different events with
+    // different follow-up, and an auditor filtering on one should never
+    // silently get the other.
+    public const ACTION_UNDERGRAD_REQUESTOR_EXPIRED         = 'undergrad_requestor_expired';
+
+    // Phase 4/D9 — the 90-day rejected-PII purge. This is the ONLY
+    // permanent record that the disposal happened, precisely because the
+    // data it describes no longer exists anywhere else. Written via
+    // AuditLogger::logForSystem() (no HTTP request, no human actor) and
+    // shares the same hash chain as every interactive write, so a
+    // retention action is exactly as tamper-evident as a decision.
+    public const ACTION_UNDERGRAD_REQUESTOR_PII_PURGED      = 'undergrad_requestor_pii_purged';
+
     // -------------------------------------------------------
     // Relationship back to the acting user (nullable — may be deleted)
     // -------------------------------------------------------

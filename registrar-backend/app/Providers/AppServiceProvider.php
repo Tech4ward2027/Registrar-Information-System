@@ -6,7 +6,9 @@ use App\Contracts\AlumniSystemClientInterface;
 use App\Contracts\CashierServiceInterface;
 use App\Contracts\DocumentRequestServiceInterface;
 use App\Contracts\NotificationServiceInterface;
+use App\Contracts\UndergradEnrollmentLookupClientInterface;
 use App\Contracts\UndergradRequestorRegistrationServiceInterface;
+use App\Contracts\UndergradRequestorVerificationServiceInterface;
 use App\Models\NotificationType;
 use App\Observers\NotificationTypeObserver;
 use App\Services\AuditLogger;
@@ -16,7 +18,9 @@ use App\Services\Alumni\FakeAlumniSystemClient;
 use App\Services\CashierService;
 use App\Services\DocumentRequestService;
 use App\Services\NotificationService;
+use App\Services\Ogos\OgosEnrollmentLookupClient;
 use App\Services\UndergradRequestorRegistrationService;
+use App\Services\UndergradRequestorVerificationService;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -67,6 +71,26 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             UndergradRequestorRegistrationServiceInterface::class,
             UndergradRequestorRegistrationService::class,
+        );
+
+        // Undergrad Requestor Registration — Phase 4. The Admin
+        // verification workflow.
+        $this->app->bind(
+            UndergradRequestorVerificationServiceInterface::class,
+            UndergradRequestorVerificationService::class,
+        );
+
+        // Undergrad Requestor Registration — Phase 4 (D6). The advisory,
+        // never-throws OGOS enrollment lookup. Bound to its interface
+        // (rather than injected as a concrete class) for the same reason
+        // the alumni client is: tests and any future OGOS-unavailable
+        // simulation swap the implementation here and nowhere else. See
+        // UndergradEnrollmentLookupClientInterface for why this is a
+        // separate, narrow contract rather than a method on
+        // OgosStudentService.
+        $this->app->bind(
+            UndergradEnrollmentLookupClientInterface::class,
+            OgosEnrollmentLookupClient::class,
         );
 
         // AuditLogger is a concrete class — no interface needed.
