@@ -39,13 +39,31 @@ class UndergradRequestorProfile extends Model
         // (Phase 2/D10), not accepted as direct client input on the
         // onboarding form itself.
         'email_verified_at',
+        // Phase 2/D10 — set by UndergradRequestorRegistrationService at
+        // submission time, cleared on successful confirmation. Never
+        // accepted as client input; see the migration docblock for why
+        // only the hash is ever persisted.
+        'email_verification_token_hash',
+        'email_verification_expires_at',
+    ];
+
+    /**
+     * email_verification_token_hash never leaves the server — even a
+     * successful confirmation should not echo it back in any API
+     * response (UndergradRequestorRegistrationResource never selects
+     * it either, but this is defense-in-depth against a future
+     * ->toArray()/debug dump doing so accidentally).
+     */
+    protected $hidden = [
+        'email_verification_token_hash',
     ];
 
     protected $casts = [
-        'date_of_birth'      => 'date',
-        'email_verified_at'  => 'datetime',
-        'created_at'         => 'datetime',
-        'updated_at'         => 'datetime',
+        'date_of_birth'                  => 'date',
+        'email_verified_at'              => 'datetime',
+        'email_verification_expires_at'  => 'datetime',
+        'created_at'                     => 'datetime',
+        'updated_at'                     => 'datetime',
     ];
 
     public function user()
@@ -78,6 +96,18 @@ class UndergradRequestorProfile extends Model
     public function isEmailVerified(): bool
     {
         return $this->email_verified_at !== null;
+    }
+
+    /**
+     * Phase 4 — the exact predicate the Admin verification queue reads
+     * submissions through. Defined once here, as a query scope, rather
+     * than duplicated as a ->whereNotNull('email_verified_at') inline
+     * in that controller — see isEmailVerified() above for the same
+     * check on an already-loaded model instance.
+     */
+    public function scopeEmailVerified($query)
+    {
+        return $query->whereNotNull('email_verified_at');
     }
 
     protected static function newFactory()
