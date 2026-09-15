@@ -206,7 +206,7 @@ export const mapDocumentRequest = (r, resolvedStatusIds, docTypeName) => {
     if (r.certificates?.length > 0) {
       r.certificates.forEach(c => {
         if (c.certification_type?.certificate_name) {
-          docs.push(`Certification: ${c.certification_type.certificate_name}`);
+          docs.push(c.certification_type.certificate_name);
         }
       });
     }
@@ -246,10 +246,10 @@ export const mapDocumentRequest = (r, resolvedStatusIds, docTypeName) => {
     eventTitle: r.event_title ?? '',
     or_number: r.or_number ?? '',
     date: requestDate
-      ? requestDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+      ? requestDate.toLocaleDateString('en-US', { month: 'long', day: '2-digit', year: 'numeric' })
       : 'N/A',
     time: requestDate
-      ? requestDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+      ? requestDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
       : '',
     statusId: computedStatusId,
     statusName: computedStatusName,
