@@ -33,7 +33,7 @@ export const CertificateTitle = ({ title }) => (
 );
 
 export const SignatureBlock = ({ name, position, className = "", salutation = "" }) => (
-  <div className={className || "mb-4 mt-10 flex justify-end print:mt-15"}>
+  <div className={className || "mb-4 mt-12 sm:mt-16 print:mt-20 flex justify-end"}>
     <TextBlock className="inline-block text-center mb-0">
       {salutation && (
         <p className="font-lucida text-xs sm:text-sm print:text-[10pt] text-gray-900 mb-6">
@@ -91,73 +91,93 @@ export const getSigneeInfo = (signee, signatories = [], fallbackIndex = 0) => {
 };
 
 export const FooterInfo = ({ diplomaNum, date }) => (
-  <TextBlock className="mt-10 pt-3 print:mt-25 font-lucida">
-    <p className="text-[6px] sm:text-[8px] print:text-[8pt] tracking-tighter mb-1">
-      Not valid without University Dry Seal
+  <TextBlock className="mt-12 sm:mt-16 print:mt-20 pt-2 font-lucida space-y-0.5">
+    <p className="text-[7px] sm:text-[9px] print:text-[8pt] font-normal leading-tight text-black mb-1.5">
+      Not Valid Without<br />
+      University Dry Seal
     </p>
-    <p className="text-[6px] sm:text-[8px] print:text-[8pt] tracking-tighter">
-      Diploma No.: {""}
-      <span className="text-red-600 font-bold">
+    <p className="text-[9px] sm:text-[11px] print:text-[9pt] font-bold text-black">
+      Diploma No.: {" "}
+      <span className="text-[#e53935] font-bold">
         {diplomaNum || "________________"}
       </span>
     </p>
-    <p className="text-[6px] sm:text-[8px] print:text-[8pt] tracking-tighter mb-1">
-      Date: {date}
+    <p className="text-[9px] sm:text-[11px] print:text-[9pt] font-bold text-black mb-1.5">
+      Date: <span className="font-bold text-black">{date}</span>
     </p>
-    <p className="text-[5px] sm:text-[7px] print:text-[8pt] tracking-tighter">/shgsese{CURRENT_YEAR}</p>
+    <p className="text-[7px] sm:text-[9px] print:text-[8pt] text-black font-normal mt-1.5">/shgsese{CURRENT_YEAR}</p>
   </TextBlock>
 );
 
 export const ReceiptInfo = ({ officialReceiptNum, date, className = "" }) => (
-  <TextBlock className={className || "mt-15 pt-3 print:mt-25 font-lucida"}>
-    <p className="text-[6px] sm:text-[8px] print:text-[8pt] tracking-tighter mb-1">
-      Not valid without University Dry Seal
+  <TextBlock className={className || "mt-12 sm:mt-16 print:mt-20 pt-2 font-lucida space-y-0.5"}>
+    <p className="text-[7px] sm:text-[9px] print:text-[8pt] font-normal leading-tight text-black mb-1.5">
+      Not Valid Without<br />
+      University Dry Seal
     </p>
-    <p className="text-[6px] sm:text-[8px] print:text-[8pt] tracking-tighter">
-      OR No.: {""}
-      <span className="text-red-600 font-bold">
+    <p className="text-[9px] sm:text-[11px] print:text-[9pt] font-bold text-black">
+      O.R. No.: {" "}
+      <span className="text-[#e53935] font-bold">
         {officialReceiptNum || "________________"}
       </span>
     </p>
-    <p className="text-[6px] sm:text-[8px] print:text-[8pt] tracking-tighter mb-1">
-      Date: {date}
+    <p className="text-[9px] sm:text-[11px] print:text-[9pt] font-bold text-black mb-1.5">
+      Date: <span className="font-bold text-black">{date}</span>
     </p>
-    <p className="text-[5px] sm:text-[7px] print:text-[8pt] tracking-tighter">/shgsese{CURRENT_YEAR}</p>
+    <p className="text-[7px] sm:text-[9px] print:text-[8pt] text-black font-normal mt-1.5">/shgsese{CURRENT_YEAR}</p>
   </TextBlock>
 );
 
-export const CertHeader = ({ layout }) => (
-  <div className="cert-header border-b-2 border-gray-200 pb-4 mb-5">
-    <div className="flex items-start justify-between gap-2">
-      <div className="flex items-start gap-3">
-        <img
-          src={layout?.headerLeftUrl || puplogoimage}
-          alt="PUP Logo"
-          className="object-contain shrink-0"
-          style={{ width: `${layout?.headerLogoSize ?? 120}px`, height: `${layout?.headerLogoSize ?? 120}px` }}
-        />
-        <div className="cert-header-text pt-1 leading-tight text-black uppercase font-lucida">
-          <p className="text-[7px] sm:text-[9px] font-normal tracking-tight">REPUBLIC OF THE PHILIPPINES</p>
-          <p className="text-[8px] sm:text-[15px] font-bold tracking-tight">
-            Polytechnic University of the Philippines
-          </p>
-          <p className="text-[7px] sm:text-[9px] font-normal tracking-tight">
-            OFFICE OF THE VICE PRESIDENT FOR CAMPUSES
-          </p>
-          <p className="text-[8px] sm:text-[15px] font-bold tracking-tight">TAGUIG CAMPUS</p>
+export const CertHeader = ({ layout }) => {
+  const logoSize = layout?.headerLogoSize ?? 56;
+  const baseFontSize = layout?.headerFontSize ?? 14;
+  const headerLines = Array.isArray(layout?.headerLines) && layout.headerLines.length > 0
+    ? layout.headerLines
+    : [
+        "REPUBLIC OF THE PHILIPPINES",
+        "Polytechnic University of the Philippines",
+        "OFFICE OF THE VICE PRESIDENT FOR CAMPUSES",
+        "TAGUIG CAMPUS",
+      ];
+
+  return (
+    <div className="cert-header border-b-2 border-gray-200 pb-4 mb-5">
+      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 sm:gap-4">
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+          <img
+            src={layout?.headerLeftUrl || puplogoimage}
+            alt="Main Logo"
+            className="object-contain shrink-0 transition-all"
+            style={{ width: `${logoSize}px`, height: `${logoSize}px` }}
+          />
+          <div className="cert-header-text pt-0.5 leading-tight text-black uppercase font-lucida min-w-0">
+            {headerLines.map((line, idx) => {
+              const isMain = idx % 2 !== 0; // lines 1, 3, etc. are main lines (bold)
+              const fontSize = isMain ? baseFontSize : Math.max(7, Math.round(baseFontSize * 0.68));
+              return (
+                <p
+                  key={`header-line-${idx}`}
+                  className={`tracking-tight truncate ${isMain ? "font-bold" : "font-normal"}`}
+                  style={{ fontSize: `${fontSize}px`, lineHeight: "1.2" }}
+                >
+                  {line}
+                </p>
+              );
+            })}
+          </div>
         </div>
+        {layout?.headerRightUrl && (
+          <img
+            src={layout.headerRightUrl}
+            alt="Header Right Logo"
+            className="object-contain shrink-0 transition-all ml-auto sm:ml-0"
+            style={{ width: `${logoSize}px`, height: `${logoSize}px` }}
+          />
+        )}
       </div>
-      {layout?.headerRightUrl && (
-        <img
-          src={layout.headerRightUrl}
-          alt="Header Right Logo"
-          className="object-contain shrink-0"
-          style={{ width: `${layout?.headerLogoSize ?? 120}px`, height: `${layout?.headerLogoSize ?? 120}px` }}
-        />
-      )}
     </div>
-  </div>
-);
+  );
+};
 
 export const RegistrarDateTitle = ({ date }) => (
   <>
@@ -172,7 +192,7 @@ export const RegistrarDateTitle = ({ date }) => (
 );
 
 export const CertFooter = ({ layout }) => (
-  <div className="mt-2 pt-2 border-t border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-start print:items-start gap-4 shrink-0">
+  <div className="mt-auto pt-2 border-t border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-start print:items-start gap-4 shrink-0">
     <div className="space-y-1 text-left cert-footer-contact pt-0.5">
       <div className="text-[9px] sm:text-[10px] leading-tight">
         General Santos Avenue, Lower Bicutan, Taguig City, Philippines 1632<br />
@@ -227,8 +247,8 @@ export const StandardCertLayout = ({ date, children }) => (
   <>
     <RegistrarDateTitle date={date} />
     <CertificateTitle title="C E R T I F I C A T I O N" />
-    <div className="cert-body px-2 sm:px-4">
-      <TextBlock className="mb-5 cert-salutation font-lucida">To Whom It May Concern:</TextBlock>
+    <div className="cert-body px-2 sm:px-4 text-[13px] sm:text-[14px] print:text-[11pt] leading-relaxed">
+      <TextBlock className="mb-5 cert-salutation font-lucida text-[13px] sm:text-[14px] print:text-[11pt]">To Whom It May Concern:</TextBlock>
       {children}
     </div>
   </>
@@ -236,7 +256,7 @@ export const StandardCertLayout = ({ date, children }) => (
 
 export const CertParagraph = ({ children, className = "" }) => (
   <p
-    className={`cert-paragraph indent-8 font-lucida ${className} cert-editable-block`}
+    className={`cert-paragraph indent-8 font-lucida text-[13px] sm:text-[14px] print:text-[11pt] leading-relaxed ${className} cert-editable-block`}
     contentEditable
     suppressContentEditableWarning
     spellCheck

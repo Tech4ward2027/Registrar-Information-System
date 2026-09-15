@@ -74,8 +74,8 @@ const RowActionsDropdown = ({
     };
   }, [isOpen]);
 
-  // Feature flag: Generate Certificate is currently disabled until certificate templates are available.
-  const showGenerateCert = false;
+  // Enable Generate Certificate in 3-dots dropdown menu when not in archived view
+  const showGenerateCert = Boolean(onGenerateCert && viewMode !== 'archived');
   const isUpdating = updatingId === req.id;
 
   return (
@@ -99,7 +99,7 @@ const RowActionsDropdown = ({
 
       {isOpen && (
         <div
-          className={`absolute right-0 mt-1.5 w-44 rounded-xl shadow-lg border z-50 overflow-hidden text-left ${
+          className={`absolute right-0 mt-1.5 w-48 rounded-xl shadow-lg border z-50 overflow-hidden text-left ${
             isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042]' : 'bg-white text-gray-700 border-gray-200'
           }`}
           style={{
@@ -122,7 +122,7 @@ const RowActionsDropdown = ({
               View Details
             </button>
 
-            {/* Generate Certificate (if applicable) */}
+            {/* Generate Certificate */}
             {showGenerateCert && (
               <button
                 type="button"
@@ -134,7 +134,7 @@ const RowActionsDropdown = ({
                   isDark ? 'hover:bg-[#2a2a2f] text-[#e4e6eb]' : 'hover:bg-gray-50 text-gray-700'
                 }`}
               >
-                <ArrowDownTrayIcon className="w-4 h-4 text-gray-400 dark:text-[#808080]" />
+                <PrinterIcon className="w-4 h-4 text-gray-400 dark:text-[#808080]" />
                 Generate Certificate
               </button>
             )}
