@@ -25,6 +25,13 @@ function undergradRegistrationPayload(array $overrides = []): array
         'present_address'            => '123 Sample St., Taguig City',
         'reason_for_non_enrollment'  => null,
         'phone'                      => '09171234567',
+        // Phase 6 (RA 10173) — the onboarding form now requires explicit
+        // Data Privacy Act consent, validated as 'accepted'. Part of the
+        // default payload rather than a per-test override because a
+        // submission WITHOUT it is no longer a valid submission at all;
+        // the tests that exercise its absence pass a false/missing value
+        // explicitly instead.
+        'data_privacy_consent'       => true,
     ], $overrides);
 }
 

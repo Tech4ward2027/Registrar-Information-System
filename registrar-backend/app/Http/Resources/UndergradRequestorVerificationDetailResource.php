@@ -82,6 +82,25 @@ class UndergradRequestorVerificationDetailResource extends JsonResource
                 'email_verified_at' => $profile?->email_verified_at?->toIso8601String(),
             ],
 
+            // Phase 6 (RA 10173). Shown to the reviewer, not buried in
+            // the database, for one reason: 'recorded' => false means we
+            // have no evidence this person was ever shown the privacy
+            // notice, and that is something a human should see BEFORE
+            // approving an account built on data we may not have been
+            // entitled to collect. It can only be false for submissions
+            // predating the consent columns — the onboarding form has
+            // required consent since — which is exactly the population
+            // worth flagging rather than defaulting away.
+            //
+            // 'version' is the notice text the person actually agreed
+            // to, which is not necessarily the one currently in config.
+            'data_privacy_consent' => [
+                'recorded'   => (bool) $profile?->hasRecordedDataPrivacyConsent(),
+                'consent_at' => $profile?->data_privacy_consent_at?->toIso8601String(),
+                'version'    => $profile?->data_privacy_consent_version,
+                'ip_address' => $profile?->data_privacy_consent_ip,
+            ],
+
             'verification' => [
                 'id'               => $verification->undergrad_requestor_verification_id,
                 'status'           => $verification->status?->value,

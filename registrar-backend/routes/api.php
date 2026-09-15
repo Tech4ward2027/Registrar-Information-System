@@ -37,6 +37,7 @@ use App\Http\Controllers\CalendarOverrideController;
 use App\Http\Controllers\SuperAdminAnalyticsController;
 use App\Http\Controllers\SecurityEventController;
 use App\Http\Controllers\UndergradRequestorController;
+use App\Http\Controllers\UndergradRequestorVerificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -62,17 +63,45 @@ Route::get('/business-hours/status', [BusinessHoursController::class, 'status'])
 Route::get('/business-hours/upcoming-closures', [BusinessHoursController::class, 'upcomingClosures'])
     ->middleware('throttle:60,1');
 
-// Undergrad Requestor Registration — Phase 2. Public, unauthenticated —
-// this IS the entry point that pre-creates a 'Pending Verification'
-// account (D4). A tighter throttle than the general 60/min public read
-// endpoints above: this writes to the database and triggers an outbound
-// email per call, both meaningfully more expensive to abuse. Phase 6
-// adds a dedicated per-email bucket on top of this per-IP one.
+// Undergrad Requestor Registration — Phase 2, hardened in Phase 6.
+//
+// Public and unauthenticated by design: this IS the entry point that
+// pre-creates a 'Pending Verification' account (D4), and it is the only
+// unauthenticated WRITE endpoint in RIS. See
+// docs/undergrad-requestor-threat-model.md.
+//
+// Phase 6 replaces the anonymous per-IP throttles these routes shipped
+// with in Phase 2 ('throttle:10,1,<prefix>') with NAMED limiters
+// registered in AppServiceProvider::boot(). Three things the anonymous
+// form cannot do:
+//   1. Key on anything but the IP. A per-EMAIL bucket is what stops
+//      someone mail-bombing one person's inbox from a pool of addresses;
+//      no per-IP limit can express that.
+//   2. Stack buckets with different decay periods (per-minute AND
+//      per-day) on a single route.
+//   3. Expose a ->response() hook — which is what lets a tripped limit
+//      land in security_events instead of being a silent 429 nobody
+//      ever looks at.
+//
+// The limits themselves are config-driven: see
+// config/undergrad_requestor.php, 'rate_limits'.
 Route::post('/undergrad-requestors/register', [UndergradRequestorController::class, 'register'])
-    ->middleware('throttle:10,1,undergrad-requestor-register');
+    ->middleware('throttle:undergrad-requestor-register');
 
 Route::post('/undergrad-requestors/confirm-email', [UndergradRequestorController::class, 'confirmEmail'])
-    ->middleware('throttle:20,1,undergrad-requestor-confirm-email');
+    ->middleware('throttle:undergrad-requestor-confirm-email');
+
+// Phase 6 (RA 10173). Serves the Data Privacy Act notice text together
+// with the version identifier that will be recorded against any
+// submission made after reading it, so the wording the form displays and
+// the consent version the backend stores can never drift apart. A notice
+// hardcoded in the SPA would diverge from consent_version on the first
+// copy edit, and nobody would find out until an audit.
+//
+// Read-only and PII-free, but still throttled — it is a public endpoint,
+// and "harmless" is not the same as "free to serve".
+Route::get('/undergrad-requestors/registration-notice', [UndergradRequestorController::class, 'registrationNotice'])
+    ->middleware('throttle:undergrad-requestor-notice');
 
 /*
 |--------------------------------------------------------------------------
@@ -585,6 +614,44 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::post('{accessRequest}/approve', [AccessRequestController::class, 'approve']);
             Route::post('{accessRequest}/reject',  [AccessRequestController::class, 'reject']);
         });
+    });
+
+    // Undergrad Requestor Registration — Phase 4 (Admin verification
+    // queue). RESTORED IN PHASE 6: this block existed when Phase 4
+    // shipped, but was lost when Phase 5 replaced this file wholesale
+    // from a copy that predated it — leaving the controller, service,
+    // resources, container bindings and the Policy module registration
+    // all present with no way to reach any of them. Kept here, next to
+    // access-requests, because it is the same shape of workflow: a
+    // queue of pending submissions that a privileged reviewer approves
+    // or rejects.
+    //
+    // Gated on BOTH axes, deliberately:
+    //   role:3,4  — Registrar Admin or Super Admin.
+    //   module:undergrad_verification,<Action>  — the module identifier
+    //              reserved in Phase 0, with the per-action vocabulary
+    //              declared in Policy::MODULE_ACTIONS. Splitting View
+    //              from Approve/Reject means a clerk can be given the
+    //              queue to triage without being given the authority to
+    //              decide, configured in policy rather than in code.
+    //
+    // {undergradRequestor} binds a SystemUser by user_id. The service —
+    // not the route — asserts the bound account is actually a reviewable
+    // Undergrad Requestor submission, so an arbitrary user_id belonging
+    // to, say, an Admin gets a validation error rather than leaking a
+    // record. See UndergradRequestorVerificationController's docblock.
+    Route::prefix('admin/undergrad-requestors')->middleware('role:3,4')->group(function () {
+        Route::get('/', [UndergradRequestorVerificationController::class, 'index'])
+            ->middleware('module:undergrad_verification,View');
+
+        Route::get('{undergradRequestor}', [UndergradRequestorVerificationController::class, 'show'])
+            ->middleware('module:undergrad_verification,View');
+
+        Route::post('{undergradRequestor}/approve', [UndergradRequestorVerificationController::class, 'approve'])
+            ->middleware('module:undergrad_verification,Approve');
+
+        Route::post('{undergradRequestor}/reject', [UndergradRequestorVerificationController::class, 'reject'])
+            ->middleware('module:undergrad_verification,Reject');
     });
 
     // Role assignments — onboarding/offboarding a secondary role onto an
