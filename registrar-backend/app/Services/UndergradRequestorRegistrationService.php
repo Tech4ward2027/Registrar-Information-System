@@ -66,6 +66,15 @@ class UndergradRequestorRegistrationService implements UndergradRequestorRegistr
                 'status'             => 'Pending Verification',
                 'idp_user_id'        => null,
                 'local_auth_enabled' => 0,
+                // D9/Phase 3 — reuses the exact same column and 14-day
+                // window AdminUserService::create() already established
+                // for 'Pending Activation' invites (see that method's
+                // docblock), so the existing ExpireStaleProvisioning
+                // sweep and UserProvisioningService::provision()'s
+                // live past-due check (QA #11) both cover this status
+                // for free, widened rather than duplicated — see
+                // Phase 4's "extend/clone ExpireStaleProvisioning."
+                'pending_expires_at' => now()->addDays(14),
             ]);
 
             $profile = UndergradRequestorProfile::create([

@@ -225,6 +225,28 @@ class AuditLog extends Model
     public const ACTION_FREE_REQUEST_ELIGIBILITY_OVERRIDDEN = 'free_request_eligibility_overridden';
 
     // -------------------------------------------------------
+    // Undergrad Requestor Registration.
+    //
+    // REGISTERED / EMAIL_VERIFIED are both logged with the newly
+    // self-registered account itself as the actor (the only identity
+    // that exists at that point in an unauthenticated public flow —
+    // see UndergradRequestorRegistrationService), not a staff member.
+    // APPROVED/REJECTED (Phase 4) will instead log the reviewing
+    // Admin as the actor and the requestor as target_user_id, matching
+    // ACTION_ACCESS_REQUEST_APPROVED/REJECTED's shape above.
+    // -------------------------------------------------------
+    public const ACTION_UNDERGRAD_REQUESTOR_REGISTERED      = 'undergrad_requestor_registered';
+    public const ACTION_UNDERGRAD_REQUESTOR_EMAIL_VERIFIED  = 'undergrad_requestor_email_verified';
+    // Phase 3 — written by UserProvisioningService::provision() at the
+    // exact moment an Approved Undergrad Requestor's first IDP login
+    // flips their account from 'Pending Verification' to 'Activated'.
+    // Kept distinct from ACTION_ADMIN_ACTIVATED (same mechanic, see
+    // that transition's docblock) rather than reused, matching this
+    // file's own convention of one distinctly-named, filterable action
+    // per domain even when two flows share an implementation.
+    public const ACTION_UNDERGRAD_REQUESTOR_ACTIVATED       = 'undergrad_requestor_activated';
+
+    // -------------------------------------------------------
     // Relationship back to the acting user (nullable — may be deleted)
     // -------------------------------------------------------
     public function user()

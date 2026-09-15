@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\AccountDeactivatedException;
 use App\Exceptions\AccountExpiredException;
+use App\Exceptions\AccountPendingVerificationException;
+use App\Exceptions\AccountRejectedException;
 use App\Exceptions\IdpException;
 use App\Exceptions\UnregisteredAccountException;
 use App\Http\Resources\UserResource;
@@ -86,6 +88,40 @@ class SsoCallbackController extends Controller
             return response()->json([
                 'message'    => $e->getMessage(),
                 'logout_url' => $logoutUrl,
+            ], 403);
+        } catch (AccountRejectedException $e) {
+            // Undergrad Requestor Registration — Phase 3 (D8). Same
+            // 403 + logout_url shape as AccountDeactivatedException —
+            // the IdP token was already revoked by
+            // SsoAuthService::revokeOnRejection() before this exception
+            // reached here, but the browser's own IdP session still
+            // needs the same client-side logout redirect to fully clear.
+            $this->safeLog('warning', 'SSO: rejected Undergrad Requestor attempted login', ['message' => $e->getMessage()]);
+
+            $logoutUrl = config('sso.base_url') . '/logout?' . http_build_query([
+                'client_id'                => config('sso.client_id'),
+                'post_logout_redirect_uri' => config('app.url'),
+            ]);
+
+            return response()->json([
+                'message'    => $e->getMessage(),
+                'logout_url' => $logoutUrl,
+                'rejected'   => true,
+            ], 403);
+        } catch (AccountPendingVerificationException $e) {
+            // Undergrad Requestor Registration — Phase 3. Deliberately
+            // NOT logged at 'warning' level and NOT paired with a
+            // logout_url the frontend needs to treat as an error state —
+            // this is an expected, calm status for anyone who registered
+            // and hasn't been reviewed yet, not an incident. The
+            // `pending_review` flag lets the frontend render this
+            // distinctly from `rejected`/deactivated 403s (e.g. no red
+            // error banner) without parsing $e->getMessage().
+            $this->safeLog('info', 'SSO: Undergrad Requestor login attempted while still pending review', ['message' => $e->getMessage()]);
+
+            return response()->json([
+                'message'        => $e->getMessage(),
+                'pending_review' => true,
             ], 403);
         } catch (\Exception $e) {
             $this->safeLog('error', 'SSO: unexpected error', ['error' => $e->getMessage()]);

@@ -5,6 +5,8 @@ namespace App\Services\Sso;
 use App\DTOs\Alumni\AlumniDTO;
 use App\Exceptions\AccountDeactivatedException;
 use App\Exceptions\AccountExpiredException;
+use App\Exceptions\AccountPendingVerificationException;
+use App\Exceptions\AccountRejectedException;
 use App\Exceptions\OgosException;
 use App\Exceptions\UnregisteredAccountException;
 use App\Models\Alumni;
@@ -120,6 +122,20 @@ class UserProvisioningService
                 );
             }
 
+            // Undergrad Requestor Registration — Phase 3 (D8). 'Rejected'
+            // is set exclusively by the Admin reject action (Phase 4) on
+            // an Undergrad Requestor's verification — see
+            // AccountRejectedException's docblock for why checking this
+            // single column is sufficient with no extra join. Runs
+            // before role resolution for the same reason the Deactivated
+            // check above does: a rejected account must never slip back
+            // in through any branch below, including auto-registration.
+            if ($existing && $existing->status === 'Rejected' && (int) $existing->role_id === SystemUser::ROLE_UNDERGRAD_REQUESTOR) {
+                throw new AccountRejectedException(
+                    'Your Undergrad Requestor registration was not approved. Please contact the registrar for more information.'
+                );
+            }
+
             // BUG FIX (QA #11 — "Expired Status Not Auto-Tagged"): mirrors
             // the Deactivated check directly above. provisioning:expire-stale
             // only flips 'Pending Activation' -> 'Expired' once a day, so
@@ -135,11 +151,25 @@ class UserProvisioningService
             // uses) rather than just rejecting silently — so the account
             // reads correctly everywhere immediately, not just on this
             // one request.
+            //
+            // Undergrad Requestor Registration — Phase 3 (D9): widened
+            // (not duplicated) to also cover an Undergrad Requestor's
+            // 'Pending Verification' row whose pending_expires_at (set
+            // at onboarding submission time — see
+            // UndergradRequestorRegistrationService::register()) has
+            // elapsed. Same mechanic, same target status ('Expired'),
+            // same column, same 14-day window — Phase 4's
+            // "extend/clone ExpireStaleProvisioning" sweep reuses this
+            // exact widening for its own scheduled version of this
+            // check; this is the live, on-login variant of it.
             if (
                 $existing
-                && $existing->status === 'Pending Activation'
                 && $existing->pending_expires_at
                 && $existing->pending_expires_at->isPast()
+                && (
+                    $existing->status === 'Pending Activation'
+                    || ($existing->status === 'Pending Verification' && (int) $existing->role_id === SystemUser::ROLE_UNDERGRAD_REQUESTOR)
+                )
             ) {
                 $existing->update(['status' => 'Expired']);
 
@@ -150,6 +180,25 @@ class UserProvisioningService
 
                 throw new AccountExpiredException(
                     'This invitation has expired. Please contact the registrar for a new invite.'
+                );
+            }
+
+            // Undergrad Requestor Registration — Phase 3. A genuinely
+            // still-Pending (not yet past its 14-day window — the block
+            // above already caught and redirected that case to
+            // 'Expired') Undergrad Requestor account. Blocks login
+            // before a Sanctum token is ever issued, same enforcement
+            // point as every other status in this family — see
+            // AccountPendingVerificationException's docblock for why
+            // this is deliberately NOT left to EnsureAccountActive to
+            // catch on a later request.
+            if (
+                $existing
+                && $existing->status === 'Pending Verification'
+                && (int) $existing->role_id === SystemUser::ROLE_UNDERGRAD_REQUESTOR
+            ) {
+                throw new AccountPendingVerificationException(
+                    'Your Undergrad Requestor registration is still under review by the Registrar\'s Office. You\'ll be notified once a decision has been made.'
                 );
             }
 
@@ -215,7 +264,26 @@ class UserProvisioningService
             // DB is always the source of truth for *who* this is (role,
             // policy) — this only ever transitions Pending -> Activated and
             // backfills idp_user_id, it never re-derives role from the IdP.
-            if ($existing
+            //
+            // Undergrad Requestor Registration — Phase 3 (D4, D8). Widened
+            // (not duplicated — see this method's own comment above)
+            // to also auto-activate an Undergrad Requestor's first IDP
+            // login, matched by email exactly like an admin invite is —
+            // but ONLY once undergrad_requestor_verifications.status is
+            // Approved (loaded via the eager-loadable relation on
+            // SystemUser; see UndergradRequestorVerification). The two
+            // guard blocks above already ensure a still-Pending or
+            // Rejected Undergrad Requestor never reaches this line at
+            // all, so isApproved() here is really just confirming what
+            // "we got this far" already implies — kept as an explicit
+            // check anyway rather than assumed, since this transition
+            // is the one line that actually grants RIS access and
+            // should never rely on reasoning about earlier lines to
+            // stay correct.
+            $isApprovedUndergradRequestor = $roleId === SystemUser::ROLE_UNDERGRAD_REQUESTOR
+                && $existing?->undergradRequestorVerification?->isApproved();
+
+            $isAdminPendingActivation = $existing
                 && $existing->status === 'Pending Activation'
                 // Belt-and-suspenders: the guard above already throws
                 // before reaching here whenever pending_expires_at has
@@ -224,8 +292,13 @@ class UserProvisioningService
                 // added between the two checks that reaches this code
                 // without passing through the guard.
                 && (!$existing->pending_expires_at || $existing->pending_expires_at->isFuture())
-                && in_array($roleId, [SystemUser::ROLE_ADMIN, SystemUser::ROLE_SUPER_ADMIN], true)
-            ) {
+                && in_array($roleId, [SystemUser::ROLE_ADMIN, SystemUser::ROLE_SUPER_ADMIN], true);
+
+            $isUndergradRequestorPendingApproval = $existing
+                && $existing->status === 'Pending Verification'
+                && $isApprovedUndergradRequestor;
+
+            if ($isAdminPendingActivation || $isUndergradRequestorPendingApproval) {
                 $user->idp_user_id        = $profile['id'] ?? $user->idp_user_id;
                 $user->status             = 'Activated';
                 $user->pending_expires_at = null;
@@ -236,11 +309,18 @@ class UserProvisioningService
                 // action performed on them by someone else. Matches the
                 // ACTION_LOGIN entry SsoAuthService writes right after with
                 // the same actor.
-                $this->auditLogger->log($request, $user, AuditLog::ACTION_ADMIN_ACTIVATED, [
-                    'target_user_id' => $user->user_id,
-                    'target_email'   => $user->email,
-                    'role_id'        => $user->role_id,
-                ]);
+                $this->auditLogger->log(
+                    $request,
+                    $user,
+                    $isApprovedUndergradRequestor
+                        ? AuditLog::ACTION_UNDERGRAD_REQUESTOR_ACTIVATED
+                        : AuditLog::ACTION_ADMIN_ACTIVATED,
+                    [
+                        'target_user_id' => $user->user_id,
+                        'target_email'   => $user->email,
+                        'role_id'        => $user->role_id,
+                    ]
+                );
             }
 
             $needsOnboarding = $this->provisionProfile(
