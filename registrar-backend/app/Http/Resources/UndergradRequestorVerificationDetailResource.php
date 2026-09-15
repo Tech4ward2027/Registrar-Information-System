@@ -31,6 +31,23 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class UndergradRequestorVerificationDetailResource extends JsonResource
 {
     /**
+     * BUG FIX: without this, Laravel's default JsonResource behavior
+     * wraps toArray()'s output under a top-level "data" key, so the
+     * real response shape was:
+     *   { "data": { "advisory_checks": { "local_records_check": {...} } } }
+     * while every consumer of this resource (the controller's tests,
+     * and any future client) expects the fields at the response root,
+     * e.g. "advisory_checks.local_records_check.match_found".
+     *
+     * Contrast with UndergradRequestorQueueResource::collection(...),
+     * which IS meant to be wrapped under "data" (it's a list) and
+     * whose tests correctly assert against "data.0.user_id" — this
+     * resource is a single-record detail view and was never meant to
+     * carry that wrapper.
+     */
+    public static $wrap = null;
+
+    /**
      * @param  array{user: SystemUser, verification: UndergradRequestorVerification, hints: array<string, mixed>}  $resource
      */
     public function __construct($resource)
