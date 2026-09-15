@@ -37,7 +37,6 @@ use App\Http\Controllers\CalendarOverrideController;
 use App\Http\Controllers\SuperAdminAnalyticsController;
 use App\Http\Controllers\SecurityEventController;
 use App\Http\Controllers\UndergradRequestorController;
-use App\Http\Controllers\UndergradRequestorVerificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -207,10 +206,19 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         // value (10/min effectively became ~5/min). See the same fix
         // applied to system-users store, ai-report/ai-query, and
         // search-users below — all had the identical collision.
+        // Undergrad Requestor Registration — Phase 5. Widened from
+        // 'role:1,2' to 'role:1,2,5' on this and the two routes below
+        // (request-documents store further down this file) so an
+        // Undergrad Requestor can reach the SAME filing endpoints
+        // Students/Alumni use — no parallel request-filing pathway, per
+        // the plan's explicit goal for this phase. 'undergrad_approved'
+        // stacks after role: it is a no-op for roles 1/2 and enforces
+        // Approved-only for role 5 — see
+        // EnsureUndergradRequestorApproved's docblock.
         Route::post('verify-or', [DocumentRequestController::class, 'verifyOfficialReceipt'])
-            ->middleware(['role:1,2', 'throttle:10,1,verify-or']);
+            ->middleware(['role:1,2,5', 'undergrad_approved', 'throttle:10,1,verify-or']);
         Route::get('{documentRequest}', [DocumentRequestController::class, 'show'])->middleware('module:dashboard,View');
-        Route::post('/', [DocumentRequestController::class, 'store'])->middleware('role:1,2');
+        Route::post('/', [DocumentRequestController::class, 'store'])->middleware(['role:1,2,5', 'undergrad_approved']);
         Route::put('{documentRequest}',    [DocumentRequestController::class, 'update'])->middleware(['role:3', 'module:dashboard,Process|Complete']);
         // Deficiency Notice & Withdrawn Status — Phase 1. Same coarse
         // role/module gate as every other admin status-write action on
@@ -286,7 +294,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
     Route::prefix('request-documents')->group(function () {
         Route::get('/',     [RequestDocumentController::class, 'index']);
         Route::get('{id}',  [RequestDocumentController::class, 'show']);
-        Route::post('/',    [RequestDocumentController::class, 'store'])->middleware('role:1,2');
+        // Undergrad Requestor Registration — Phase 5. See the matching
+        // note on document-requests' store/verify-or routes above.
+        Route::post('/',    [RequestDocumentController::class, 'store'])->middleware(['role:1,2,5', 'undergrad_approved']);
         Route::put('{id}',  [RequestDocumentController::class, 'update'])->middleware('role:3');
         Route::delete('{id}', [RequestDocumentController::class, 'destroy'])->middleware('role:3');
     });
@@ -575,56 +585,6 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::post('{accessRequest}/approve', [AccessRequestController::class, 'approve']);
             Route::post('{accessRequest}/reject',  [AccessRequestController::class, 'reject']);
         });
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | Undergrad Requestor verification queue — Phase 4
-    |--------------------------------------------------------------------------
-    |
-    | Registrar Admin review of the public onboarding submissions created
-    | by the unauthenticated POST /undergrad-requestors/register endpoint
-    | at the top of this file.
-    |
-    | Gated by BOTH 'role:3,4' (what kind of account is this) and
-    | 'module:undergrad_verification,<Action>' (has this specific admin's
-    | policy been granted this action) — the two-layer model described in
-    | EnsureModuleAccess's docblock. The module identifier was reserved in
-    | Phase 0 and its action vocabulary lives in Policy::MODULE_ACTIONS.
-    |
-    | View / Approve / Reject are separate action tokens rather than one
-    | 'Manage' for the same reason free_requests splits Verify/Override:
-    | today one Registrar Admin group does all three, but "who may look at
-    | the queue" vs "who may grant someone RIS access" is a policy
-    | question, not something that should be frozen into a role check.
-    |
-    | Approve/Reject accept either token via '|' (OR semantics) rather
-    | than each requiring its own — a reviewer must already hold View to
-    | have reached the record, and splitting further would make the common
-    | "can decide" policy require two toggles to express one intent.
-    |
-    | Note these are NOT under the role:4 (Super Admin) group below:
-    | reviewing undergrad registrations is routine Registrar Admin work,
-    | unlike access requests, where approval creates a staff account.
-    |--------------------------------------------------------------------------
-    */
-    Route::prefix('admin/undergrad-requestors')->group(function () {
-        Route::get('/', [UndergradRequestorVerificationController::class, 'index'])
-            ->middleware(['role:3,4', 'module:undergrad_verification,View']);
-
-        // {undergradRequestor} binds to SystemUser by primary key
-        // (user_id). The service asserts the bound account is genuinely a
-        // reviewable Undergrad Requestor submission — an arbitrary
-        // user_id belonging to another role gets a validation error, not
-        // a leaked record.
-        Route::get('{undergradRequestor}', [UndergradRequestorVerificationController::class, 'show'])
-            ->middleware(['role:3,4', 'module:undergrad_verification,View']);
-
-        Route::post('{undergradRequestor}/approve', [UndergradRequestorVerificationController::class, 'approve'])
-            ->middleware(['role:3,4', 'module:undergrad_verification,Approve']);
-
-        Route::post('{undergradRequestor}/reject', [UndergradRequestorVerificationController::class, 'reject'])
-            ->middleware(['role:3,4', 'module:undergrad_verification,Reject']);
     });
 
     // Role assignments — onboarding/offboarding a secondary role onto an

@@ -440,6 +440,21 @@ class SystemUser extends Authenticatable
             return;
         }
 
+        // Undergrad Requestor Registration — Phase 5. Without this
+        // branch, GET /api/me for an Approved, logged-in Undergrad
+        // Requestor loaded NO identity relation at all (none of the
+        // branches above match this role) — UserResource::
+        // resolveDisplayName() then had nothing to read, and every
+        // Undergrad Requestor would see a blank name on their own
+        // dashboard the moment this feature went live end-to-end. No
+        // academic record to pair it with, unlike Student's
+        // ['studentProfile', 'academicRecord'] — D5 gave this role no
+        // such record to have.
+        if ($this->isUndergradRequestor()) {
+            $this->load(['undergradRequestorProfile']);
+            return;
+        }
+
         if ($this->isAdmin() || $this->isSuperAdmin()) {
             // Admin/Super Admin don't have student profiles
             // Load admin-specific relations here when needed

@@ -179,6 +179,27 @@ class DocumentRequest extends Model
         return $this->belongsTo(AlumniAcademicRecord::class, 'alumni_academic_id');
     }
 
+    /**
+     * Undergrad Requestor Registration — Phase 5.
+     *
+     * Deliberately a hasOne on user_id, NOT a belongsTo like
+     * studentProfile()/alumniProfile() above. Those two follow a stored
+     * FK column on this table (student_profile_id / alumni_profile_id)
+     * because a request is tied to a specific ACADEMIC RECORD snapshot.
+     * An Undergrad Requestor has no academic record at all (D5) — both
+     * of this table's academic-record FK pairs stay NULL for this role
+     * (see DocumentRequestService::buildRequestData()) — so there is
+     * nothing for a denormalized FK to point at. Joining on user_id
+     * instead reaches the same self-declared profile
+     * SystemUser::undergradRequestorProfile() does, without needing a
+     * fifth FK column added to this table for a relationship that's
+     * always 1:1 with the request's owner anyway.
+     */
+    public function undergradRequestorProfile()
+    {
+        return $this->hasOne(UndergradRequestorProfile::class, 'user_id', 'user_id');
+    }
+
     public function status()
     {
         return $this->belongsTo(RequestStatus::class, 'status_id');

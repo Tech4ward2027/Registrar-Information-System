@@ -14,9 +14,18 @@ class DocumentRequestPolicy
     // -------------------------------------------------------
     public function viewAny(SystemUser $user): bool
     {
+        // Undergrad Requestor Registration — Phase 5: added alongside
+        // Student/Alumni. index() itself already scopes a non-staff
+        // caller to their own requests only (see
+        // DocumentRequestController::index()), so this just confirms
+        // the role may reach that endpoint at all — an unapproved
+        // Undergrad Requestor reaching it simply sees an empty list,
+        // since they cannot have any requests without having passed the
+        // 'undergrad_approved' gate to create one.
         return in_array($user->role_id, [
             SystemUser::ROLE_STUDENT,
             SystemUser::ROLE_ALUMNI,
+            SystemUser::ROLE_UNDERGRAD_REQUESTOR,
             SystemUser::ROLE_ADMIN,
             SystemUser::ROLE_SUPER_ADMIN,
         ]);
@@ -38,13 +47,26 @@ class DocumentRequestPolicy
 
     // -------------------------------------------------------
     // Create a request
-    // Only students and alumni can submit document requests
+    // Students, Alumni, and Undergrad Requestors can submit document
+    // requests. This policy method answers only "is this a KIND of
+    // account that may ever create a request" — the same coarse,
+    // role-shaped question RoleMiddleware's 'role:1,2,5' gate on
+    // POST /document-requests already asks. It deliberately does NOT
+    // check verification/approval status: that's a business-state
+    // check, not a structural one, and belongs to
+    // EnsureUndergradRequestorApproved (route middleware) and
+    // DocumentRequestService::buildRequestData() (final check before
+    // the write) — see the Undergrad Requestor Registration Phase 5
+    // notes on both. Keeping it out of this policy means the three
+    // enforcement points can each be reasoned about independently
+    // rather than one silently depending on another's internals.
     // -------------------------------------------------------
     public function create(SystemUser $user): bool
     {
         return in_array($user->role_id, [
             SystemUser::ROLE_STUDENT,
             SystemUser::ROLE_ALUMNI,
+            SystemUser::ROLE_UNDERGRAD_REQUESTOR,
         ]);
     }
 

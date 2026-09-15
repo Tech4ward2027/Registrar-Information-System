@@ -149,12 +149,26 @@ class SecurityEventLogger
         }
 
         // Same audience as the local_auth_login_used alert (Admin + Super
-        // Admin, excluding student/alumni) — a burst of failed break-glass
-        // attempts is exactly as relevant to that audience as a
-        // successful one. See LocalAuthController::login() for the same
-        // reasoning on why sendToAdmins() alone would be wrong here.
+        // Admin, excluding student/alumni/undergrad-requestor) — a burst
+        // of failed break-glass attempts is exactly as relevant to that
+        // audience as a successful one. See LocalAuthController::login()
+        // for the same reasoning on why sendToAdmins() alone would be
+        // wrong here.
+        //
+        // Undergrad Requestor Registration — Phase 5: ROLE_UNDERGRAD_REQUESTOR
+        // added to the exclusion list. Without this, sendToAllExcept()
+        // — which notifies every role NOT named here — would start
+        // notifying every Undergrad Requestor about OTHER people's
+        // failed-login bursts the moment role 5 existed, since a new
+        // role is included by default unless explicitly excluded. A
+        // regular self-service account has no operational reason to see
+        // this alert, exactly like Student/Alumni already don't.
         $this->notificationService->sendToAllExcept(
-            excludedRoleIds: [SystemUser::ROLE_STUDENT, SystemUser::ROLE_ALUMNI],
+            excludedRoleIds: [
+                SystemUser::ROLE_STUDENT,
+                SystemUser::ROLE_ALUMNI,
+                SystemUser::ROLE_UNDERGRAD_REQUESTOR,
+            ],
             triggerEvent:    'security_alert_failed_login_burst',
             data: [
                 'email'           => $email,
