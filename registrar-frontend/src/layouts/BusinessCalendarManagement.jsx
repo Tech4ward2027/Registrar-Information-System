@@ -29,6 +29,8 @@ import {
   EXCEPTION_TYPES,
   DAYS_OF_WEEK,
   capitalize,
+  getTodayDateString,
+  getIncomingHolidays,
   OfficeStatusCards,
   CalendarGridView,
   FormActions,
@@ -37,24 +39,17 @@ import {
   Pagination,
 } from "../components/BusinessCalendarComponents.jsx";
 
+import ImportHolidaysModal, {
+  OFFICIAL_PH_HOLIDAYS_2026,
+  OFFICIAL_PH_HOLIDAYS_2027,
+} from "../components/ImportHolidaysModal.jsx";
+
 const PER_PAGE = 10;
 
 const EMPTY_EXCEPTION_FORM = { type: "holiday", label: "", date: "", end_date: "", closed_from_time: "" };
 const EMPTY_OVERRIDE_FORM = { day_of_week: "monday", is_closed: true, label: "", effective_from: "", effective_until: "" };
 
-/**
- * Today's date as a local 'YYYY-MM-DD' string. Deliberately built from
- * getFullYear/getMonth/getDate (not toISOString(), which is UTC-based and
- * can land on the wrong calendar day depending on the browser's offset) —
- * same approach CalendarGridView uses for its own "today" comparisons.
- * Used to stop staff from picking an already-past date when creating a
- * new closure; the backend (StoreCalendarExceptionRequest) is the
- * authoritative check, this just gives immediate feedback in the picker.
- */
-const getTodayDateString = () => {
-  const today = new Date();
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-};
+
 
 /**
  * Admin/superadmin screen for the business calendar's two closure mechanisms.
@@ -103,6 +98,7 @@ const BusinessCalendarManagement = () => {
 
   // ---- Shared form/modal state ----
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null); // null = creating
   const [exceptionForm, setExceptionForm] = useState(EMPTY_EXCEPTION_FORM);
   const [overrideForm, setOverrideForm] = useState(EMPTY_OVERRIDE_FORM);
@@ -112,6 +108,40 @@ const BusinessCalendarManagement = () => {
 
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+
+  const handleBulkImportHolidays = async (itemsToImport) => {
+    setSaving(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const item of itemsToImport) {
+      try {
+        await createCalendarException({
+          type: item.type,
+          label: item.label,
+          date: item.date,
+          end_date: item.end_date,
+        });
+        successCount++;
+      } catch (err) {
+        console.error(`Failed to import ${item.label}:`, err);
+        failCount++;
+      }
+    }
+
+    await Promise.all([
+      fetchExceptions(exceptionsPage),
+      fetchCalendarData(),
+      fetchOfficeStatus(),
+    ]);
+    setSaving(false);
+
+    if (successCount > 0) {
+      setSuccessMsg(`Successfully imported ${successCount} official holiday${successCount > 1 ? "s" : ""}!`);
+    } else if (failCount > 0) {
+      setErrorMsg("Some selected holidays could not be imported.");
+    }
+  };
 
   // -------------------------------------------------------
   // Fetching
@@ -480,12 +510,9 @@ const BusinessCalendarManagement = () => {
     event: isDark ? "bg-purple-900/30 text-purple-300" : "bg-purple-50 text-purple-700",
   };
 
-  // Compute upcoming exceptions count and weekly overrides count
-  const todayDateStr = new Date().toISOString().slice(0, 10);
-  const activeUpcomingCount = calendarExceptions.filter((e) => {
-    const end = e.end_date || e.date;
-    return e.enabled && end >= todayDateStr;
-  }).length;
+  // Compute upcoming exceptions count and weekly overrides count using incoming holiday helpers
+  const incomingHolidays = getIncomingHolidays(calendarExceptions);
+  const activeUpcomingCount = incomingHolidays.length;
 
   const activeWeeklyCount = calendarOverrides.filter((o) => {
     return o.enabled;
@@ -536,6 +563,7 @@ const BusinessCalendarManagement = () => {
           officeStatus={officeStatus}
           upcomingCount={activeUpcomingCount}
           weeklyScheduleCount={activeWeeklyCount}
+          calendarExceptions={calendarExceptions}
         />
 
         {/* Switch View Render */}
@@ -586,21 +614,35 @@ const BusinessCalendarManagement = () => {
                 </button>
               </div>
 
-              {/* Action Button */}
-              <div className="pb-2 sm:pb-1.5 self-end sm:self-auto">
+              {/* Action Buttons */}
+              <div className="pb-2 sm:pb-1.5 self-end sm:self-auto flex items-center gap-2">
                 {activeTab === "exceptions" ? (
-                  <button
-                    onClick={() => handleAddDateEntry()}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold shadow transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] shrink-0 ${isDark ? "bg-yellow-400 text-black hover:bg-yellow-500" : "bg-pup-dark-maroon text-white hover:bg-[#3a0303]"
+                  <>
+                    <button
+                      onClick={() => setIsImportModalOpen(true)}
+                      className={`px-4 py-2 rounded-lg text-xs font-bold shadow transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] shrink-0 ${
+                        isDark
+                          ? "bg-[#3a3b3c] text-[#e4e6eb] hover:bg-[#4e4f50] border border-[#4e4f50]"
+                          : "bg-pup-dark-maroon text-white hover:bg-[#3a0303]"
                       }`}
-                  >
-                    Add date entry +
-                  </button>
+                    >
+                      Import Official Holidays
+                    </button>
+                    <button
+                      onClick={() => handleAddDateEntry()}
+                      className={`px-4 py-2 rounded-lg text-xs font-bold shadow transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] shrink-0 ${
+                        isDark ? "bg-yellow-400 text-black hover:bg-yellow-500" : "bg-pup-dark-maroon text-white hover:bg-[#3a0303]"
+                      }`}
+                    >
+                      Add date entry +
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={() => handleAddWeeklyRule()}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold shadow transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] shrink-0 ${isDark ? "bg-yellow-400 text-black hover:bg-yellow-500" : "bg-pup-dark-maroon text-white hover:bg-[#3a0303]"
-                      }`}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold shadow transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] shrink-0 ${
+                      isDark ? "bg-yellow-400 text-black hover:bg-yellow-500" : "bg-pup-dark-maroon text-white hover:bg-[#3a0303]"
+                    }`}
                   >
                     Add weekly rule +
                   </button>
@@ -699,8 +741,8 @@ const BusinessCalendarManagement = () => {
             className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
             onClick={closeForm}
           />
-          <div className={`relative z-50 w-full max-w-md my-4 sm:my-6 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-y-auto border flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-200 ${isDark ? 'bg-[#242526] border-[#3e4042] text-[#e4e6eb]' : 'bg-white border-[#800000]/20 text-gray-900'}`}>
-            <div className={`px-5 py-4 border-b-4 shrink-0 ${isDark ? 'bg-[#1f1f1f] border-[#b98b00]' : 'bg-[#800000] border-[#FFD700]'}`}>
+          <div className={`relative z-50 w-full max-w-lg my-4 sm:my-6 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.35)] overflow-hidden border flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-200 ${isDark ? 'bg-[#242526] border-[#3e4042] text-[#e4e6eb]' : 'bg-white border-[#800000]/20 text-gray-900'}`}>
+            <div className={`px-6 py-5 border-b-4 shrink-0 ${isDark ? 'bg-[#1f1f1f] border-[#b98b00]' : 'bg-[#800000] border-[#FFD700]'}`}>
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-xl text-white font-black uppercase tracking-tighter">
@@ -708,57 +750,99 @@ const BusinessCalendarManagement = () => {
                       ? (activeTab === "exceptions" ? "Edit Closure" : "Edit Override")
                       : (activeTab === "exceptions" ? "Add Closure" : "Add Override")}
                   </h3>
-                  <p className="text-white/60 text-xs mt-0.5">
+                  <p className="text-white/80 text-xs mt-0.5">
                     {activeTab === "exceptions"
-                      ? "A one-off dated closure — always takes precedence over a recurring override."
-                      : "A standing weekly rule, e.g. \"closed every Monday until further notice.\""}
+                      ? "One-off dated closure — takes precedence over recurring overrides."
+                      : "Standing weekly rule (e.g. \"Closed every Monday until further notice\")."}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={closeForm}
                   disabled={saving}
-                  className="p-2 rounded hover:opacity-90 shrink-0 disabled:opacity-50"
+                  className="p-2 rounded hover:opacity-90 shrink-0 text-white cursor-pointer disabled:opacity-50"
+                  title="Close"
                 >
-                  <XMarkIcon className={`w-6 h-6 ${isDark ? 'text-[#e4e6eb]' : 'text-white'}`} />
+                  <XMarkIcon className="w-6 h-6 text-white" />
                 </button>
               </div>
             </div>
 
             {activeTab === "exceptions" ? (
-              <form onSubmit={handleExceptionSubmit} noValidate className="flex flex-col">
-                <div className="px-6 py-5 space-y-4">
-                  <div>
-                    <DropdownGroup
-                      label="Type"
-                      name="type"
-                      value={EXCEPTION_TYPES.find(t => t.value === exceptionForm.type)?.label ?? ''}
-                      onChange={(e) => {
-                        const found = EXCEPTION_TYPES.find(t => t.label === e.target.value);
-                        if (found) setExceptionForm((prev) => ({ ...prev, type: found.value }));
-                      }}
-                      options={EXCEPTION_TYPES.map(t => t.label)}
-                      required
-                      labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}
-                    />
-                    {fieldErrors.type && <p className="mt-1 text-xs font-semibold text-red-500">{fieldErrors.type[0]}</p>}
+              <form onSubmit={handleExceptionSubmit} noValidate className="flex flex-col flex-1 overflow-y-auto">
+                <div className="px-6 py-5 space-y-5 flex-1">
+                  {!editingId && (() => {
+                    const allPresets = [
+                      ...OFFICIAL_PH_HOLIDAYS_2026.map(h => ({ ...h, displayLabel: `[2026] ${h.label} (${h.date})` })),
+                      ...OFFICIAL_PH_HOLIDAYS_2027.map(h => ({ ...h, displayLabel: `[2027] ${h.label} (${h.date})` })),
+                    ];
+                    const selectedPreset = allPresets.find(
+                      (h) => h.label === exceptionForm.label && h.date === exceptionForm.date
+                    );
+
+                    return (
+                      <div className={`p-3.5 rounded-xl border ${
+                        isDark ? "bg-[#1f2022] border-[#3e4042]" : "bg-amber-50/60 border-amber-200"
+                      }`}>
+                        <DropdownGroup
+                          label="Preset Official PH Holiday (Optional)"
+                          name="preset_holiday"
+                          value={selectedPreset?.displayLabel ?? ""}
+                          onChange={(e) => {
+                            const found = allPresets.find((h) => h.displayLabel === e.target.value);
+                            if (found) {
+                              setExceptionForm((prev) => ({
+                                ...prev,
+                                label: found.label,
+                                type: found.type,
+                                date: found.date,
+                                end_date: found.end_date,
+                              }));
+                            }
+                          }}
+                          options={["-- Select Preset Holiday --", ...allPresets.map((h) => h.displayLabel)]}
+                          labelColor={isDark ? "text-[#e4e6eb]" : "text-[#800000]"}
+                        />
+                        <p className={`mt-1.5 text-[11px] ${isDark ? "text-[#b0b3b8]" : "text-gray-600"}`}>
+                          Select an official national holiday to auto-fill label & date fields below.
+                        </p>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <DropdownGroup
+                        label="Type"
+                        name="type"
+                        value={EXCEPTION_TYPES.find(t => t.value === exceptionForm.type)?.label ?? ''}
+                        onChange={(e) => {
+                          const found = EXCEPTION_TYPES.find(t => t.label === e.target.value);
+                          if (found) setExceptionForm((prev) => ({ ...prev, type: found.value }));
+                        }}
+                        options={EXCEPTION_TYPES.map(t => t.label)}
+                        required
+                        labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}
+                      />
+                      {fieldErrors.type && <p className="mt-1 text-xs font-semibold text-red-500">{fieldErrors.type[0]}</p>}
+                    </div>
+
+                    <div>
+                      <InputGroup
+                        label="Label"
+                        name="label"
+                        value={exceptionForm.label}
+                        onChange={(e) => setExceptionForm((prev) => ({ ...prev, label: e.target.value }))}
+                        placeholder="e.g. Typhoon suspension"
+                        required
+                        voiceEnabled={false}
+                        labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}
+                      />
+                      {fieldErrors.label && <p className="mt-1 text-xs font-semibold text-red-500">{fieldErrors.label[0]}</p>}
+                    </div>
                   </div>
 
-                  <div>
-                    <InputGroup
-                      label="Label"
-                      name="label"
-                      value={exceptionForm.label}
-                      onChange={(e) => setExceptionForm((prev) => ({ ...prev, label: e.target.value }))}
-                      placeholder="e.g. Typhoon suspension"
-                      required
-                      voiceEnabled={false}
-                      labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}
-                    />
-                    {fieldErrors.label && <p className="mt-1 text-xs font-semibold text-red-500">{fieldErrors.label[0]}</p>}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <InputGroup
                         label="Start Date"
@@ -789,7 +873,7 @@ const BusinessCalendarManagement = () => {
                         voiceEnabled={false}
                         labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}
                       />
-                      <p className={`mt-1 text-[11px] ${isDark ? 'text-[#8a8d91]' : 'text-gray-400'}`}>Leave blank for a single day.</p>
+                      <p className={`mt-1 text-[11px] ${isDark ? 'text-[#8a8d91]' : 'text-gray-400'}`}>Leave blank for single day.</p>
                       {fieldErrors.end_date && <p className="mt-1 text-xs font-semibold text-red-500">{fieldErrors.end_date[0]}</p>}
                     </div>
                   </div>
@@ -821,8 +905,8 @@ const BusinessCalendarManagement = () => {
                 <FormActions isDark={isDark} saving={saving} onCancel={closeForm} editingId={editingId} createLabel="Add Closure" />
               </form>
             ) : (
-              <form onSubmit={handleOverrideSubmit} noValidate className="flex flex-col">
-                <div className="px-6 py-5 space-y-4">
+              <form onSubmit={handleOverrideSubmit} noValidate className="flex flex-col flex-1 overflow-y-auto">
+                <div className="px-6 py-5 space-y-4 flex-1">
                   <div>
                     <DropdownGroup
                       label="Day of Week"
@@ -851,26 +935,34 @@ const BusinessCalendarManagement = () => {
                   </div>
 
                   <div>
-                    <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}`}>Status on This Day</label>
-                    <div className={`inline-flex p-0.5 rounded-full ${isDark ? 'bg-[#18191a] border border-[#3e4042]' : 'bg-gray-300'}`}>
+                    <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}`}>Status on This Day</label>
+                    <div className={`inline-flex p-1 rounded-lg border ${isDark ? 'bg-[#18191a] border-[#3e4042]' : 'bg-gray-100 border-gray-300'}`}>
                       <button
                         type="button"
                         onClick={() => setOverrideForm((prev) => ({ ...prev, is_closed: true }))}
-                        className={`px-5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${overrideForm.is_closed ? 'bg-white text-gray-900 shadow-xs' : (isDark ? 'text-[#b0b3b8] hover:text-white' : 'text-gray-600 hover:text-gray-900')}`}
+                        className={`px-5 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                          overrideForm.is_closed
+                            ? (isDark ? 'bg-amber-400 text-black shadow-xs' : 'bg-[#800000] text-white shadow-xs')
+                            : (isDark ? 'text-[#b0b3b8] hover:text-white' : 'text-gray-600 hover:text-gray-900')
+                        }`}
                       >
                         Closed
                       </button>
                       <button
                         type="button"
                         onClick={() => setOverrideForm((prev) => ({ ...prev, is_closed: false }))}
-                        className={`px-5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${!overrideForm.is_closed ? 'bg-white text-gray-900 shadow-xs' : (isDark ? 'text-[#b0b3b8] hover:text-white' : 'text-gray-600 hover:text-gray-900')}`}
+                        className={`px-5 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                          !overrideForm.is_closed
+                            ? (isDark ? 'bg-amber-400 text-black shadow-xs' : 'bg-[#800000] text-white shadow-xs')
+                            : (isDark ? 'text-[#b0b3b8] hover:text-white' : 'text-gray-600 hover:text-gray-900')
+                        }`}
                       >
                         Open
                       </button>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <InputGroup
                         label="Effective From"
@@ -907,6 +999,15 @@ const BusinessCalendarManagement = () => {
           </div>
         </div>
       )}
+
+      {/* Bulk 2027 PH Holidays Import Modal */}
+      <ImportHolidaysModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        isDark={isDark}
+        existingExceptions={calendarExceptions}
+        onImportSelected={handleBulkImportHolidays}
+      />
 
       {/* Confirmation Delete Dialog */}
       <ConfirmationModal
