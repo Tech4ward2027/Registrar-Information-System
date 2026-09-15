@@ -10,6 +10,13 @@ export const DEFAULT_CERTIFICATE_LAYOUT = {
 	footerUrls: [certificateFooter],
 	headerLogoSize: 56,
 	footerLogoSize: 56,
+	headerFontSize: 14,
+	headerLines: [
+		"REPUBLIC OF THE PHILIPPINES",
+		"Polytechnic University of the Philippines",
+		"OFFICE OF THE VICE PRESIDENT FOR CAMPUSES",
+		"TAGUIG CAMPUS",
+	],
 };
 
 const coerceSize = (value, fallback) => {
@@ -20,6 +27,11 @@ const coerceSize = (value, fallback) => {
 const normalizeUrlArray = (value) => {
 	if (!Array.isArray(value)) return [];
 	return value.filter((item) => typeof item === "string" && item.trim().length > 0);
+};
+
+const normalizeStringArray = (value, fallback) => {
+	if (!Array.isArray(value) || value.length === 0) return [...fallback];
+	return value.map((item) => (typeof item === "string" ? item : String(item ?? "")));
 };
 
 const APP_URL = (import.meta.env.VITE_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
@@ -52,6 +64,7 @@ export const normalizeCertificateLayout = (rawLayout) => {
 	const rawLeft = rawLayout.layout_header_left_url ?? rawLayout.headerLeftUrl;
 	const rawRight = rawLayout.layout_header_right_url ?? rawLayout.headerRightUrl;
 	const rawFooter = rawLayout.layout_footer_urls ?? rawLayout.footerUrls;
+	const rawHeaderLines = rawLayout.layout_header_lines ?? rawLayout.headerLines;
 	const headerLeftUrl = toAbsoluteUrl(rawLeft, DEFAULT_CERTIFICATE_LAYOUT.headerLeftUrl);
 	const headerRightUrl = toAbsoluteUrl(rawRight, DEFAULT_CERTIFICATE_LAYOUT.headerRightUrl);
 
@@ -71,6 +84,11 @@ export const normalizeCertificateLayout = (rawLayout) => {
 			rawLayout.layout_footer_logo_size ?? rawLayout.footerLogoSize,
 			DEFAULT_CERTIFICATE_LAYOUT.footerLogoSize
 		),
+		headerFontSize: coerceSize(
+			rawLayout.layout_header_font_size ?? rawLayout.headerFontSize,
+			DEFAULT_CERTIFICATE_LAYOUT.headerFontSize
+		),
+		headerLines: normalizeStringArray(rawHeaderLines, DEFAULT_CERTIFICATE_LAYOUT.headerLines),
 	};
 };
 
@@ -134,5 +152,7 @@ export const toLayoutPayload = (layout) => {
 		layout_footer_urls: footerPaths,
 		layout_header_logo_size: normalized.headerLogoSize,
 		layout_footer_logo_size: normalized.footerLogoSize,
+		layout_header_font_size: normalized.headerFontSize,
+		layout_header_lines: normalized.headerLines,
 	};
 };

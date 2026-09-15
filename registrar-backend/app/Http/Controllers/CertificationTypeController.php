@@ -40,6 +40,8 @@ class CertificationTypeController extends Controller
             'layout_footer_urls',
             'layout_header_logo_size',
             'layout_footer_logo_size',
+            'layout_header_lines',
+            'layout_header_font_size',
             'is_archived',
             'archived_on',
             'archived_by',
