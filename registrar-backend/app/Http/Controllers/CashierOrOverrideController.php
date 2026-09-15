@@ -85,10 +85,21 @@ class CashierOrOverrideController extends Controller
      * role:3,4 + module:cashier_overrides middleware instead, so access
      * follows the same rule as every other action here.
      *
-     * Scoped to student/alumni only, matching
+     * Scoped to student/alumni/undergrad-requestor only, matching
      * StoreCashierOrOverrideRequest's own restriction — there's no
      * reason to surface staff/admin accounts in a picker for a form
      * that would reject them anyway.
+     *
+     * Undergrad Requestor Registration — Phase 5 (§3.7): an Approved
+     * Undergrad Requestor uses the exact same Cashier payment flow as
+     * Student/Alumni, so they belong in the same admin-facing picker.
+     * An unapproved one is still searchable here deliberately — this
+     * screen is a cashier/admin tool for issuing an OR override, which
+     * can legitimately be needed for a submission still awaiting
+     * verification (e.g. the person already paid in person before
+     * their registration was decided); StoreCashierOrOverrideRequest
+     * enforces the actual eligibility rule at submission time, not this
+     * picker.
      */
     public function searchUsers(Request $request)
     {
@@ -104,7 +115,11 @@ class CashierOrOverrideController extends Controller
 
         $users = SystemUser::query()
             ->where('status', 'Activated')
-            ->whereIn('role_id', [SystemUser::ROLE_STUDENT, SystemUser::ROLE_ALUMNI])
+            ->whereIn('role_id', [
+                SystemUser::ROLE_STUDENT,
+                SystemUser::ROLE_ALUMNI,
+                SystemUser::ROLE_UNDERGRAD_REQUESTOR,
+            ])
             ->where(function ($query) use ($prefix) {
                 $query->where('email', 'like', $prefix)
                     ->orWhereHas('studentProfile', fn ($p) => $p
@@ -112,9 +127,12 @@ class CashierOrOverrideController extends Controller
                         ->orWhere('last_name', 'like', $prefix))
                     ->orWhereHas('alumniProfile', fn ($p) => $p
                         ->where('first_name', 'like', $prefix)
+                        ->orWhere('last_name', 'like', $prefix))
+                    ->orWhereHas('undergradRequestorProfile', fn ($p) => $p
+                        ->where('first_name', 'like', $prefix)
                         ->orWhere('last_name', 'like', $prefix));
             })
-            ->with(['studentProfile', 'alumniProfile'])
+            ->with(['studentProfile', 'alumniProfile', 'undergradRequestorProfile'])
             ->orderBy('email')
             ->limit(10)
             ->get();

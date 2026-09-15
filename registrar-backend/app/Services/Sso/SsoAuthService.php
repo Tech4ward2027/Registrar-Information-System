@@ -3,11 +3,15 @@
 namespace App\Services\Sso;
 
 use App\Exceptions\AccountDeactivatedException;
+use App\Exceptions\AccountExpiredException;
+use App\Exceptions\AccountRejectedException;
 use App\Exceptions\IdpException;
 use App\Exceptions\IdpUnavailableException;
 use App\Exceptions\UnregisteredAccountException;
 use App\Models\AuditLog;
+use App\Models\SecurityEvent;
 use App\Models\SystemUser;
+use App\Services\SecurityEventLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -23,13 +27,33 @@ use Illuminate\Support\Facades\Log;
  *
  * AuthController stays a thin HTTP adapter — no IdP calls or
  * audit logs happen there.
+ *
+ * ── Phase 6 (Undergrad Requestor Registration) ────────────────────────
+ * Every login RIS refuses after the IdP has already authenticated the
+ * person now writes a security_events row here.
+ *
+ * Why here and not in SsoCallbackController, where these exceptions are
+ * finally turned into HTTP responses: the controller has the exception
+ * but not the person's identity — the exceptions carry a user-facing
+ * message, not an email — whereas this class holds the IdP profile that
+ * the rejection was about. Recording "a login was denied" without being
+ * able to say WHOSE would produce a table nobody can act on.
+ *
+ * AccountExpiredException gets its own catch that records and re-throws
+ * WITHOUT revoking the IdP token. That is a deliberate preservation of
+ * existing behaviour, not an oversight: an expired invite is a
+ * provisioning timeout, not a refusal of the person, and quietly
+ * changing what happens to their IdP session is outside a logging
+ * change's remit. Whether it SHOULD revoke is flagged in the Phase 6
+ * threat-model note as an open question for the tech lead.
  */
 class SsoAuthService
 {
     public function __construct(
-        private IdpClient               $idpClient,
-        private UserProvisioningService $provisioner,
+        private IdpClient                $idpClient,
+        private UserProvisioningService  $provisioner,
         private \App\Services\AuditLogger $auditLogger,
+        private SecurityEventLogger      $securityEvents,
     ) {}
 
     /**
@@ -55,8 +79,14 @@ class SsoAuthService
                 array_merge($profile, ['access_token' => $accessToken]),
                 $request,
             );
-        } catch (UnregisteredAccountException|AccountDeactivatedException $e) {
+        } catch (UnregisteredAccountException|AccountDeactivatedException|AccountRejectedException $e) {
+            $this->recordDeniedLogin($e, $profile, $request, 'authorization_code');
             $this->revokeOnRejection($accessToken, $profile);
+            throw $e;
+        } catch (AccountExpiredException $e) {
+            // Recorded, then re-thrown untouched — see the class
+            // docblock for why this one does NOT revoke.
+            $this->recordDeniedLogin($e, $profile, $request, 'authorization_code');
             throw $e;
         }
 
@@ -107,8 +137,12 @@ class SsoAuthService
 
         try {
             $result = $this->provisioner->provision($idpResponse, $request);
-        } catch (UnregisteredAccountException|AccountDeactivatedException $e) {
+        } catch (UnregisteredAccountException|AccountDeactivatedException|AccountRejectedException $e) {
+            $this->recordDeniedLogin($e, $profile, $request, 'password');
             $this->revokeOnRejection($accessToken, $profile);
+            throw $e;
+        } catch (AccountExpiredException $e) {
+            $this->recordDeniedLogin($e, $profile, $request, 'password');
             throw $e;
         }
 
@@ -123,6 +157,52 @@ class SsoAuthService
         $this->auditLogger->log($request, $user, AuditLog::ACTION_LOGIN);
 
         return ['token' => $token, 'user' => $user];
+    }
+
+    /**
+     * Phase 6 — persist "the IdP said yes, RIS said no", with the cause.
+     *
+     * The email comes from the IdP profile rather than from the
+     * exception, which carries only a user-facing message. Never throws:
+     * SecurityEventLogger swallows its own write failures, and this
+     * method runs inside a catch block where a new exception would
+     * replace the rejection the caller is in the middle of reporting.
+     */
+    private function recordDeniedLogin(
+        \Throwable $exception,
+        array      $profile,
+        Request    $request,
+        string     $flow,
+    ): void {
+        $this->securityEvents->recordSsoLoginDenied(
+            email:   $profile['email'] ?? null,
+            reason:  $this->reasonFor($exception),
+            request: $request,
+            metadata: [
+                // Which of the two entry points was used. A denial burst
+                // arriving via 'password' rather than 'authorization_code'
+                // means something is driving the API directly, not a
+                // person clicking through the IdP's consent screen — a
+                // meaningfully different signal.
+                'flow'        => $flow,
+                'idp_user_id' => $profile['id'] ?? null,
+            ],
+        );
+    }
+
+    /**
+     * Map a provisioning rejection onto a stable security_events reason
+     * token, so the table can be filtered by cause without anyone
+     * parsing an English message string that is free to change.
+     */
+    private function reasonFor(\Throwable $exception): string
+    {
+        return match (true) {
+            $exception instanceof AccountRejectedException    => SecurityEvent::REASON_ACCOUNT_REJECTED,
+            $exception instanceof AccountDeactivatedException => SecurityEvent::REASON_ACCOUNT_DEACTIVATED,
+            $exception instanceof AccountExpiredException     => SecurityEvent::REASON_ACCOUNT_EXPIRED,
+            default                                          => SecurityEvent::REASON_UNREGISTERED_ACCOUNT,
+        };
     }
 
     /**

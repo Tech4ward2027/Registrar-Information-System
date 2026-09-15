@@ -196,13 +196,43 @@ class RoleAssignmentService
     private function assertDirectionAllowed(SystemUser $targetUser, int $grantedRoleId): void
     {
         $adminTier = [SystemUser::ROLE_ADMIN, SystemUser::ROLE_SUPER_ADMIN];
-        $baseTier  = [SystemUser::ROLE_STUDENT, SystemUser::ROLE_ALUMNI];
+        // Undergrad Requestor Registration — Phase 5. ROLE_UNDERGRAD_REQUESTOR
+        // added to this DIRECTION GUARD for the same structural reason
+        // Student/Alumni are here — but, unlike them, NOT also added to
+        // StoreRoleAssignmentRequest's grantable role_id whitelist. That
+        // was a deliberate, considered decision, not an oversight:
+        //
+        //   Student/Alumni are durable academic identities a person can
+        //   plausibly hold ALONGSIDE another role — the whitelist
+        //   genuinely allows granting them as a secondary role_assignment
+        //   today, and this guard protects that real feature from being
+        //   pointed at an Admin-tier target.
+        //
+        //   Undergrad Requestor has exactly ONE valid path into
+        //   existence: the public onboarding form + Admin approval
+        //   pipeline (D4), which creates the users row AND its
+        //   undergrad_requestor_verifications row together, atomically
+        //   (see UndergradRequestorRegistrationService::register()). A
+        //   role_assignments grant would produce a role_id = 5 row with
+        //   NO verification row — and EnsureUndergradRequestorApproved
+        //   (Phase 5) has no way to tell "never verified" apart from
+        //   "not yet approved," so that account would be permanently,
+        //   correctly refused at every request-flow endpoint. Not a
+        //   usable secondary role — a dead end.
+        //
+        // This array entry is therefore pure defense-in-depth: since the
+        // FormRequest whitelist already rejects role_id = 5 before this
+        // method ever runs, the branch below is currently unreachable
+        // for that value — kept anyway, at zero cost, in case a future
+        // change ever widens that whitelist without re-deriving this
+        // reasoning first.
+        $baseTier  = [SystemUser::ROLE_STUDENT, SystemUser::ROLE_ALUMNI, SystemUser::ROLE_UNDERGRAD_REQUESTOR];
 
         if (in_array($targetUser->role_id, $adminTier, true) && in_array($grantedRoleId, $baseTier, true)) {
             throw ValidationException::withMessages([
                 'role_id' => 'This account\'s primary role is Admin-tier (Admin or Super Admin) and cannot be '
-                    . 'handed a Student or Alumni role assignment. Deactivate the account instead if this '
-                    . 'person no longer holds this role.',
+                    . 'handed a Student, Alumni, or Undergrad Requestor role assignment. Deactivate the account '
+                    . 'instead if this person no longer holds this role.',
             ]);
         }
     }
@@ -330,9 +360,23 @@ class RoleAssignmentService
                         ->orWhere('last_name', 'like', $prefix))
                     ->orWhereHas('alumniProfile', fn ($p) => $p
                         ->where('first_name', 'like', $prefix)
+                        ->orWhere('last_name', 'like', $prefix))
+                    // Undergrad Requestor Registration — Phase 5. This
+                    // search is the TARGET picker — "who do I grant a
+                    // role assignment TO" — and is deliberately
+                    // role-agnostic (no whereIn('role_id', ...) above);
+                    // an Approved Undergrad Requestor is an Activated
+                    // account like any other and can legitimately be
+                    // the target of an Admin-tier grant (the classic
+                    // "staff" pattern, symmetric to student-staff). This
+                    // is about search-BY-NAME reaching such an account;
+                    // it was already findable by exact email even
+                    // without this clause.
+                    ->orWhereHas('undergradRequestorProfile', fn ($p) => $p
+                        ->where('first_name', 'like', $prefix)
                         ->orWhere('last_name', 'like', $prefix));
             })
-            ->with(['studentProfile', 'adminProfile', 'alumniProfile', 'activeRoleAssignments'])
+            ->with(['studentProfile', 'adminProfile', 'alumniProfile', 'undergradRequestorProfile', 'activeRoleAssignments'])
             ->orderBy('email')
             ->limit(10)
             ->get();
