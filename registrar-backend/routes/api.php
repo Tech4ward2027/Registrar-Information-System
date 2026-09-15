@@ -36,6 +36,7 @@ use App\Http\Controllers\CalendarExceptionController;
 use App\Http\Controllers\CalendarOverrideController;
 use App\Http\Controllers\SuperAdminAnalyticsController;
 use App\Http\Controllers\SecurityEventController;
+use App\Http\Controllers\UndergradRequestorController;
 
 /*
 |--------------------------------------------------------------------------
@@ -60,6 +61,18 @@ Route::get('/business-hours/status', [BusinessHoursController::class, 'status'])
 // days) for the same public request-form banner.
 Route::get('/business-hours/upcoming-closures', [BusinessHoursController::class, 'upcomingClosures'])
     ->middleware('throttle:60,1');
+
+// Undergrad Requestor Registration — Phase 2. Public, unauthenticated —
+// this IS the entry point that pre-creates a 'Pending Verification'
+// account (D4). A tighter throttle than the general 60/min public read
+// endpoints above: this writes to the database and triggers an outbound
+// email per call, both meaningfully more expensive to abuse. Phase 6
+// adds a dedicated per-email bucket on top of this per-IP one.
+Route::post('/undergrad-requestors/register', [UndergradRequestorController::class, 'register'])
+    ->middleware('throttle:10,1,undergrad-requestor-register');
+
+Route::post('/undergrad-requestors/confirm-email', [UndergradRequestorController::class, 'confirmEmail'])
+    ->middleware('throttle:20,1,undergrad-requestor-confirm-email');
 
 /*
 |--------------------------------------------------------------------------

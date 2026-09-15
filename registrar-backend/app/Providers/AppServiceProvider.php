@@ -6,6 +6,7 @@ use App\Contracts\AlumniSystemClientInterface;
 use App\Contracts\CashierServiceInterface;
 use App\Contracts\DocumentRequestServiceInterface;
 use App\Contracts\NotificationServiceInterface;
+use App\Contracts\UndergradRequestorRegistrationServiceInterface;
 use App\Models\NotificationType;
 use App\Observers\NotificationTypeObserver;
 use App\Services\AuditLogger;
@@ -15,6 +16,7 @@ use App\Services\Alumni\FakeAlumniSystemClient;
 use App\Services\CashierService;
 use App\Services\DocumentRequestService;
 use App\Services\NotificationService;
+use App\Services\UndergradRequestorRegistrationService;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -59,6 +61,12 @@ class AppServiceProvider extends ServiceProvider
             env('ALUMNI_MOCK', false)
                 ? FakeAlumniSystemClient::class
                 : AlumniSystemClient::class,
+        );
+
+        // Undergrad Requestor Registration — Phase 2.
+        $this->app->bind(
+            UndergradRequestorRegistrationServiceInterface::class,
+            UndergradRequestorRegistrationService::class,
         );
 
         // AuditLogger is a concrete class — no interface needed.
