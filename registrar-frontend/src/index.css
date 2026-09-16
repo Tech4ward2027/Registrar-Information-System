@@ -1293,6 +1293,10 @@
 }
 
 /* Fix browser autofill dark/blue-gray background overriding light styles */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
 .lp-modal input:-webkit-autofill,
 .lp-modal input:-webkit-autofill:hover,
 .lp-modal input:-webkit-autofill:focus,

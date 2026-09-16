@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
-import { getUndergradRequestorRegistrationNotice, registerUndergradRequestor } from "../services/api";
+import { getUndergradRequestorRegistrationNotice, registerUndergradRequestor, getPrograms } from "../services/api";
 import LandingPage from "../layouts/LandingPage.jsx";
 import InputGroup from "../components/InputGroup";
+import DropDown from "../components/DropDown.jsx";
 import CheckboxItem from "../components/Checkbox";
 import ErrorToast from "../components/ErrorToast.jsx";
 import logoImage from "../assets/puplogoimage.png";
@@ -52,6 +53,37 @@ const UndergradRequestorRegisterPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [generalError, setGeneralError] = useState("");
   const [submittedEmail, setSubmittedEmail] = useState(null);
+
+  const [programs, setPrograms] = useState([]);
+
+  // Fetch OGOS/GUISIS programs on mount for course dropdown
+  useEffect(() => {
+    let isMounted = true;
+    getPrograms()
+      .then((res) => {
+        if (!isMounted) return;
+        const data = res.data?.data || res.data || [];
+        setPrograms(Array.isArray(data) ? data : []);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch programs:", err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const courseOptions = useMemo(() => programs.map((p) => p.name).filter(Boolean), [programs]);
+
+  /**
+   * Return the full program name for a given ogos_course_id, or undefined.
+   * Usage: programName(student.course_id) → "BS Information Technology"
+   */
+  const programName = useCallback(
+    (id) => programs.find((p) => Number(p.ogos_course_id) === Number(id))?.name,
+    [programs]
+  );
 
   // Fetch registration notice & version on mount
   useEffect(() => {
@@ -176,7 +208,30 @@ const UndergradRequestorRegisterPage = () => {
       const clientErrors = validateClientSide();
       if (Object.keys(clientErrors).length > 0) {
         setErrors(clientErrors);
-        setGeneralError("Please resolve the highlighted validation errors.");
+
+        const sec1Fields = ["email", "phone", "first_name", "last_name", "date_of_birth", "student_number", "present_address"];
+        const sec2Fields = ["program", "last_school_year_attended"];
+        const sec3Fields = ["data_privacy_consent"];
+
+        const hasSec1Error = sec1Fields.some((f) => clientErrors[f]);
+        const hasSec2Error = sec2Fields.some((f) => clientErrors[f]);
+        const hasSec3Error = sec3Fields.some((f) => clientErrors[f]);
+
+        const missingSections = [];
+        if (hasSec1Error) missingSections.push("1. Personal & Contact Information");
+        if (hasSec2Error) missingSections.push("2. Academic Details");
+
+        if (missingSections.length > 0) {
+          let msg = `Please fill in all required fields in ${missingSections.join(" and ")}.`;
+          if (hasSec3Error) {
+            msg += " Also, please accept the Data Privacy Notice & Consent.";
+          }
+          setGeneralError(msg);
+        } else if (hasSec3Error) {
+          setGeneralError("Please accept the Data Privacy Notice & Consent to proceed.");
+        } else {
+          setGeneralError("Please resolve the highlighted validation errors.");
+        }
         return;
       }
 
@@ -243,8 +298,8 @@ const UndergradRequestorRegisterPage = () => {
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-hidden bg-black/60 backdrop-blur-md">
         {submittedEmail ? (
           /* Success Screen Card (Slightly Larger, Perfectly Balanced Modal) */
-          <div className={`w-full max-w-md sm:max-w-lg my-auto rounded-2xl p-6 sm:p-7 shadow-2xl border text-center font-sans relative z-10 transition-all ${cardClasses}`}>
-            <div className="w-14 h-14 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+          <div style={{ colorScheme: "light" }} className={`w-full max-w-md sm:max-w-lg my-auto rounded-2xl p-6 sm:p-7 shadow-2xl border text-center font-sans relative z-10 transition-all ${cardClasses}`}>
+            <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
               <CheckCircleIcon className="w-8 h-8" />
             </div>
 
@@ -257,7 +312,7 @@ const UndergradRequestorRegisterPage = () => {
                 isDark ? "bg-[#18191a] border-[#3e4042] text-[#e4e6eb]" : "bg-amber-50/90 border-amber-300 text-amber-950"
               }`}
             >
-              <p className="font-bold text-xs sm:text-sm mb-1.5 items-center justify-center text-center text-[#800000] dark:text-amber-400">
+              <p className="font-bold text-xs sm:text-sm mb-1.5 items-center justify-center text-center text-[#800000]">
                 Check your email for confirmation
               </p>
               <p className="leading-relaxed text-xs sm:text-sm text-justify">
@@ -287,12 +342,13 @@ const UndergradRequestorRegisterPage = () => {
         ) : (
           /* Main Form Card Layout (Scrollable Inside Onboarding Modal) */
           <div
+            style={{ colorScheme: "light" }}
             className={`w-full max-w-3xl lg:max-w-4xl rounded-2xl p-5 sm:p-7 md:p-8 shadow-2xl border text-left font-sans relative z-10 transition-all max-h-[calc(100vh-3rem)] sm:max-h-[calc(100vh-4rem)] overflow-y-auto custom-scrollbar ${cardClasses}`}
           >
             {/* Top Close / Return to Home Button */}
             <Link
               to="/"
-              className="sticky top-0 float-right -mt-2 -mr-2 sm:-mt-4 sm:-mr-4 z-20 p-2 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 bg-white/80 dark:bg-[#242526]/80 hover:bg-gray-100 dark:hover:bg-[#3a3b3c] transition-colors cursor-pointer backdrop-blur-xs"
+              className="sticky top-0 float-right -mt-2 -mr-2 sm:-mt-4 sm:-mr-4 z-20 p-2 rounded-full text-gray-400 hover:text-gray-700 bg-white/80 hover:bg-gray-100 transition-colors cursor-pointer backdrop-blur-xs"
               aria-label="Close"
               title="Return to Home"
             >
@@ -302,7 +358,7 @@ const UndergradRequestorRegisterPage = () => {
             </Link>
 
             {/* Header with Centered PUP Seal */}
-            <div className="text-center mb-6 pb-4 border-b border-gray-200 dark:border-[#3e4042] w-full">
+            <div className="text-center mb-6 pb-4 border-b border-gray-200 w-full">
               <img src={logoImage} alt="PUP Logo" className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-3 object-contain" />
               <h2 className={`text-2xl sm:text-3xl font-extrabold tracking-tight ${isDark ? "text-white" : "text-[#800000]"}`}>
                 Undergraduate Requestor Onboarding
@@ -328,7 +384,7 @@ const UndergradRequestorRegisterPage = () => {
                   >
                     <div
                       className={`w-7 h-7 rounded-full flex items-center justify-center font-extrabold text-xs shrink-0 ${
-                        isStep1Complete ? "bg-emerald-500 text-white" : "bg-[#800000] dark:bg-[#F8BF1E] text-white dark:text-slate-950"
+                        isStep1Complete ? "bg-emerald-500 text-white" : "bg-[#800000] text-white"
                       }`}
                     >
                       {isStep1Complete ? <CheckIcon className="w-4 h-4 stroke-3" /> : "1"}
@@ -393,11 +449,11 @@ const UndergradRequestorRegisterPage = () => {
               </div>
 
               {/* Form Content Sections */}
-              <form onSubmit={handleSubmit} className="space-y-6 w-full">
+              <form noValidate onSubmit={handleSubmit} className="space-y-6 w-full">
                 {/* SECTION 1: Personal & Contact Information */}
                 <div className={`p-5 sm:p-6 rounded-2xl border ${isDark ? "bg-[#1f1f1f] border-[#3e4042]" : "bg-gray-50/80 border-gray-200"}`}>
-                  <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-200 dark:border-[#3e4042]">
-                    <UserIcon className="w-5 h-5 text-[#800000] dark:text-[#F8BF1E]" />
+                  <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-200">
+                    <UserIcon className="w-5 h-5 text-[#800000]" />
                     <h3 className={`text-sm font-bold uppercase tracking-wider ${isDark ? "text-[#F8BF1E]" : "text-[#800000]"}`}>
                       1. Personal & Contact Information
                     </h3>
@@ -416,6 +472,7 @@ const UndergradRequestorRegisterPage = () => {
                           voiceEnabled={false}
                           placeholder="student@example.com"
                           labelColor={isDark ? "text-[#e4e6eb]" : "text-gray-800"}
+                          isDark={isDark}
                         />
                         {errors.email && (
                           <p className="text-xs text-red-500 mt-1">{errors.email[0]}</p>
@@ -433,6 +490,7 @@ const UndergradRequestorRegisterPage = () => {
                           voiceEnabled={false}
                           placeholder="09XX XXX XXXX"
                           labelColor={isDark ? "text-[#e4e6eb]" : "text-gray-800"}
+                          isDark={isDark}
                         />
                         {errors.phone && (
                           <p className="text-xs text-red-500 mt-1">{errors.phone[0]}</p>
@@ -451,6 +509,7 @@ const UndergradRequestorRegisterPage = () => {
                           voiceEnabled={false}
                           placeholder="Juan"
                           labelColor={isDark ? "text-[#e4e6eb]" : "text-gray-800"}
+                          isDark={isDark}
                         />
                         {errors.first_name && (
                           <p className="text-xs text-red-500 mt-1">{errors.first_name[0]}</p>
@@ -466,6 +525,7 @@ const UndergradRequestorRegisterPage = () => {
                           voiceEnabled={false}
                           placeholder="Dela"
                           labelColor={isDark ? "text-[#e4e6eb]" : "text-gray-800"}
+                          isDark={isDark}
                         />
                         {errors.middle_name && (
                           <p className="text-xs text-red-500 mt-1">{errors.middle_name[0]}</p>
@@ -482,6 +542,7 @@ const UndergradRequestorRegisterPage = () => {
                           voiceEnabled={false}
                           placeholder="Cruz"
                           labelColor={isDark ? "text-[#e4e6eb]" : "text-gray-800"}
+                          isDark={isDark}
                         />
                         {errors.last_name && (
                           <p className="text-xs text-red-500 mt-1">{errors.last_name[0]}</p>
@@ -497,6 +558,7 @@ const UndergradRequestorRegisterPage = () => {
                           voiceEnabled={false}
                           placeholder="Jr., III"
                           labelColor={isDark ? "text-[#e4e6eb]" : "text-gray-800"}
+                          isDark={isDark}
                         />
                         {errors.suffix && (
                           <p className="text-xs text-red-500 mt-1">{errors.suffix[0]}</p>
@@ -517,6 +579,7 @@ const UndergradRequestorRegisterPage = () => {
                           required
                           voiceEnabled={false}
                           labelColor={isDark ? "text-[#e4e6eb]" : "text-gray-800"}
+                          isDark={isDark}
                         />
                         {errors.date_of_birth && (
                           <p className="text-xs text-red-500 mt-1">{errors.date_of_birth[0]}</p>
@@ -533,6 +596,7 @@ const UndergradRequestorRegisterPage = () => {
                           voiceEnabled={false}
                           placeholder="2020-00123-TG-0"
                           labelColor={isDark ? "text-[#e4e6eb]" : "text-gray-800"}
+                          isDark={isDark}
                         />
                         {errors.student_number && (
                           <p className="text-xs text-red-500 mt-1">{errors.student_number[0]}</p>
@@ -566,8 +630,8 @@ const UndergradRequestorRegisterPage = () => {
 
                 {/* SECTION 2: Academic Details */}
                 <div className={`p-5 sm:p-6 rounded-2xl border ${isDark ? "bg-[#1f1f1f] border-[#3e4042]" : "bg-gray-50/80 border-gray-200"}`}>
-                  <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-200 dark:border-[#3e4042]">
-                    <BookOpenIcon className="w-5 h-5 text-[#800000] dark:text-[#F8BF1E]" />
+                  <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-200">
+                    <BookOpenIcon className="w-5 h-5 text-[#800000]" />
                     <h3 className={`text-sm font-bold uppercase tracking-wider ${isDark ? "text-[#F8BF1E]" : "text-[#800000]"}`}>
                       2. Academic Details
                     </h3>
@@ -576,15 +640,15 @@ const UndergradRequestorRegisterPage = () => {
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <InputGroup
+                        <DropDown
                           label="Program / Course"
                           name="program"
                           value={form.program}
                           onChange={handleChange}
+                          options={courseOptions}
                           required
-                          voiceEnabled={false}
-                          placeholder="e.g. Bachelor of Science in Information Technology"
                           labelColor={isDark ? "text-[#e4e6eb]" : "text-gray-800"}
+                          isDark={isDark}
                         />
                         {errors.program && (
                           <p className="text-xs text-red-500 mt-1">{errors.program[0]}</p>
@@ -601,6 +665,7 @@ const UndergradRequestorRegisterPage = () => {
                           voiceEnabled={false}
                           placeholder="e.g. 2022-2023"
                           labelColor={isDark ? "text-[#e4e6eb]" : "text-gray-800"}
+                          isDark={isDark}
                         />
                         {errors.last_school_year_attended && (
                           <p className="text-xs text-red-500 mt-1">{errors.last_school_year_attended[0]}</p>
@@ -633,19 +698,19 @@ const UndergradRequestorRegisterPage = () => {
 
                 {/* SECTION 3: Data Privacy Notice & Consent */}
                 <div className={`p-5 sm:p-6 rounded-2xl border ${isDark ? "bg-[#1f1f1f] border-[#3e4042]" : "bg-gray-50/80 border-gray-200"}`}>
-                  <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-200 dark:border-[#3e4042]">
-                    <ShieldCheckIcon className="w-5 h-5 text-[#800000] dark:text-[#F8BF1E]" />
+                  <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-200">
+                    <ShieldCheckIcon className="w-5 h-5 text-[#800000]" />
                     <h3 className={`text-sm font-bold uppercase tracking-wider ${isDark ? "text-[#F8BF1E]" : "text-[#800000]"}`}>
                       3. Data Privacy Notice & Consent
                     </h3>
                   </div>
 
                   {noticeLoading ? (
-                    <div className="p-4 rounded-xl border border-gray-200 dark:border-[#3e4042] animate-pulse text-xs text-gray-500">
+                    <div className="p-4 rounded-xl border border-gray-200 animate-pulse text-xs text-gray-500">
                       Loading Data Privacy Notice...
                     </div>
                   ) : noticeError ? (
-                    <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs flex items-start gap-2">
+                    <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
                       <InformationCircleIcon className="w-5 h-5 shrink-0 mt-0.5" />
                       <div>{noticeError}</div>
                     </div>
@@ -683,7 +748,7 @@ const UndergradRequestorRegisterPage = () => {
                                   const cleanText = item.replace(/^[1-9]\.\s*/, "").trim();
                                   return (
                                     <li key={idx} className="flex items-start gap-2.5">
-                                      <span className="font-extrabold text-[#800000] dark:text-[#F8BF1E] shrink-0 text-xs mt-0.5">
+                                      <span className="font-extrabold text-[#800000] shrink-0 text-xs mt-0.5">
                                         {idx + 1}.
                                       </span>
                                       <span className={`text-xs leading-relaxed ${isDark ? "text-[#b0b3b8]" : "text-gray-700"}`}>
@@ -707,7 +772,7 @@ const UndergradRequestorRegisterPage = () => {
                       {/* Data Retention Disclosure */}
                       {noticeData?.retention && (
                         <div className={`p-4 rounded-xl border text-xs sm:text-sm leading-relaxed ${isDark ? "bg-[#18191a] border-[#3e4042] text-[#8f949d]" : "bg-amber-50/90 border-amber-200 text-amber-950"}`}>
-                          <span className="font-bold text-[#800000] dark:text-amber-400">Data Privacy Act Retention Disclosure:</span> Unverified submissions are automatically deleted after {noticeData.retention.unverified_submission_days} days. Rejected registration records are retained for {noticeData.retention.rejected_record_days} days for audit compliance.
+                          <span className="font-bold text-[#800000]">Data Privacy Act Retention Disclosure:</span> Unverified submissions are automatically deleted after {noticeData.retention.unverified_submission_days} days. Rejected registration records are retained for {noticeData.retention.rejected_record_days} days for audit compliance.
                         </div>
                       )}
 
@@ -718,6 +783,7 @@ const UndergradRequestorRegisterPage = () => {
                           name="data_privacy_consent"
                           checked={form.data_privacy_consent}
                           onChange={handleChange}
+                          isDark={isDark}
                           textColor={isDark ? "text-[#e4e6eb]" : "text-gray-900"}
                           text={`I have read, understood, and agree to the Data Privacy Notice above (Version: ${noticeData?.consent_version || "N/A"}).`}
                         />
@@ -730,7 +796,7 @@ const UndergradRequestorRegisterPage = () => {
                 </div>
 
                 {/* Submit / Action Footer */}
-                <div className="pt-3 border-t border-gray-200 dark:border-[#3e4042] flex justify-end gap-3">
+                <div className="pt-3 border-t border-gray-200 flex justify-end gap-3">
                   <Link
                     to="/"
                     className={`px-5 py-2.5 rounded-xl font-medium text-sm transition-colors ${
