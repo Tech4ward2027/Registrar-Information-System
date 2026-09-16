@@ -76,6 +76,18 @@ class FreeRequestService
      * year of graduation) and for FreeRequestEligibilityService's role
      * check downstream — the caller shouldn't need a second query per
      * result to get eligibility-relevant context.
+     *
+     * Undergrad Requestor Registration — Phase 5: deliberately NOT
+     * widened to include Undergrad Requestor, unlike
+     * CashierOrOverrideController::searchUsers() and
+     * FreeRequestEligibilityService's own role checks. Free issuance
+     * (FESPEC-0008, gated on a COG/TOR + GraduateVerification) is
+     * restricted to Student/Alumni by definition — an Undergrad
+     * Requestor is, by definition, someone who never completed a
+     * degree, so no graduate-verification path can ever apply to them.
+     * Widening this search would surface accounts in an admin picker
+     * for a filing action fileFreeRequest() below would immediately
+     * reject anyway.
      */
     public function searchAccounts(string $name, ?string $studentNumber = null, ?string $program = null): Collection
     {
@@ -206,6 +218,13 @@ class FreeRequestService
             abort(422, 'At least one document or certificate must be requested.');
         }
 
+        // Undergrad Requestor Registration — Phase 5: deliberately NOT
+        // widened to include Undergrad Requestor. This check IS the
+        // authoritative eligibility rule for free issuance, not a
+        // convenience filter — an Undergrad Requestor by definition
+        // hasn't graduated, so no GraduateVerification-backed free
+        // request can ever legitimately exist for one. Confirmed as
+        // part of Phase 5's review; left unchanged on purpose.
         if (!in_array((int) $targetUser->role_id, [SystemUser::ROLE_STUDENT, SystemUser::ROLE_ALUMNI], true)) {
             abort(422, 'A free request can only be filed on behalf of a student or alumni account.');
         }

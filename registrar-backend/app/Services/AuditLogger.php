@@ -196,11 +196,13 @@ class AuditLogger
     private function resolveRoleName(int $roleId): string
     {
         return match ($roleId) {
-            SystemUser::ROLE_STUDENT     => 'student',
-            SystemUser::ROLE_ALUMNI      => 'alumni',
-            SystemUser::ROLE_ADMIN       => 'admin',
-            SystemUser::ROLE_SUPER_ADMIN => 'super_admin',
-            default                      => 'unknown',
+            SystemUser::ROLE_STUDENT             => 'student',
+            SystemUser::ROLE_ALUMNI              => 'alumni',
+            SystemUser::ROLE_ADMIN               => 'admin',
+            SystemUser::ROLE_SUPER_ADMIN         => 'super_admin',
+            // Undergrad Requestor Registration — Phase 1 (D1).
+            SystemUser::ROLE_UNDERGRAD_REQUESTOR => 'undergrad_requestor',
+            default                              => 'unknown',
         };
     }
 

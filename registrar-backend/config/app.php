@@ -56,6 +56,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontend Application URL
+    |--------------------------------------------------------------------------
+    |
+    | Undergrad Requestor Registration — Phase 2. This app is an SPA: the
+    | frontend and this API live at different origins (see VITE_API_URL),
+    | and any link this backend emails to a person (e.g. the onboarding
+    | email-confirmation link — UndergradRequestorRegistrationService)
+    | must point at a FRONTEND route, which then calls back into this
+    | API. Defaults to APP_URL so a single-origin dev/staging setup
+    | (frontend and API served from the same host) needs no extra env
+    | var; set FRONTEND_URL explicitly wherever the two are split.
+    |
+    */
+
+    'frontend_url' => env('FRONTEND_URL', env('APP_URL', 'http://localhost')),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |
