@@ -47,9 +47,13 @@ test('register creates a Pending Verification user, profile, and verification ro
     $response = $this->postJson('/api/undergrad-requestors/register', $payload);
 
     $response->assertCreated();
-    $response->assertJsonPath('email', $payload['email']);
-    $response->assertJsonPath('status', 'Pending Verification');
-    $response->assertJsonPath('email_verified', false);
+    // UndergradRequestorRegistrationResource is a plain JsonResource,
+    // which wraps under 'data' by default (this app never disables that
+    // globally — see every other resource-returning controller's tests,
+    // e.g. SystemUserControllerTest's 'data.email'/'data.status').
+    $response->assertJsonPath('data.email', $payload['email']);
+    $response->assertJsonPath('data.status', 'Pending Verification');
+    $response->assertJsonPath('data.email_verified', false);
 
     $user = SystemUser::where('email', $payload['email'])->first();
     expect($user)->not->toBeNull();
@@ -185,7 +189,7 @@ test('confirmEmail marks the profile verified and makes it eligible for the Admi
     ]);
 
     $response->assertOk();
-    $response->assertJsonPath('email_verified', true);
+    $response->assertJsonPath('data.email_verified', true);
 
     $profile = UndergradRequestorProfile::where('student_number', $payload['student_number'])->first();
     expect($profile->email_verified_at)->not->toBeNull();
