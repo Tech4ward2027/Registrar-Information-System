@@ -732,4 +732,115 @@ export const restoreAnnouncement = (id)      => api.patch(`/announcements/${id}/
 export const getAlumniSystemList   = (params = {}) => api.get("/alumni-system",      { params });
 export const getAlumniSystemRecord = (id)          => api.get(`/alumni-system/${id}`);
 
+// -------------------------------------------------------
+// UNDERGRAD REQUESTOR REGISTRATION — public onboarding (unauthenticated).
+//
+// These three calls back the public "Are you an Undergrad? Sign Up
+// Here." flow (UndergradRequestorController on the backend). All three
+// are reachable with no session/cookie at all — do not gate any of
+// these behind <ProtectedRoute> or a `user` check.
+//
+// Rate limiting: register/confirmEmail/registrationNotice are each
+// covered by a dedicated named limiter (see AppServiceProvider::boot()
+// on the backend — per-IP AND, for register, per-email buckets). A
+// tripped limit comes back as a plain 429 with a `message` field and,
+// per RFC 6585, a `Retry-After` header (in seconds) on the response —
+// read `err.response.headers['retry-after']` if the UI wants to show a
+// countdown rather than a generic "try again later".
+// -------------------------------------------------------
+
+// GET /undergrad-requestors/registration-notice
+// Call this ONCE when the onboarding form mounts and render `notice`
+// verbatim next to the consent checkbox. Also submit `consent_version`
+// back unchanged as part of the registration payload below — see the
+// backend controller's docblock for why the wording and the version
+// must never be allowed to drift apart. Shape:
+//   { data: { consent_version, notice, notice_url, retention: {
+//       unverified_submission_days, rejected_record_days } } }
+export const getUndergradRequestorRegistrationNotice = () =>
+  api.get("/undergrad-requestors/registration-notice");
+
+// POST /undergrad-requestors/register
+// `data` must contain exactly the fields
+// StoreUndergradRequestorRegistrationRequest validates — see the
+// implementation plan for the full field list. `data_privacy_consent`
+// must be `true` (an unchecked/omitted box fails backend validation
+// with 'accepted'). On success (201) the backend returns only the
+// caller's own just-submitted record — never persist more than that
+// response locally, and never store any of these fields in
+// localStorage/sessionStorage (see the implementation plan's security
+// notes). On a 422, `err.response.data.errors` is a standard Laravel
+// field-keyed validation-error map (e.g. `errors.email`,
+// `errors.student_number`) — render those against the matching form
+// field rather than a single flat message.
+export const registerUndergradRequestor = (data) =>
+  api.post("/undergrad-requestors/register", data);
+
+// POST /undergrad-requestors/confirm-email
+// Called by the standalone email-verification landing page after
+// reading {email, token} from its own URL query string (the link the
+// confirmation email points at — see
+// UndergradRequestorEmailVerificationMail on the backend). The backend
+// deliberately returns the SAME generic 422 message under
+// `errors.token` for every failure reason (unknown account, wrong
+// token, expired token) so this endpoint can never be used to probe
+// which emails have an account or grind token guesses — render
+// whatever message comes back as-is, don't try to distinguish cases
+// client-side.
+export const confirmUndergradRequestorEmail = (email, token) =>
+  api.post("/undergrad-requestors/confirm-email", { email, token });
+
+// -------------------------------------------------------
+// UNDERGRAD REQUESTOR VERIFICATION — Registrar Admin queue (role:3,4 +
+// the 'undergrad_verification' module — see MODULE_KEYS.UNDERGRAD_VERIFICATION
+// in utils/policy.js). Gate the page itself with <ModuleRoute
+// module={MODULE_KEYS.UNDERGRAD_VERIFICATION}>, and gate the
+// Approve/Reject buttons individually with
+// hasModuleAction(user, MODULE_KEYS.UNDERGRAD_VERIFICATION, "Approve"/"Reject")
+// — View, Approve and Reject are three separately grantable actions on
+// this module, not an all-or-nothing gate.
+// -------------------------------------------------------
+
+// GET /admin/undergrad-requestors?status=pending&search=...&per_page=...
+// `status` defaults to "pending" server-side if omitted; "approved" and
+// "rejected" are the other two valid values, for follow-up/support
+// lookups. Standard Laravel paginator shape: { data: [...], meta: {...},
+// links: {...} } — use `res.data.data` for the rows and `res.data.meta`
+// (current_page, last_page, total, etc.) for pagination controls.
+export const getUndergradRequestorQueue = (params = {}) =>
+  api.get("/admin/undergrad-requestors", { params });
+
+// GET /admin/undergrad-requestors/{userId}
+// Full review record for one submission — declared profile, the two
+// advisory checks (local-mirror + OGOS), consent record, and
+// verification history. NOT wrapped under `data` (see
+// UndergradRequestorVerificationDetailResource's $wrap = null on the
+// backend) — read fields straight off `res.data`, e.g.
+// `res.data.advisory_checks`, `res.data.declared_profile`, NOT
+// `res.data.data.advisory_checks`. Note this call has a real,
+// documented side effect on a still-Pending submission: opening it
+// records that the advisory checks were run — expected, not a bug.
+export const getUndergradRequestorDetail = (userId) =>
+  api.get(`/admin/undergrad-requestors/${userId}`);
+
+// POST /admin/undergrad-requestors/{userId}/approve
+// No request body. Moves the account to "Pending Activation" — the
+// person still has to complete their own first IDP login before the
+// account is actually usable (D4); this call alone does not activate
+// it. Returns the same shape as getUndergradRequestorDetail() above
+// (the controller re-renders show() after the transition), so the
+// response can be used directly to refresh the open detail view.
+export const approveUndergradRequestor = (userId) =>
+  api.post(`/admin/undergrad-requestors/${userId}/approve`);
+
+// POST /admin/undergrad-requestors/{userId}/reject
+// `reason` is REQUIRED, minimum 10 characters (see
+// RejectUndergradRequestorVerificationRequest) — it is sent to the
+// requestor by email and written into the permanent audit trail, so
+// the form must block submission on an empty/too-short reason rather
+// than relying on the 422 alone. Returns the same detail shape as
+// approve() above.
+export const rejectUndergradRequestor = (userId, reason) =>
+  api.post(`/admin/undergrad-requestors/${userId}/reject`, { rejection_reason: reason });
+
 export default api;
