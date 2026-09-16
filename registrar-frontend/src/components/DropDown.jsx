@@ -3,13 +3,14 @@ import PropTypes from 'prop-types';
 import { ChevronDownIcon, CheckIcon } from '@heroicons/react/24/outline';
 import { useTheme } from '../context/ThemeContext';
 
-const DropdownGroup = ({ label, name, value, onChange, options, required = false, labelColor = 'text-white', direction = 'auto' }) => {
+const DropdownGroup = ({ label, name, value, onChange, options, required = false, labelColor = 'text-white', direction = 'auto', isDark: isDarkProp }) => {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [openUpward, setOpenUpward] = useState(false);
   const ref = useRef(null);
   const inputRef = useRef(null);
-  const { isDark } = useTheme();
+  const { isDark: themeIsDark } = useTheme();
+  const isDark = isDarkProp !== undefined ? isDarkProp : themeIsDark;
 
   // Clear search term & auto-detect vertical direction when dropdown opens
   useEffect(() => {

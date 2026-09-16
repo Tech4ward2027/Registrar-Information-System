@@ -124,6 +124,8 @@ const TermsAndConditionsStep = ({ termsAgreed, onCheckboxChange, isDark }) => {
           name="termsAgreed"
           checked={termsAgreed}
           onChange={onCheckboxChange}
+          isDark={isDark}
+          textColor="text-white"
           text="I have read, understood, and agree to the Terms & Conditions stated above."
         />
       </div>

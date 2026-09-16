@@ -80,33 +80,30 @@ const RowActionsDropdown = ({ onViewDetails, isDark }) => {
         type="button"
         title="More Actions"
         onClick={() => setIsOpen(!isOpen)}
-        className={`p-2 rounded-lg transition-colors flex items-center justify-center focus:outline-none ${
-          isOpen
-            ? isDark
-              ? "bg-[#2a2a2f] text-[#ffc72c] border border-[#ffc72c]/30"
-              : "bg-gray-100 text-[#800000] border border-gray-200"
-            : isDark
+        className={`p-2 rounded-lg transition-colors flex items-center justify-center focus:outline-none ${isOpen
+          ? isDark
+            ? "bg-[#2a2a2f] text-[#ffc72c] border border-[#ffc72c]/30"
+            : "bg-gray-100 text-[#800000] border border-gray-200"
+          : isDark
             ? "text-[#b0b3b8] hover:text-[#e4e6eb] hover:bg-[#3a3b3c] border border-transparent"
             : "text-gray-400 hover:text-gray-600 hover:bg-gray-100 border border-transparent"
-        }`}
+          }`}
       >
         <EllipsisVerticalIcon className="w-5 h-5" />
       </button>
 
       {isOpen && (
         <div
-          className={`absolute right-0 mt-1.5 w-48 rounded-xl shadow-lg border z-50 overflow-hidden text-left ${
-            isDark ? "bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042]" : "bg-white text-gray-700 border-gray-200"
-          }`}
+          className={`absolute right-0 mt-1.5 w-48 rounded-xl shadow-lg border z-50 overflow-hidden text-left ${isDark ? "bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042]" : "bg-white text-gray-700 border-gray-200"
+            }`}
           style={{ boxShadow: "0 8px 32px -4px rgba(0,0,0,0.18), 0 2px 8px -2px rgba(0,0,0,0.10)" }}
         >
           <div className="py-1 flex flex-col gap-0.5">
             <button
               type="button"
               onClick={() => { onViewDetails(); setIsOpen(false); }}
-              className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold transition-colors ${
-                isDark ? "hover:bg-[#2a2a2f] text-[#e4e6eb]" : "hover:bg-gray-50 text-gray-700"
-              }`}
+              className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold transition-colors ${isDark ? "hover:bg-[#2a2a2f] text-[#e4e6eb]" : "hover:bg-gray-50 text-gray-700"
+                }`}
             >
               <EyeIcon className="w-4 h-4 text-gray-400 dark:text-[#808080]" />
               Review Details
@@ -123,7 +120,7 @@ const formatDateAndTime = (dateStr) => {
   if (!dateStr) return { date: "N/A", time: "" };
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return { date: "N/A", time: "" };
-  
+
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const date = `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
   const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
@@ -340,9 +337,8 @@ const UndergradRequestorVerificationPage = () => {
     <div className="max-w-7xl mx-auto px-3 sm:px-5 mb-6 w-full font-sans">
       <LoadingOverlay isVisible={loading} message="Fetching Request Records..." />
       <div
-        className={`rounded-2xl p-4 sm:p-5 shadow-sm border ${
-          isDark ? "bg-[#242526] border-[#3e4042] text-[#e4e6eb]" : "bg-white border-gray-200 text-gray-900"
-        }`}
+        className={`rounded-2xl p-4 sm:p-5 shadow-sm border ${isDark ? "bg-[#242526] border-[#3e4042] text-[#e4e6eb]" : "bg-white border-gray-200 text-gray-900"
+          }`}
       >
         {/* Toast Notifications */}
         {successMsg && <SuccessToast message={successMsg} onClose={() => setSuccessMsg("")} />}
@@ -369,9 +365,8 @@ const UndergradRequestorVerificationPage = () => {
 
         {/* ---------------- TOOLBAR ---------------- */}
         <div
-          className={`p-2.5 sm:p-3 rounded-xl shadow-xs mb-4 flex flex-col md:flex-row gap-2.5 justify-between items-center ${
-            isDark ? "bg-[#18191a] border border-[#3e4042]" : "bg-gray-50/60 border border-gray-100"
-          }`}
+          className={`p-2.5 sm:p-3 rounded-xl shadow-xs mb-4 flex flex-col md:flex-row gap-2.5 justify-between items-center ${isDark ? "bg-[#18191a] border border-[#3e4042]" : "bg-gray-50/60 border border-gray-100"
+            }`}
         >
           <div className="flex flex-1 items-center gap-3 w-full md:max-w-xl">
             <div className="flex-1">
@@ -395,11 +390,10 @@ const UndergradRequestorVerificationPage = () => {
                   setSortOrder("Recent Requests");
                   setSelectedIds([]);
                 }}
-                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-colors border shadow-xs flex items-center justify-center shrink-0 whitespace-nowrap cursor-pointer ${
-                  isDark
-                    ? "bg-[#1f1f1f] text-[#b0b3b8] border-[#3e4042] hover:bg-[#2a2a2f] hover:text-[#e4e6eb]"
-                    : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
-                }`}
+                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-colors border shadow-xs flex items-center justify-center shrink-0 whitespace-nowrap cursor-pointer ${isDark
+                  ? "bg-[#1f1f1f] text-[#b0b3b8] border-[#3e4042] hover:bg-[#2a2a2f] hover:text-[#e4e6eb]"
+                  : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
+                  }`}
               >
                 Clear Filters
               </button>
@@ -409,9 +403,8 @@ const UndergradRequestorVerificationPage = () => {
 
         {/* ---------------- TABLE ---------------- */}
         <div
-          className={`rounded-xl shadow-xs overflow-x-auto border ${
-            isDark ? "bg-[#18191a] border-[#3e4042]" : "bg-white border-gray-100"
-          }`}
+          className={`rounded-xl shadow-xs overflow-x-auto border ${isDark ? "bg-[#18191a] border-[#3e4042]" : "bg-white border-gray-100"
+            }`}
         >
           <table className={`min-w-full divide-y ${isDark ? "divide-[#3e4042]" : "divide-gray-100"}`}>
             <thead className={isDark ? "bg-[#18191a]" : "bg-gray-50"}>
@@ -419,11 +412,10 @@ const UndergradRequestorVerificationPage = () => {
                 <th className="px-3 py-2.5 w-8 text-center">
                   <input
                     type="checkbox"
-                    className={`w-3.5 h-3.5 rounded cursor-pointer ${
-                      isDark
-                        ? "border-[#4e4f50] text-blue-400 focus:ring-blue-400 bg-[#242526]"
-                        : "border-gray-300 text-blue-600 focus:ring-blue-500"
-                    }`}
+                    className={`w-3.5 h-3.5 rounded cursor-pointer ${isDark
+                      ? "border-[#4e4f50] text-blue-400 focus:ring-blue-400 bg-[#242526]"
+                      : "border-gray-300 text-blue-600 focus:ring-blue-500"
+                      }`}
                     onChange={handleSelectAll}
                     checked={displayedQueueData.length > 0 && selectedIds.length === displayedQueueData.length}
                   />
@@ -532,26 +524,24 @@ const UndergradRequestorVerificationPage = () => {
                   return (
                     <tr
                       key={rowId}
-                      className={`transition-colors ${
-                        isSelected
-                          ? isDark
-                            ? "bg-[#2a2a2f]"
-                            : "bg-blue-50/40"
-                          : isDark
+                      className={`transition-colors ${isSelected
+                        ? isDark
+                          ? "bg-[#2a2a2f]"
+                          : "bg-blue-50/40"
+                        : isDark
                           ? "hover:bg-[#2a2a2f]"
                           : "hover:bg-gray-50/80"
-                      }`}
+                        }`}
                     >
                       <td className="px-3 py-2.5 text-center">
                         <input
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => handleSelectOne(rowId)}
-                          className={`w-3.5 h-3.5 rounded cursor-pointer ${
-                            isDark
-                              ? "border-[#4e4f50] text-blue-400 focus:ring-blue-400 bg-[#242526]"
-                              : "border-gray-300 text-blue-600 focus:ring-blue-500"
-                          }`}
+                          className={`w-3.5 h-3.5 rounded cursor-pointer ${isDark
+                            ? "border-[#4e4f50] text-blue-400 focus:ring-blue-400 bg-[#242526]"
+                            : "border-gray-300 text-blue-600 focus:ring-blue-500"
+                            }`}
                         />
                       </td>
                       <Td center>{index + 1}</Td>
@@ -621,16 +611,6 @@ const UndergradRequestorVerificationPage = () => {
                               <span>Reject</span>
                             </button>
                           )}
-                          {activeTab !== "pending" && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDetail(rowId)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-[#3a3b3c] hover:bg-gray-200 text-gray-800 dark:text-white text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
-                            >
-                              <EyeIcon className="w-4 h-4" />
-                              <span>Review Details</span>
-                            </button>
-                          )}
                           <RowActionsDropdown
                             onViewDetails={() => handleOpenDetail(rowId)}
                             isDark={isDark}
@@ -667,9 +647,8 @@ const UndergradRequestorVerificationPage = () => {
             onClick={handleCloseDetail}
           />
           <div
-            className={`relative rounded-2xl shadow-2xl w-full max-w-2xl lg:max-w-4xl max-h-[calc(100vh-64px)] overflow-hidden flex flex-col ${
-              isDark ? "bg-[#242526] border border-[#3e4042]" : "bg-white"
-            }`}
+            className={`relative rounded-2xl shadow-2xl w-full max-w-2xl lg:max-w-4xl max-h-[calc(100vh-64px)] overflow-hidden flex flex-col ${isDark ? "bg-[#242526] border border-[#3e4042]" : "bg-white"
+              }`}
           >
             {/* Modal Header */}
             <div className={`relative px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center shrink-0 ${isDark ? 'bg-[#3a3b3c]' : 'bg-pup-maroon'}`}>
@@ -704,13 +683,12 @@ const UndergradRequestorVerificationPage = () => {
                 <>
                   {/* Status Banner */}
                   <div
-                    className={`p-4 rounded-xl border flex items-center justify-between text-xs sm:text-sm font-medium ${
-                      detailData.status === "approved" || detailData.status === "Pending Activation"
-                        ? "bg-emerald-50 border-emerald-200 text-emerald-900 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
-                        : detailData.status === "rejected"
+                    className={`p-4 rounded-xl border flex items-center justify-between text-xs sm:text-sm font-medium ${detailData.status === "approved" || detailData.status === "Pending Activation"
+                      ? "bg-emerald-50 border-emerald-200 text-emerald-900 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
+                      : detailData.status === "rejected"
                         ? "bg-rose-50 border-rose-200 text-rose-900 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-300"
                         : "bg-amber-50 border-amber-200 text-amber-900 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300"
-                    }`}
+                      }`}
                   >
                     <span>Status: <strong className="uppercase font-bold">{detailData.status || "Pending"}</strong></span>
                     {detailData.submitted_at && (
@@ -791,11 +769,10 @@ const UndergradRequestorVerificationPage = () => {
                         <p className="text-[#b0b3b8] dark:text-gray-400 mb-2">
                           {detailData.advisory_checks?.local_mirror?.details || "Advisory lookup against local registrar records."}
                         </p>
-                        <span className={`inline-block px-2 py-0.5 rounded font-semibold ${
-                          detailData.advisory_checks?.local_mirror?.match_found
-                            ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                            : "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                        }`}>
+                        <span className={`inline-block px-2 py-0.5 rounded font-semibold ${detailData.advisory_checks?.local_mirror?.match_found
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                          : "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                          }`}>
                           Match status: advisory ({detailData.advisory_checks?.local_mirror?.match_found ? "match found" : "no match"})
                         </span>
                       </div>
@@ -806,11 +783,10 @@ const UndergradRequestorVerificationPage = () => {
                         <p className="text-[#b0b3b8] dark:text-gray-400 mb-2">
                           {detailData.advisory_checks?.ogos?.details || "Advisory lookup against OGOS records."}
                         </p>
-                        <span className={`inline-block px-2 py-0.5 rounded font-semibold ${
-                          detailData.advisory_checks?.ogos?.match_found
-                            ? "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
-                            : "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                        }`}>
+                        <span className={`inline-block px-2 py-0.5 rounded font-semibold ${detailData.advisory_checks?.ogos?.match_found
+                          ? "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
+                          : "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                          }`}>
                           Match status: advisory ({detailData.advisory_checks?.ogos?.match_found ? "match found" : "no match"})
                         </span>
                       </div>
@@ -863,16 +839,14 @@ const UndergradRequestorVerificationPage = () => {
 
             {/* Modal Footer Actions - Close only */}
             <div
-              className={`p-4 border-t flex items-center justify-start shrink-0 ${
-                isDark ? "border-[#3e4042] bg-[#18191a]" : "border-gray-200 bg-gray-50"
-              }`}
+              className={`p-4 border-t flex items-center justify-start shrink-0 ${isDark ? "border-[#3e4042] bg-[#18191a]" : "border-gray-200 bg-gray-50"
+                }`}
             >
               <button
                 type="button"
                 onClick={handleCloseDetail}
-                className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-                  isDark ? "bg-[#3a3b3c] text-white hover:bg-[#4e4f50]" : "bg-gray-200 text-gray-800 hover:bg-gray-300"
-                }`}
+                className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${isDark ? "bg-[#3a3b3c] text-white hover:bg-[#4e4f50]" : "bg-gray-200 text-gray-800 hover:bg-gray-300"
+                  }`}
               >
                 Close
               </button>
@@ -902,9 +876,8 @@ const UndergradRequestorVerificationPage = () => {
       {showRejectModal && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div
-            className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
-              isDark ? "bg-[#242526] border-[#3e4042] text-[#e4e6eb]" : "bg-white border-gray-200 text-gray-900"
-            }`}
+            className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border space-y-4 animate-in fade-in zoom-in-95 duration-150 ${isDark ? "bg-[#242526] border-[#3e4042] text-[#e4e6eb]" : "bg-white border-gray-200 text-gray-900"
+              }`}
           >
             <div className="flex justify-between items-center border-b pb-3 border-gray-200 dark:border-[#3e4042]">
               <h3 className="font-bold text-base text-rose-600 dark:text-rose-400 flex items-center gap-2">
@@ -936,11 +909,10 @@ const UndergradRequestorVerificationPage = () => {
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
                 placeholder="State specific reason for rejection (min 10 characters)..."
-                className={`w-full p-3 rounded-xl text-xs border transition-all focus:outline-none focus:border-rose-500 ${
-                  isDark
-                    ? "bg-[#18191a] border-[#3e4042] text-[#e4e6eb] placeholder:text-[#8f949d]"
-                    : "bg-white border-gray-200 text-gray-800 placeholder:text-gray-400"
-                }`}
+                className={`w-full p-3 rounded-xl text-xs border transition-all focus:outline-none focus:border-rose-500 ${isDark
+                  ? "bg-[#18191a] border-[#3e4042] text-[#e4e6eb] placeholder:text-[#8f949d]"
+                  : "bg-white border-gray-200 text-gray-800 placeholder:text-gray-400"
+                  }`}
               />
               <div className="flex justify-between items-center mt-1 text-[11px]">
                 <span className={rejectionReason.trim().length >= 10 ? "text-emerald-500 font-medium" : "text-amber-500"}>
@@ -960,9 +932,8 @@ const UndergradRequestorVerificationPage = () => {
                   setRejectionReason("");
                   setActionUserId(null);
                 }}
-                className={`px-4 py-2 rounded-xl text-xs font-medium ${
-                  isDark ? "bg-[#3a3b3c] text-white hover:bg-[#4e4f50]" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                }`}
+                className={`px-4 py-2 rounded-xl text-xs font-medium ${isDark ? "bg-[#3a3b3c] text-white hover:bg-[#4e4f50]" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                  }`}
               >
                 Cancel
               </button>
