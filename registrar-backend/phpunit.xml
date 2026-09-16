@@ -19,6 +19,35 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing" force="true"/>
+        <!-- Phase 6 (Undergrad Requestor PII encryption — App\Support\EncryptedPayload,
+             App\Casts\EncryptedText/EncryptedDate) made Crypt::encryptString()/
+             decryptString() reachable from a plain, un-mocked feature test for
+             the first time in this codebase (SystemUser's 'idp_access_token'
+             => 'encrypted' cast existed earlier, but no test path exercised it
+             through the same everyday flow this feature's registration
+             endpoint does). Laravel's encrypter throws
+             MissingAppKeyException the moment it's resolved with no APP_KEY —
+             which every one of those tests now is, on every run.
+             Previously the suite only ever worked by accident: whatever the
+             CI workflow's `php artisan key:generate` step happened to leave
+             in .env at that moment, IF that step ran, IF it ran before the
+             test step, and IF nothing since had cleared it. A `php artisan
+             test` run on a fresh checkout, before ever running key:generate
+             — the exact situation a new contributor or a fresh CI cache
+             hits — had no APP_KEY at all and every encryption-touching test
+             failed with the same "No application encryption key has been
+             specified" error, regardless of anything correct or incorrect in
+             the test itself.
+             Forced here for the same reason CASHIER_API_KEY and
+             FEATURE_FREE_REQUEST_PAGE already are below: the test suite
+             must be able to run standalone, deterministically, without
+             depending on an external, order-sensitive setup step or a real
+             secret leaking in from a host .env. This value is committed
+             on purpose — it is a fixed, throwaway test key with no
+             relationship to any real deployment's APP_KEY, exists only to
+             satisfy "a key is present," and encrypts/decrypts nothing that
+             outlives a single test's in-memory SQLite database. -->
+        <env name="APP_KEY" value="base64:YHz6kBBVB4bX6H9q+2z1Yp1BdxQ0KnO78Ny3lIvLsU8=" force="true"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="log"/>

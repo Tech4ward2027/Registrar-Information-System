@@ -94,7 +94,12 @@ test('re-running up() twice in a row is also a no-op the third time', function (
         $migration->up();
     }
 
+    // Explicit assertions (not just "no exception was thrown"), so this
+    // test still means something if PHPUnit's zero-assertion "risky"
+    // detection ever changes how it treats throwsNoExceptions() alone.
     expect(Schema::hasTable('undergrad_requestor_profiles'))->toBeTrue();
+    expect(Schema::hasTable('undergrad_requestor_verifications'))->toBeTrue();
+    expect(Schema::hasColumn('undergrad_requestor_verifications', 'pii_purged_at'))->toBeTrue();
 })->throwsNoExceptions();
 
 test('the encryption backfill migration does not double-encrypt an already-encrypted row on re-run', function () {
@@ -144,4 +149,10 @@ test('the backfill migration is a safe no-op against an empty table', function (
     expect(UndergradRequestorProfile::count())->toBe(0);
 
     loadUndergradRequestorMigration('2026_09_15_000001_encrypt_undergrad_requestor_profile_pii.php')->up();
+
+    // Ran to completion against zero rows and left the table exactly as
+    // it was — the point being tested, stated as an assertion rather
+    // than left implicit in "no exception was thrown."
+    expect(UndergradRequestorProfile::count())->toBe(0);
+    expect(Schema::hasTable('undergrad_requestor_profiles'))->toBeTrue();
 })->throwsNoExceptions();
