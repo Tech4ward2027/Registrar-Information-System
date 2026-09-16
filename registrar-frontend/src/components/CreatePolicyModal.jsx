@@ -23,25 +23,27 @@ const ACTION_LABELS = {
   File: "File",
   Verify: "Verify",
   Override: "Override",
+  Approve: "Approve",
+  Reject: "Reject",
 };
 
 // Segmented button group for a single granular-action module
 // (Dashboard, Admin Logbook, or Free Requests).
-const ActionSegmentGroup = ({ actions, selectedActions, onToggle, isDark }) => (
+const ActionSegmentGroup = ({ actions = [], selectedActions = [], onToggle, isDark }) => (
   <div
     className={`flex flex-wrap rounded-xl overflow-hidden border ${
       isDark ? "border-[#3e4042] bg-[#1c1c1e]" : "border-gray-200 bg-gray-100"
     }`}
   >
     {actions.map((action, index) => {
-      const isSelected = selectedActions.includes(action);
+      const isSelected = Array.isArray(selectedActions) && selectedActions.includes(action);
       const isFirst = index === 0;
       const isLast = index === actions.length - 1;
       return (
         <button
           key={action}
           type="button"
-          onClick={() => onToggle(action)}
+          onClick={() => onToggle && onToggle(action)}
           className={`flex-1 min-w-18.75 px-3 py-2.5 text-sm font-semibold transition-all duration-200 cursor-pointer
             ${!isFirst ? (isDark ? "border-l border-[#3e4042]" : "border-l border-gray-200") : ""}
             ${isFirst ? "rounded-l-xl" : ""}
@@ -74,9 +76,11 @@ const CreatePolicyModal = ({
   dashboardActions,
   logbookActions,
   freeRequestsActions,
+  undergradVerificationActions,
   toggleDashboardAction,
   toggleLogbookAction,
   toggleFreeRequestsAction,
+  toggleUndergradVerificationAction,
   onClose,
   onSubmit,
   singleTokenModuleOptions,
@@ -282,6 +286,38 @@ const CreatePolicyModal = ({
                 actions={MODULE_ACTIONS.free_requests || ["View", "File", "Verify", "Override"]}
                 selectedActions={freeRequestsActions || []}
                 onToggle={toggleFreeRequestsAction}
+                isDark={isDark}
+              />
+            </div>
+
+            {/* Undergrad Requestors — segmented button permissions */}
+            <div
+              className={`p-4 rounded-xl border flex flex-col ${
+                isDark
+                  ? "bg-[#1f1f1f] border-[#3e4042]"
+                  : "bg-gray-50 border-gray-200"
+              }`}
+            >
+              <div className="flex justify-between items-center mb-1">
+                <span
+                  className={`text-sm font-bold ${
+                    isDark ? "text-white" : "text-gray-900"
+                  }`}
+                >
+                  Undergrad Requestors
+                </span>
+              </div>
+              <p
+                className={`text-xs mb-3 ${
+                  isDark ? "text-[#9a9a9a]" : "text-gray-500"
+                }`}
+              >
+                Configure capabilities for reviewing, approving, and rejecting undergraduate requestor registration requests.
+              </p>
+              <ActionSegmentGroup
+                actions={MODULE_ACTIONS.undergrad_verification || ["View", "Approve", "Reject"]}
+                selectedActions={undergradVerificationActions || []}
+                onToggle={toggleUndergradVerificationAction}
                 isDark={isDark}
               />
             </div>

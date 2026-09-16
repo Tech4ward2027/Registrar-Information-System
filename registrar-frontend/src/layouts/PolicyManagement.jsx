@@ -43,6 +43,7 @@ const MODULE_OPTIONS = [
   "Business Calendar",
   "Cashier OR Overrides",
   "Free Requests",
+  "Undergrad Requestors",
 ];
 
 const LABEL_TO_KEY = {
@@ -55,6 +56,7 @@ const LABEL_TO_KEY = {
   "Business Calendar": "business_calendar",
   "Cashier OR Overrides": "cashier_overrides",
   "Free Requests": "free_requests",
+  "Undergrad Requestors": "undergrad_verification",
 };
 
 const KEY_TO_LABEL = Object.fromEntries(
@@ -65,6 +67,7 @@ const MODULE_ACTIONS = {
   dashboard: ["View", "Process", "Complete"],
   logbook: ["View", "Export"],
   free_requests: ["View", "File", "Verify", "Override"],
+  undergrad_verification: ["View", "Approve", "Reject"],
 };
 
 // Granular modules get their own action segment controls in CreatePolicyModal;
@@ -111,6 +114,7 @@ const PolicyManagement = () => {
   const [dashboardActions, setDashboardActions] = useState([]);
   const [logbookActions, setLogbookActions] = useState([]);
   const [freeRequestsActions, setFreeRequestsActions] = useState([]);
+  const [undergradVerificationActions, setUndergradVerificationActions] = useState([]);
 
   // Admin list modal
   const [isAdminListOpen, setIsAdminListOpen] = useState(false);
@@ -175,7 +179,7 @@ const PolicyManagement = () => {
 
   // Generate rawPermissions object from selected module labels plus
   // the granular action selections.
-  const buildPermissions = (selectedLabels, dashboardVal, logbookVal, freeRequestsVal) => {
+  const buildPermissions = (selectedLabels, dashboardVal, logbookVal, freeRequestsVal, undergradVerificationVal) => {
     const raw = {};
     Object.entries(LABEL_TO_KEY).forEach(([label, key]) => {
       if (GRANULAR_MODULE_KEYS.includes(key)) return; // set explicitly below
@@ -184,6 +188,7 @@ const PolicyManagement = () => {
     raw.dashboard = dashboardVal;
     raw.logbook = logbookVal;
     raw.free_requests = freeRequestsVal;
+    raw.undergrad_verification = undergradVerificationVal;
     return raw;
   };
 
@@ -231,6 +236,20 @@ const PolicyManagement = () => {
     });
   };
 
+  const toggleUndergradVerificationAction = (action) => {
+    setUndergradVerificationActions((prev = []) => {
+      const current = Array.isArray(prev) ? prev : [];
+      if (current.includes(action)) {
+        return action === "View" ? [] : current.filter((a) => a !== action);
+      }
+      const next = [...current, action];
+      if ((action === "Approve" || action === "Reject") && !next.includes("View")) {
+        next.push("View");
+      }
+      return next;
+    });
+  };
+
   const handleOpenCreate = () => {
     setIsEditMode(false);
     setPolicyName("");
@@ -238,12 +257,14 @@ const PolicyManagement = () => {
     setDashboardActions([]);
     setLogbookActions([]);
     setFreeRequestsActions([]);
+    setUndergradVerificationActions([]);
     setInitialFormState({
       name: "",
       modules: [],
       dashboardActions: [],
       logbookActions: [],
       freeRequestsActions: [],
+      undergradVerificationActions: [],
     });
     setIsModalOpen(true);
   };
@@ -279,18 +300,23 @@ const PolicyManagement = () => {
     const freeRequestsVal = Array.isArray(p.permissions?.free_requests)
       ? p.permissions.free_requests.filter((a) => MODULE_ACTIONS.free_requests?.includes(a))
       : [];
+    const undergradVerificationVal = Array.isArray(p.permissions?.undergrad_verification)
+      ? p.permissions.undergrad_verification.filter((a) => MODULE_ACTIONS.undergrad_verification?.includes(a))
+      : [];
 
     setPolicyName(initialName);
     setSelectedModuleValues(labels);
     setDashboardActions(dashboardVal);
     setLogbookActions(logbookVal);
     setFreeRequestsActions(freeRequestsVal);
+    setUndergradVerificationActions(undergradVerificationVal);
     setInitialFormState({
       name: initialName,
       modules: labels,
       dashboardActions: dashboardVal,
       logbookActions: logbookVal,
       freeRequestsActions: freeRequestsVal,
+      undergradVerificationActions: undergradVerificationVal,
     });
     setIsModalOpen(true);
   };
@@ -310,7 +336,10 @@ const PolicyManagement = () => {
     const freeRequestsChanged =
       freeRequestsActions.length !== initialFormState.freeRequestsActions.length ||
       !freeRequestsActions.every((a) => initialFormState.freeRequestsActions.includes(a));
-    return nameChanged || modulesChanged || dashboardChanged || logbookChanged || freeRequestsChanged;
+    const undergradVerificationChanged =
+      undergradVerificationActions.length !== (initialFormState.undergradVerificationActions?.length || 0) ||
+      !undergradVerificationActions.every((a) => (initialFormState.undergradVerificationActions || []).includes(a));
+    return nameChanged || modulesChanged || dashboardChanged || logbookChanged || freeRequestsChanged || undergradVerificationChanged;
   };
 
   const handleCloseModal = () => {
@@ -385,7 +414,8 @@ const PolicyManagement = () => {
       selectedModuleValues.length > 0 ||
       dashboardActions.length > 0 ||
       logbookActions.length > 0 ||
-      freeRequestsActions.length > 0;
+      freeRequestsActions.length > 0 ||
+      undergradVerificationActions.length > 0;
 
     if (!hasAnySelection) {
       setErrorMsg("Please select at least one module.");
@@ -397,7 +427,7 @@ const PolicyManagement = () => {
       return;
     }
 
-    const permissions = buildPermissions(selectedModuleValues, dashboardActions, logbookActions, freeRequestsActions);
+    const permissions = buildPermissions(selectedModuleValues, dashboardActions, logbookActions, freeRequestsActions, undergradVerificationActions);
     setSubmitting(true);
 
     try {
@@ -753,9 +783,11 @@ const PolicyManagement = () => {
         dashboardActions={dashboardActions}
         logbookActions={logbookActions}
         freeRequestsActions={freeRequestsActions}
+        undergradVerificationActions={undergradVerificationActions}
         toggleDashboardAction={toggleDashboardAction}
         toggleLogbookAction={toggleLogbookAction}
         toggleFreeRequestsAction={toggleFreeRequestsAction}
+        toggleUndergradVerificationAction={toggleUndergradVerificationAction}
         onClose={handleCloseModal}
         onSubmit={handleSavePolicy}
         singleTokenModuleOptions={SINGLE_TOKEN_MODULE_OPTIONS}
