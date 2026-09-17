@@ -23,6 +23,7 @@ export const ROLES = {
   ALUMNI:      "alumni",
   ADMIN:       "admin",
   SUPER_ADMIN: "super_admin",
+  UNDERGRAD_REQUESTOR: "undergrad_requestor",
 };
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -31,6 +32,7 @@ export const ROLE_HOME = {
   [ROLES.ALUMNI]:      "/alumni",
   [ROLES.ADMIN]:       "/staff",
   [ROLES.SUPER_ADMIN]: "/super-admin",
+  [ROLES.UNDERGRAD_REQUESTOR]: "/student",
 };
 
 // Mirrors SystemUser::ROLE_STUDENT / ROLE_ALUMNI / ROLE_ADMIN /
@@ -43,6 +45,7 @@ export const ROLE_ID = {
   ALUMNI:      2,
   ADMIN:       3,
   SUPER_ADMIN: 4,
+  UNDERGRAD_REQUESTOR: 5,
 };
 
 const ROLE_ID_TO_NAME = {
@@ -50,6 +53,8 @@ const ROLE_ID_TO_NAME = {
   [ROLE_ID.ALUMNI]:      ROLES.ALUMNI,
   [ROLE_ID.ADMIN]:       ROLES.ADMIN,
   [ROLE_ID.SUPER_ADMIN]: ROLES.SUPER_ADMIN,
+  [ROLE_ID.UNDERGRAD_REQUESTOR]: ROLES.UNDERGRAD_REQUESTOR,
+
 };
 
 export const AuthProvider = ({ children }) => {
