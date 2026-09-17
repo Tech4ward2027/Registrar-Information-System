@@ -104,11 +104,11 @@ const App = () => {
                   <Route path="/undergrad-requestor/register" element={<UndergradRequestorRegisterPage />} />
                   <Route path="/undergrad-requestor/verify-email" element={<UndergradRequestorVerifyEmailPage />} />
 
-                  {/* STUDENT (role: student) */}
+                  {/* STUDENT (role: student & undergrad_requestor) */}
                   <Route
                     path="/student"
                     element={
-                      <ProtectedRoute allowedRoles={[ROLES.STUDENT]}>
+                      <ProtectedRoute allowedRoles={[ROLES.STUDENT, ROLES.UNDERGRAD_REQUESTOR]}>
                         <StudentPage />
                       </ProtectedRoute>
                     }

@@ -106,6 +106,16 @@ const ProfilePage = ({ userType = "student" }) => {
       });
     }
 
+    else if (user.role_id === 5 && user.undergrad_requestor_profile) {
+      setProfileData({
+        firstName: user.undergrad_requestor_profile.first_name || "",
+        middleName: user.undergrad_requestor_profile.middle_name || "",
+        lastName: user.undergrad_requestor_profile.last_name || "",
+        suffix: user.undergrad_requestor_profile.suffix || "",
+        email: user.email || ""
+      });
+    }
+
     else {
       const parts = (user.name || user.email?.split('@')[0] || 'Super Admin').split(' ');
       setProfileData({
