@@ -231,6 +231,19 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute($limits('notice_per_ip_per_minute', 30))
                 ->by('ur-notice:ip:' . $this->callerKey($request));
         });
+
+        // ── Programs reference data (read-only) ──────────────────────
+        // Backs GET /undergrad-requestors/programs — the public onboarding
+        // form's Program/Course dropdown (see routes/api.php for why this
+        // route exists alongside the authenticated /programs route). Same
+        // reasoning as the notice limiter directly above: no PII returned,
+        // nothing created, fetched once per form load, so a plain per-IP
+        // ceiling is the right level of defense — a tripped limit here is
+        // a bored script, not a signal worth a security_events write.
+        RateLimiter::for('undergrad-requestor-programs', function (Request $request) use ($limits) {
+            return Limit::perMinute($limits('programs_per_ip_per_minute', 30))
+                ->by('ur-programs:ip:' . $this->callerKey($request));
+        });
     }
 
     /**

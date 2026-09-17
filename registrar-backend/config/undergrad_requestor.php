@@ -176,6 +176,8 @@ return [
 
         'notice_per_ip_per_minute'    => (int) env('UNDERGRAD_REQUESTOR_NOTICE_IP_PER_MIN', 30),
 
+        'programs_per_ip_per_minute'  => (int) env('UNDERGRAD_REQUESTOR_PROGRAMS_IP_PER_MIN', 30),
+
         /*
         | How long one tripped-limit security_events row suppresses further
         | rows for the same bucket. Without this, a sustained flood would

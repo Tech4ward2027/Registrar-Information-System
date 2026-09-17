@@ -760,6 +760,21 @@ export const getAlumniSystemRecord = (id)          => api.get(`/alumni-system/${
 export const getUndergradRequestorRegistrationNotice = () =>
   api.get("/undergrad-requestors/registration-notice");
 
+// GET /undergrad-requestors/programs
+// Public, unauthenticated, rate-limited (see AppServiceProvider::boot()'s
+// 'undergrad-requestor-programs' limiter). Backs the onboarding form's
+// Program/Course dropdown, which cannot use getPrograms() below — that
+// call hits GET /programs, which sits behind auth:sanctum, and this form
+// has no session yet. Returns the SAME reference data as GET /programs
+// (ProgramController::index() — no PII, just ogos_course_id/code/name)
+// through a route that doesn't require authentication. getPrograms()
+// itself is untouched and should keep being used everywhere else in the
+// app (authenticated screens) — only this public onboarding page should
+// call getUndergradRequestorPrograms().
+// Shape: { data: [{ ogos_course_id, code, name }, ...] }
+export const getUndergradRequestorPrograms = () =>
+  api.get("/undergrad-requestors/programs");
+
 // POST /undergrad-requestors/register
 // `data` must contain exactly the fields
 // StoreUndergradRequestorRegistrationRequest validates — see the

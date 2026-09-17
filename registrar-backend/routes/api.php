@@ -103,6 +103,27 @@ Route::post('/undergrad-requestors/confirm-email', [UndergradRequestorController
 Route::get('/undergrad-requestors/registration-notice', [UndergradRequestorController::class, 'registrationNotice'])
     ->middleware('throttle:undergrad-requestor-notice');
 
+// Undergrad Requestor Registration — Program/Course dropdown (hotfix).
+//
+// The onboarding form's Program/Course dropdown needs the same reference
+// data GET /programs already serves (see the "Read-only reference data"
+// section further down), but that route sits inside the auth:sanctum
+// group and this form is deliberately unauthenticated — no session exists
+// yet at this point in the flow. An anonymous request to /programs gets a
+// 401, the dropdown gets an empty array back, and it silently renders
+// "No options found." with no error surfaced to the user.
+//
+// Rather than removing auth from /programs — which would widen that
+// route's exposure for every other authenticated consumer of it — this
+// gives the public onboarding flow its own narrow, rate-limited route to
+// the SAME controller action. No new business logic: ProgramController::
+// index() already returns only non-sensitive reference data
+// (ogos_course_id, code, name), so nothing here requires gating behind a
+// session. ProgramController is already imported above for the
+// authenticated /programs route.
+Route::get('/undergrad-requestors/programs', [ProgramController::class, 'index'])
+    ->middleware('throttle:undergrad-requestor-programs');
+
 /*
 |--------------------------------------------------------------------------
 | PROTECTED ROUTES

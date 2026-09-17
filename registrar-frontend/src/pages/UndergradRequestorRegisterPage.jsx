@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
-import { getUndergradRequestorRegistrationNotice, registerUndergradRequestor, getPrograms } from "../services/api";
+import { getUndergradRequestorRegistrationNotice, registerUndergradRequestor, getUndergradRequestorPrograms } from "../services/api";
 import LandingPage from "../layouts/LandingPage.jsx";
 import InputGroup from "../components/InputGroup";
 import DropDown from "../components/DropDown.jsx";
@@ -61,10 +61,17 @@ const UndergradRequestorRegisterPage = () => {
 
   const [programs, setPrograms] = useState([]);
 
-  // Fetch OGOS/GUISIS programs on mount for course dropdown
+  // Fetch OGOS/GUISIS programs on mount for course dropdown.
+  //
+  // HOTFIX: this form is public/unauthenticated (no session exists yet — that's
+  // the whole point of onboarding). GET /programs sits behind auth:sanctum, so
+  // it always 401'd here and the dropdown silently rendered "No options found."
+  // getUndergradRequestorPrograms() hits a dedicated public, rate-limited route
+  // to the SAME controller action — see routes/api.php's
+  // '/undergrad-requestors/programs' route.
   useEffect(() => {
     let isMounted = true;
-    getPrograms()
+    getUndergradRequestorPrograms()
       .then((res) => {
         if (!isMounted) return;
         const data = res.data?.data || res.data || [];
