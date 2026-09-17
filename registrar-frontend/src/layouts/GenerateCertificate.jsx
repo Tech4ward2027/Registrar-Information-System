@@ -229,7 +229,10 @@ useEffect(() => {
         certs.forEach((cert) => {
           const normalizedName = normalizeCertName(cert?.certificate_name);
           const certConfigId = Object.entries(CERT_CONFIG).find(
-            ([_, config]) => normalizeCertName(config.name) === normalizedName
+            ([id, config]) =>
+              Number(id) === Number(cert.certificate_type_id) ||
+              normalizeCertName(config.name) === normalizedName ||
+              (Array.isArray(config.otherNames) && config.otherNames.some((alias) => normalizeCertName(alias) === normalizedName))
           )?.[0];
           
           if (certConfigId) {
