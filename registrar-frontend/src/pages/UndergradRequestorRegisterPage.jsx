@@ -20,8 +20,13 @@ import {
 } from "@heroicons/react/24/outline";
 
 const getMaxDateOfBirth = () => {
+  // Backend rule is `before:-14 years` (StoreUndergradRequestorRegistrationRequest),
+  // which is a STRICT "before" — a birthdate exactly 14 years ago today fails
+  // server-side validation. Subtract one extra day so the date picker can never
+  // offer a value the backend will then reject.
   const d = new Date();
   d.setFullYear(d.getFullYear() - 14);
+  d.setDate(d.getDate() - 1);
   return d.toISOString().split("T")[0];
 };
 
@@ -250,8 +255,12 @@ const UndergradRequestorRegisterPage = () => {
         present_address: form.present_address.trim(),
         reason_for_non_enrollment: form.reason_for_non_enrollment.trim() || null,
         phone: form.phone.trim(),
+        // NOTE: consent_version is intentionally NOT sent here. The backend
+        // (UndergradRequestorRegistrationService::register()) derives it itself
+        // from config('undergrad_requestor.data_privacy.consent_version') — the
+        // whole point of that design (see the registration-notice endpoint's
+        // docblock) is that the client cannot assert which version it agreed to.
         data_privacy_consent: Boolean(form.data_privacy_consent),
-        consent_version: noticeData.consent_version,
       };
 
       try {

@@ -247,7 +247,7 @@ const UndergradRequestorVerificationPage = () => {
   // Checkbox Selection
   const handleSelectAll = (e) => {
     if (e.target.checked) {
-      setSelectedIds(displayedQueueData.map((r) => r.id));
+      setSelectedIds(displayedQueueData.map((r) => r.user_id || r.id));
     } else {
       setSelectedIds([]);
     }
@@ -344,21 +344,27 @@ const UndergradRequestorVerificationPage = () => {
         {successMsg && <SuccessToast message={successMsg} onClose={() => setSuccessMsg("")} />}
         {errorMsg && <ErrorToast message={errorMsg} onClose={() => setErrorMsg("")} />}
 
-        {/* ---------------- 3 STAT CARDS (Pending / Approved / Rejected) ---------------- */}
+        {/* ---------------- 3 STAT CARDS (Pending / Approved / Rejected) ----------------
+            NOTE: GET /api/admin/undergrad-requestors returns rows for exactly ONE status
+            per request (the active tab). queueData therefore never contains rows for the
+            other two tabs, so their counts cannot be derived client-side without a second
+            request. Rather than silently showing a wrong "0" for tabs we have no data for,
+            we show the real fetched total for the active tab and an honest "—" placeholder
+            for the others. */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4">
           <StatCard
             title="Pending Verification"
-            count={activeTab === "pending" ? (meta?.total ?? queueData.length) : queueData.filter((m) => m.status === "pending").length}
+            count={activeTab === "pending" ? (meta?.total ?? queueData.length) : "—"}
             color="amber"
           />
           <StatCard
             title="Approved Submissions"
-            count={activeTab === "approved" ? (meta?.total ?? queueData.length) : queueData.filter((m) => m.status === "approved").length}
+            count={activeTab === "approved" ? (meta?.total ?? queueData.length) : "—"}
             color="emerald"
           />
           <StatCard
             title="Rejected Submissions"
-            count={activeTab === "rejected" ? (meta?.total ?? queueData.length) : queueData.filter((m) => m.status === "rejected").length}
+            count={activeTab === "rejected" ? (meta?.total ?? queueData.length) : "—"}
             color="orange"
           />
         </div>
@@ -681,19 +687,22 @@ const UndergradRequestorVerificationPage = () => {
                 </div>
               ) : detailData ? (
                 <>
-                  {/* Status Banner */}
+                  {/* Status Banner — sourced from verification.status (Pending/Approved/Rejected),
+                      the single source of truth per UndergradRequestorVerification's docblock.
+                      account.status ("Pending Activation" etc.) is a related but distinct
+                      lifecycle field and is intentionally not used to drive this banner's color. */}
                   <div
-                    className={`p-4 rounded-xl border flex items-center justify-between text-xs sm:text-sm font-medium ${detailData.status === "approved" || detailData.status === "Pending Activation"
+                    className={`p-4 rounded-xl border flex items-center justify-between text-xs sm:text-sm font-medium ${detailData.verification?.status === "Approved"
                       ? "bg-emerald-50 border-emerald-200 text-emerald-900 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
-                      : detailData.status === "rejected"
+                      : detailData.verification?.status === "Rejected"
                         ? "bg-rose-50 border-rose-200 text-rose-900 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-300"
                         : "bg-amber-50 border-amber-200 text-amber-900 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300"
                       }`}
                   >
-                    <span>Status: <strong className="uppercase font-bold">{detailData.status || "Pending"}</strong></span>
-                    {detailData.submitted_at && (
+                    <span>Status: <strong className="uppercase font-bold">{detailData.verification?.status_label || detailData.verification?.status || "Pending"}</strong></span>
+                    {detailData.declared_profile?.submitted_at && (
                       <span className="text-xs opacity-80">
-                        Submitted: {new Date(detailData.submitted_at).toLocaleString()}
+                        Submitted: {new Date(detailData.declared_profile.submitted_at).toLocaleString()}
                       </span>
                     )}
                   </div>
@@ -718,7 +727,7 @@ const UndergradRequestorVerificationPage = () => {
 
                       <div>
                         <span className={`block font-semibold ${isDark ? "text-[#b0b3b8]" : "text-gray-500"}`}>Email:</span>
-                        <p className="font-bold text-sm mt-0.5">{detailData.declared_profile?.email || detailData.email || "N/A"}</p>
+                        <p className="font-bold text-sm mt-0.5">{detailData.account?.email || "N/A"}</p>
                       </div>
 
                       <div>
@@ -762,35 +771,87 @@ const UndergradRequestorVerificationPage = () => {
 
                   {/* Section 2: Advisory Checks */}
                   <Section title="ADVISORY SYSTEM MATCH CHECKS (ADVISORY ONLY)" isDark={isDark}>
+                    {detailData.advisory_checks?.advisory_notice && (
+                      <p className={`text-[11px] italic mb-3 ${isDark ? "text-[#8f949d]" : "text-gray-500"}`}>
+                        {detailData.advisory_checks.advisory_notice}
+                      </p>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {/* Local Mirror Check */}
                       <div className={`p-3.5 rounded-xl border text-xs ${isDark ? "bg-[#18191a] border-[#3e4042]" : "bg-gray-50 border-gray-200"}`}>
-                        <span className="font-semibold block mb-1">Local Database Mirror Check</span>
+                        <span className="font-semibold block mb-1">
+                          {detailData.advisory_checks?.local_records_check?.label || "Local Database Mirror Check"}
+                        </span>
                         <p className="text-[#b0b3b8] dark:text-gray-400 mb-2">
-                          {detailData.advisory_checks?.local_mirror?.details || "Advisory lookup against local registrar records."}
+                          {detailData.advisory_checks?.local_records_check?.interpretation || "Advisory lookup against local registrar records."}
                         </p>
-                        <span className={`inline-block px-2 py-0.5 rounded font-semibold ${detailData.advisory_checks?.local_mirror?.match_found
+                        <span className={`inline-block px-2 py-0.5 rounded font-semibold ${detailData.advisory_checks?.local_records_check?.match_found
                           ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
                           : "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
                           }`}>
-                          Match status: advisory ({detailData.advisory_checks?.local_mirror?.match_found ? "match found" : "no match"})
+                          Match status: advisory ({detailData.advisory_checks?.local_records_check?.match_found ? "match found" : "no match"})
                         </span>
                       </div>
 
-                      {/* OGOS Check */}
-                      <div className={`p-3.5 rounded-xl border text-xs ${isDark ? "bg-[#18191a] border-[#3e4042]" : "bg-gray-50 border-gray-200"}`}>
-                        <span className="font-semibold block mb-1">OGOS Database Match Check</span>
-                        <p className="text-[#b0b3b8] dark:text-gray-400 mb-2">
-                          {detailData.advisory_checks?.ogos?.details || "Advisory lookup against OGOS records."}
-                        </p>
-                        <span className={`inline-block px-2 py-0.5 rounded font-semibold ${detailData.advisory_checks?.ogos?.match_found
-                          ? "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
-                          : "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                          }`}>
-                          Match status: advisory ({detailData.advisory_checks?.ogos?.match_found ? "match found" : "no match"})
-                        </span>
-                      </div>
+                      {/* OGOS Check — severity-driven, since a `warning` here (person shows as
+                          CURRENTLY ENROLLED, which an Undergrad Requestor should not be) is the
+                          single most important signal on this screen and must never render the
+                          same as a routine, expected "no match". */}
+                      {(() => {
+                        const ogos = detailData.advisory_checks?.ogos_enrollment_check;
+                        const severity = ogos?.severity; // 'warning' | 'info' | 'unavailable'
+                        const badgeClasses =
+                          severity === "warning"
+                            ? "bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-700"
+                            : severity === "unavailable"
+                              ? "bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                              : "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300";
+                        const badgeLabel =
+                          severity === "warning"
+                            ? "⚠ enrolled at OGOS — investigate"
+                            : severity === "unavailable"
+                              ? "not performed"
+                              : "no match (expected)";
+
+                        return (
+                          <div className={`p-3.5 rounded-xl border text-xs ${severity === "warning"
+                            ? "border-rose-300 dark:border-rose-700 bg-rose-50/60 dark:bg-rose-950/20"
+                            : isDark ? "bg-[#18191a] border-[#3e4042]" : "bg-gray-50 border-gray-200"
+                            }`}>
+                            <span className="font-semibold block mb-1">
+                              {ogos?.label || "OGOS Database Match Check"}
+                            </span>
+                            <p className="text-[#b0b3b8] dark:text-gray-400 mb-2">
+                              {ogos?.interpretation || "Advisory lookup against OGOS records."}
+                            </p>
+                            <span className={`inline-block px-2 py-0.5 rounded font-semibold ${badgeClasses}`}>
+                              Match status: advisory ({badgeLabel})
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
+
+                    {/* Duplicate Student Number Check */}
+                    {detailData.advisory_checks?.duplicate_student_number && (
+                      <div className={`mt-3 p-3.5 rounded-xl border text-xs ${isDark ? "bg-[#18191a] border-[#3e4042]" : "bg-gray-50 border-gray-200"}`}>
+                        <span className="font-semibold block mb-1">
+                          {detailData.advisory_checks.duplicate_student_number.label || "Other Submissions Using This Student Number"}
+                        </span>
+                        <p className="text-[#b0b3b8] dark:text-gray-400 mb-2">
+                          {detailData.advisory_checks.duplicate_student_number.interpretation}
+                        </p>
+                        {detailData.advisory_checks.duplicate_student_number.count > 0 && (
+                          <ul className="space-y-1">
+                            {(detailData.advisory_checks.duplicate_student_number.sample || []).map((dup) => (
+                              <li key={dup.user_id} className={`font-mono text-[11px] ${isDark ? "text-[#b0b3b8]" : "text-gray-600"}`}>
+                                #{dup.user_id} — {dup.full_name || dup.email} ({dup.status || "unknown status"})
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                   </Section>
 
                   {/* Section 3: Data Privacy Consent Audit */}
@@ -816,20 +877,28 @@ const UndergradRequestorVerificationPage = () => {
                     )}
                   </Section>
 
-                  {/* Section 4: Verification / Rejection History */}
-                  {detailData.verification_history && detailData.verification_history.length > 0 && (
-                    <Section title="VERIFICATION AUDIT HISTORY" isDark={isDark}>
-                      <div className="space-y-2">
-                        {detailData.verification_history.map((hist, idx) => (
-                          <div key={idx} className={`p-3 rounded-xl border text-xs ${isDark ? "bg-[#18191a] border-[#3e4042]" : "bg-gray-50 border-gray-200"}`}>
-                            <div className="flex justify-between font-semibold mb-1">
-                              <span className="capitalize">{hist.action}</span>
-                              <span className="text-gray-400">{hist.timestamp}</span>
-                            </div>
-                            {hist.reason && <p className="text-gray-600 dark:text-gray-300">Reason: {hist.reason}</p>}
-                            {hist.reviewer && <p className="text-gray-400 text-[11px]">Reviewed by: {hist.reviewer}</p>}
-                          </div>
-                        ))}
+                  {/* Section 4: Decision Record — only present once a reviewer has actually
+                      decided this submission (verification.status !== "Pending"). */}
+                  {detailData.verification?.status && detailData.verification.status !== "Pending" && (
+                    <Section title="DECISION RECORD" isDark={isDark}>
+                      <div className={`p-3 rounded-xl border text-xs space-y-1 ${isDark ? "bg-[#18191a] border-[#3e4042]" : "bg-gray-50 border-gray-200"}`}>
+                        <div className="flex justify-between font-semibold">
+                          <span>{detailData.verification.status_label || detailData.verification.status}</span>
+                          <span className="text-gray-400">
+                            {detailData.verification.reviewed_at ? new Date(detailData.verification.reviewed_at).toLocaleString() : ""}
+                          </span>
+                        </div>
+                        {detailData.verification.reviewed_by && (
+                          <p className="text-gray-400 text-[11px]">Reviewed by: {detailData.verification.reviewed_by}</p>
+                        )}
+                        {detailData.verification.rejection_reason && (
+                          <p className="text-gray-600 dark:text-gray-300">Reason: {detailData.verification.rejection_reason}</p>
+                        )}
+                        {detailData.verification.pii_purged_at && (
+                          <p className="text-gray-400 text-[11px]">
+                            Personal data purged on {new Date(detailData.verification.pii_purged_at).toLocaleString()} (retention policy)
+                          </p>
+                        )}
                       </div>
                     </Section>
                   )}
