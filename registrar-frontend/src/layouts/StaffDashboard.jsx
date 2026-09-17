@@ -75,7 +75,14 @@ const RowActionsDropdown = ({
   }, [isOpen]);
 
   // Enable Generate Certificate in 3-dots dropdown menu when not in archived view
-  const showGenerateCert = Boolean(onGenerateCert && viewMode !== 'archived');
+  // and only for requests that actually include certificate items
+  const hasCertificates = Boolean(
+    req?.hasCertificates ||
+    (Array.isArray(req?.certificates) && req.certificates.length > 0) ||
+    (Array.isArray(req?.certificateNames) && req.certificateNames.length > 0) ||
+    (Array.isArray(req?.rawRequest?.certificates) && req.rawRequest.certificates.length > 0)
+  );
+  const showGenerateCert = Boolean(onGenerateCert && viewMode !== 'archived' && hasCertificates);
   const isUpdating = updatingId === req.id;
 
   return (

@@ -332,12 +332,14 @@ const CertificateTemplateManagement = () => {
       {/* Modals & Alerts */}
       <ConfirmationModal
         isOpen={isResetConfirmOpen}
+        type="danger"
         title="Reset All Logo Layouts"
         message="Are you sure you want to reset ALL certificate logos and layouts to defaults? This action will overwrite all custom configurations for all types and cannot be undone."
         onConfirm={async () => {
           setIsResetConfirmOpen(false);
           await resetAllLayouts();
         }}
+        onClose={() => setIsResetConfirmOpen(false)}
         onCancel={() => setIsResetConfirmOpen(false)}
         confirmText="Reset All"
         cancelText="Cancel"

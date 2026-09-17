@@ -450,6 +450,10 @@ export const useCertificateTemplates = () => {
   const resetLayout = () => {
     pushToHistory(layout);
     setLayout({ ...DEFAULT_CERTIFICATE_LAYOUT });
+    setSuccessMessage("Layout reset to defaults.");
+    setTimeout(() => {
+      setSuccessMessage("");
+    }, 3000);
   };
 
   const undo = () => {
