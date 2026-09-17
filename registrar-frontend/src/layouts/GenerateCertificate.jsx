@@ -158,7 +158,13 @@ const GenerateCertification = ({ initialData, onClose, onCertificatePrinted, onL
       const normalizedDocType = normalizeCertName(docType);
       if (!normalizedDocType) return null;
 
-      const matchedEntry = Object.entries(CERT_CONFIG).find(([, config]) => normalizeCertName(config.name) === normalizedDocType);
+      const matchedEntry = Object.entries(CERT_CONFIG).find(([, config]) => {
+        if (normalizeCertName(config.name) === normalizedDocType) return true;
+        if (Array.isArray(config.otherNames)) {
+          return config.otherNames.some((alias) => normalizeCertName(alias) === normalizedDocType);
+        }
+        return false;
+      });
       return matchedEntry ? Number(matchedEntry[0]) : null;
     },
     []
@@ -254,9 +260,13 @@ useEffect(() => {
         if (lockDocTypeToRequest) {
           const requestedIdsFromNames = requestedCertNames
             .map((name) => {
-              return Object.entries(CERT_CONFIG).find(
-                ([_, config]) => normalizeCertName(config.name) === name
-              )?.[0];
+              return Object.entries(CERT_CONFIG).find(([_, config]) => {
+                if (normalizeCertName(config.name) === name) return true;
+                if (Array.isArray(config.otherNames)) {
+                  return config.otherNames.some((alias) => normalizeCertName(alias) === name);
+                }
+                return false;
+              })?.[0];
             })
             .filter(Boolean)
             .map(Number);
@@ -268,10 +278,8 @@ useEffect(() => {
             ])
           );
           
-          // Apply the restriction if we successfully mapped the requested IDs
-          if (requestedIds.length > 0) {
-            finalDocTypeOptions = requestedIds;
-          }
+          // Apply the restriction to requested IDs
+          finalDocTypeOptions = requestedIds;
         }
 
         // 4. Update the States
@@ -282,12 +290,16 @@ useEffect(() => {
         // Ensure the current selection is valid for the new restricted list
         setFormData((prev) => {
           const prevDocType = Number(prev.docType);
-          const defaultId = finalDocTypeOptions.includes(prevDocType) ? prevDocType : (finalDocTypeOptions[0] ?? prevDocType ?? null);
+          const defaultId = finalDocTypeOptions.includes(prevDocType)
+            ? prevDocType
+            : (finalDocTypeOptions.length > 0 ? finalDocTypeOptions[0] : null);
           return { ...prev, docType: defaultId };
         });
         setSavedData((prev) => {
           const prevDocType = Number(prev.docType);
-          const defaultId = finalDocTypeOptions.includes(prevDocType) ? prevDocType : (finalDocTypeOptions[0] ?? prevDocType ?? null);
+          const defaultId = finalDocTypeOptions.includes(prevDocType)
+            ? prevDocType
+            : (finalDocTypeOptions.length > 0 ? finalDocTypeOptions[0] : null);
           return { ...prev, docType: defaultId };
         });
 

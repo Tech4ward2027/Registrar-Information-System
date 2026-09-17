@@ -24,6 +24,7 @@ export const CERT_CONFIG = {
   1: {
     id: 1,
     name: "Certificate of GWA",
+    otherNames: ["General Weighted Average", "Certification Fee - General Weighted Average", "Certified True Copy - General Weighted Average", "General Weighted Average (GWA)", "Certificate of General Weighted Average", "GWA"],
     fields: ["fullName", "course", "gwa", "officialReceiptNum","educationLevel"],
     renderBody: (data) => (
       <StandardCertLayout date={data.date}>
@@ -42,6 +43,7 @@ export const CERT_CONFIG = {
   2: {
     id: 2,
     name: "Non Issuance of SO",
+    otherNames: ["Non-Issuance of S.O.", "Non-Issuance of Special Order", "Non Issuance of Special Order", "Certification Fee - Non-Issuance of S.O.", "Certification of Non-Issuance of Special Order", "Special Order"],
     fields: ["fullName", "course", "major", "officialReceiptNum"],
     renderBody: (data) => (
       <StandardCertLayout date={data.date}>
@@ -67,6 +69,7 @@ export const CERT_CONFIG = {
   3: {
     id: 3,
     name: "Certification of Medium of Instruction",
+    otherNames: ["English as Medium of Instruction", "Medium of Instruction", "Certification Fee - Medium of Instruction", "Certification Fee - English as Medium of Instruction", "English as Medium of Instruction (MOI)"],
     fields: ["fullName", "course", "dateGraduated", "officialReceiptNum", "date"],
     renderBody: (data) => (
       <>
@@ -97,6 +100,7 @@ export const CERT_CONFIG = {
   4: {
     id: 4,
     name: "Certification of Medium of Instruction with Units",
+    otherNames: ["Certification of Medium of Instruction with Units", "Medium of Instruction with Units"],
     fields: ["fullName", "course", "dateGraduated", "semestersNum", "units", "officialReceiptNum", "date"],
     renderBody: (data) => (
       <>
@@ -149,6 +153,7 @@ export const CERT_CONFIG = {
   6: {
     id: 6,
     name: "Certificate of Graduation",
+    otherNames: ["Certificate of Graduation", "Certificate of Graduation - 2nd copy", "Certification of Graduation"],
     fields: ["fullName", "course", "latinHonors", "dateGraduated", "diplomaNum"],
     renderBody: (data) => (
       <StandardCertLayout date={data.date}>
@@ -187,6 +192,7 @@ export const CERT_CONFIG = {
   8: {
     id: 8,
     name: "Certificate of Graduate Honor",
+    otherNames: ["Latin Honor", "Latin Honors", "Graduate Honor", "Certificate of Latin Honor", "Certificate of Graduate Honor"],
     fields: ["fullName", "course", "latinHonors", "major", "eligibilityType", "officialReceiptNum", "dateGraduated"],
     renderBody: (data) => (
       <StandardCertLayout date={data.date}>
@@ -258,6 +264,7 @@ export const CERT_CONFIG = {
   10: {
     id: 10,
     name: "Certificate of Enrollment - PRESENT",
+    otherNames: ["Enrollment", "Certificate of Enrollment", "Certificate of Enrollment - PRESENT", "Certificate of Enrollment (PRESENT)"],
     fields: ["fullName", "course", "semesters", "syAdmitted", "diplomaNum"],
     renderBody: (data) => (
       <StandardCertLayout date={data.date}>
@@ -275,6 +282,7 @@ export const CERT_CONFIG = {
   11: {
     id: 11,
     name: "Certificate of Enrollment - UNDERGRAD",
+    otherNames: ["Certificate of Enrollment - UNDERGRAD", "Enrollment - UNDERGRAD", "Certificate of Enrollment (UNDERGRAD)"],
     fields: ["fullName", "course", "semesters", "lastSemesters", "syAdmitted", "lastSy", "diplomaNum", "units", "semestersNum"],
     renderBody: (data) => (
       <StandardCertLayout date={data.date}>
@@ -319,6 +327,7 @@ export const CERT_CONFIG = {
   13: {
     id: 13,
     name: "CAV Request Letter",
+    otherNames: ["CAV/Apostille (DFA)", "CAV (DFA)", "CAV (DFA) - undergraduate", "CAV (DFA) with Special Certification", "CAV/Apostille (DFA) - undergraduate", "CAV Request Letter"],
     hideHeaderFooter: true,
     fields: ["fullName", "course", "major", "studentStatus", "date"],
     renderBody: (data, layout) => (
@@ -410,6 +419,7 @@ export const CERT_CONFIG = {
   14: {
     id: 14,
     name: "CAV",
+    otherNames: ["CAV (CHED)", "CAV (CHED) AND CAV/Apostille (DFA) -undergraduate", "Certification, Authentication, and Verification"],
     fields: ["fullName", "course", "major", "syAdmitted", "dateGraduated", "cavNum", "cavSeries", "officialReceiptNum", "amount", "date"],
     renderBody: (data) => (
       <>
@@ -493,6 +503,7 @@ export const CERT_CONFIG = {
   15: {
     id: 15,
     name: "Certification of NSTP-CWTS",
+    otherNames: ["NSTP Serial No.", "NSTP Serial Number", "NSTP", "NSTP-CWTS", "Certification of NSTP-CWTS"],
     fields: ["fullName", "semesters", "syAdmitted", "nstpSerialNum", "officialReceiptNum", "date"],
     renderBody: (data) => (
       <>
@@ -522,6 +533,7 @@ export const CERT_CONFIG = {
   16: {
     id: 16,
     name: "Endorsement Letter",
+    otherNames: ["Endorsement", "1st Endorsement", "Endorsement Letter"],
     hideHeaderFooter: true,
     fields: ["fullName", "course", "major", "date"],
     renderBody: (data, layout) => (
