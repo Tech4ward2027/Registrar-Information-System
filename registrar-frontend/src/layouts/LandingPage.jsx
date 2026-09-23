@@ -223,22 +223,13 @@ const LandingPage = () => {
               <a href={SSO_LOGIN_URL} className="lp-btn-primary mx-auto md:mx-0">
                 Log in with IDP
               </a>
-              <div className="flex flex-col sm:flex-row items-center justify-center md:justify-start gap-2 sm:gap-3.5 w-full mt-1">
-                <button
-                  type="button"
-                  onClick={openModal}
-                  className="text-xs text-gray-300 hover:text-white underline underline-offset-4 transition-colors font-inter cursor-pointer"
-                >
-                  Log in locally
-                </button>
-                <span className="hidden sm:inline text-gray-400 text-xs">•</span>
-                <Link
-                  to="/undergrad-requestor/register"
-                  className="text-xs text-gray-300 hover:text-white font-medium underline underline-offset-4 transition-colors font-inter cursor-pointer"
-                >
-                  Undergraduate? Sign Up Here
-                </Link>
-              </div>
+              <button
+                type="button"
+                onClick={openModal}
+                className="text-xs text-gray-300 hover:text-yellow-400 underline underline-offset-4 transition-colors font-inter cursor-pointer mt-0.5 text-center md:text-left mx-auto md:mx-0"
+              >
+                Need to log in locally?
+              </button>
             </div>
             
             {/* Clickable icons under buttons */}

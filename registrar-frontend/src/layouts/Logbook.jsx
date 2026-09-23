@@ -468,10 +468,10 @@ const LogbookRecords = () => {
           <div className={`mb-6 print:hidden rounded-xl border p-3.5 sm:p-5 ${isDark ? 'bg-[#1e1f20] border-[#3e4042]' : 'bg-gray-50 border-gray-200'}`}>
 
             {/* Controls Row */}
-            <div className="flex flex-col sm:flex-row flex-wrap items-end gap-3.5 w-full">
+            <div className="flex flex-wrap items-end gap-3 w-full">
 
               {/* Document Type multi-select checkbox dropdown */}
-              <div className="w-full sm:w-72 shrink-0">
+              <div className="w-full md:w-85 shrink-0">
                 <MultiSelectDropdown
                   label="Document Category"
                   name="docCategory"

@@ -28,7 +28,7 @@ test.describe('Landing Page Tests', () => {
 
   test('2. Password visibility toggle works correctly', async ({ page }) => {
     // Open the local login modal
-    await page.getByRole('button', { name: /Log in locally/i }).click();
+    await page.getByRole('button', { name: /Need to log in locally/i }).click();
 
     const passwordInput = page.getByPlaceholder('Password');
     
@@ -54,7 +54,7 @@ test.describe('Landing Page Tests', () => {
 
   test('3. Client-side form validation handling', async ({ page }) => {
     // Open the local login modal
-    await page.getByRole('button', { name: /Log in locally/i }).click();
+    await page.getByRole('button', { name: /Need to log in locally/i }).click();
 
     // Clear any autofill and click "Sign In Locally" with empty fields
     await page.getByPlaceholder('Email Address').fill('');
@@ -83,7 +83,7 @@ test.describe('Landing Page Tests', () => {
     });
 
     // Open the local login modal
-    await page.getByRole('button', { name: /Log in locally/i }).click();
+    await page.getByRole('button', { name: /Need to log in locally/i }).click();
 
     await page.getByPlaceholder('Email Address').fill('wrong@example.com');
     await page.getByPlaceholder('Password').fill('wrongpassword');
