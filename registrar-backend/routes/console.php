@@ -232,3 +232,34 @@ Schedule::command('job-run-logs:prune')
     ->withoutOverlapping()
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+/*
+|--------------------------------------------------------------------------
+| Scheduled Commands — Undergrad Requestor PII Retention (Phase 4 / D9)
+|--------------------------------------------------------------------------
+|
+| 08:35  PurgeRejectedUndergradRequestorPii — dispose of the
+|        self-declared personal data behind Undergrad Requestor
+|        submissions rejected more than
+|        config('undergrad_requestor.rejected_retention_days') ago (90,
+|        the same window SECURITY_EVENTS_RETENTION_DAYS already
+|        established). audit_logs is never touched: it remains the
+|        permanent, tamper-evident record that a rejection occurred.
+|
+| The OTHER half of D9 — the 14-day abandonment sweep for un-actioned
+| submissions — is deliberately NOT a second entry here. It lives inside
+| the existing provisioning:expire-stale job at 08:15 above, which was
+| widened rather than cloned, so there is one implementation of "pending
+| things time out" rather than two that can drift.
+|
+| 08:35 keeps this clear of every other 08:xx job's overlap window, and
+| after job-run-logs:prune so a purge run's own JobRunLog row is never
+| pruned by the same night's sweep it was written during.
+|--------------------------------------------------------------------------
+*/
+
+Schedule::command('undergrad-requestors:purge-rejected-pii')
+    ->dailyAt('08:35')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));

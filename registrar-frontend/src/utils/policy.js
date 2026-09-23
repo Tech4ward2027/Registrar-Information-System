@@ -26,6 +26,8 @@ export const MODULE_KEYS = {
   BUSINESS_CALENDAR: "business_calendar",
   CASHIER_OVERRIDES: "cashier_overrides",
   FREE_REQUESTS: "free_requests",
+  // Undergrad Requestor Registration — Phase 0/4.
+  UNDERGRAD_VERIFICATION: "undergrad_verification",
 };
 
 export const KEY_TO_LABEL = {
@@ -38,6 +40,7 @@ export const KEY_TO_LABEL = {
   business_calendar: "Business Calendar",
   cashier_overrides: "Cashier OR Overrides",
   free_requests: "Free Requests",
+  undergrad_verification: "Undergrad Requestor Verification",
 };
 
 export const LABEL_TO_KEY = Object.fromEntries(
@@ -57,6 +60,9 @@ export const MODULE_ACTIONS = {
   dashboard: ["View", "Process", "Complete"],
   logbook: ["View", "Export"],
   free_requests: ["View", "File", "Verify", "Override"],
+  // Undergrad Requestor Registration — Phase 0/4. Mirrors the backend's
+  // App\Models\Policy::MODULE_ACTIONS entry for 'undergrad_verification'.
+  undergrad_verification: ["View", "Approve", "Reject"],
 };
 
 /**

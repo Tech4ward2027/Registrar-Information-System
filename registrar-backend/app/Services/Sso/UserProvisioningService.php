@@ -5,6 +5,8 @@ namespace App\Services\Sso;
 use App\DTOs\Alumni\AlumniDTO;
 use App\Exceptions\AccountDeactivatedException;
 use App\Exceptions\AccountExpiredException;
+use App\Exceptions\AccountPendingVerificationException;
+use App\Exceptions\AccountRejectedException;
 use App\Exceptions\OgosException;
 use App\Exceptions\UnregisteredAccountException;
 use App\Models\Alumni;
@@ -48,111 +50,201 @@ class UserProvisioningService
         $middleName = $profile['middle_name']  ?? null;
         $lastName   = $profile['last_name']    ?? null;
 
-        return DB::transaction(function () use ($email, $idpUserId, $firstName, $middleName, $lastName, $profile, $request) {
-            // Match by IdP UUID first. This is the durable identity link —
-            // it survives the user changing their PUP webmail address at
-            // the IdP, which email-only matching does not (see incident:
-            // an email change would previously look like a brand-new user,
-            // orphaning all history under the old email's row).
-            //
-            // Email is only used as a fallback, for accounts that don't
-            // have an idp_user_id yet — e.g. a Pending Activation admin's
-            // very first login (AdminUserService::create() sets
-            // idp_user_id = null on invite), or a not-yet-registered
-            // person's first-ever login below. Every account that has
-            // ever successfully logged in already has idp_user_id set —
-            // see ensureBaselineRoleAssignment()'s sibling guarantee, the
-            // Pending Activation -> Activated transition further down,
-            // and the SystemUser::create() call below, all of which write
-            // idp_user_id in the same step that sets status = 'Activated'.
-            $existing = $idpUserId
-                ? SystemUser::where('idp_user_id', $idpUserId)->first()
-                : null;
+        // ─────────────────────────────────────────────────────────────
+        // BUG FIX: the lookup + early guard checks below (email sync,
+        // Deactivated, Rejected, Expired self-heal, Pending Verification)
+        // used to live INSIDE the DB::transaction() closure further down.
+        // That was wrong: DB::transaction() rolls back every write made
+        // inside its closure whenever the closure throws — including
+        // when it throws deliberately, as these guards do (e.g.
+        // AccountExpiredException). The Expired self-heal write
+        // ($existing->update(['status' => 'Expired']) plus its audit
+        // log entry) was therefore silently undone the instant it threw,
+        // even though the caller correctly received the exception. From
+        // the outside this looked fine (the right exception propagated)
+        // but the database was left pointing at the stale status.
+        //
+        // None of these guard checks need the atomicity the rest of
+        // provision() needs (creating profiles, role assignments, etc.
+        // together) — each one reads, writes at most once, and bails.
+        // Moving them outside DB::transaction() means each one commits
+        // its own write immediately and independently, so throwing
+        // afterward can no longer unwind it.
+        //
+        // Match by IdP UUID first. This is the durable identity link —
+        // it survives the user changing their PUP webmail address at
+        // the IdP, which email-only matching does not (see incident:
+        // an email change would previously look like a brand-new user,
+        // orphaning all history under the old email's row).
+        //
+        // Email is only used as a fallback, for accounts that don't
+        // have an idp_user_id yet — e.g. a Pending Activation admin's
+        // very first login (AdminUserService::create() sets
+        // idp_user_id = null on invite), or a not-yet-registered
+        // person's first-ever login below. Every account that has
+        // ever successfully logged in already has idp_user_id set —
+        // see ensureBaselineRoleAssignment()'s sibling guarantee, the
+        // Pending Activation -> Activated transition further down,
+        // and the SystemUser::create() call below, all of which write
+        // idp_user_id in the same step that sets status = 'Activated'.
+        $existing = $idpUserId
+            ? SystemUser::where('idp_user_id', $idpUserId)->first()
+            : null;
 
-            if (!$existing) {
-                $existing = SystemUser::where('email', $email)->first();
-            }
+        if (!$existing) {
+            $existing = SystemUser::where('email', $email)->first();
+        }
 
-            // Matched by UUID but the email on file is stale — the user
-            // changed their PUP webmail at the IdP. Sync it here, before
-            // anything else below reads $existing->email, so the record
-            // stays queryable/matchable by the new email too (e.g. by
-            // OGOS/PUPTAPS lookups elsewhere, which key on email).
-            //
-            // Guarded against the `email` unique constraint: if some other
-            // row already holds the new email (a pre-existing data
-            // conflict this fix doesn't attempt to resolve automatically),
-            // skip the sync and log loudly rather than let a raw
-            // QueryException take down the login.
-            if ($existing && $idpUserId && $existing->idp_user_id === $idpUserId && $existing->email !== $email) {
-                $emailTaken = SystemUser::where('email', $email)
-                    ->where('user_id', '!=', $existing->user_id)
-                    ->exists();
+        // Matched by UUID but the email on file is stale — the user
+        // changed their PUP webmail at the IdP. Sync it here, before
+        // anything else below reads $existing->email, so the record
+        // stays queryable/matchable by the new email too (e.g. by
+        // OGOS/PUPTAPS lookups elsewhere, which key on email).
+        //
+        // Guarded against the `email` unique constraint: if some other
+        // row already holds the new email (a pre-existing data
+        // conflict this fix doesn't attempt to resolve automatically),
+        // skip the sync and log loudly rather than let a raw
+        // QueryException take down the login.
+        if ($existing && $idpUserId && $existing->idp_user_id === $idpUserId && $existing->email !== $email) {
+            $emailTaken = SystemUser::where('email', $email)
+                ->where('user_id', '!=', $existing->user_id)
+                ->exists();
 
-                if ($emailTaken) {
-                    Log::error('SSO: cannot sync changed email — new email already belongs to a different user_id', [
-                        'user_id'   => $existing->user_id,
-                        'old_email' => $existing->email,
-                        'new_email' => $email,
-                    ]);
-                } else {
-                    Log::info('SSO: email changed at IdP, syncing local record', [
-                        'user_id'   => $existing->user_id,
-                        'old_email' => $existing->email,
-                        'new_email' => $email,
-                    ]);
-                    $existing->email = $email;
-                    $existing->save();
-                }
-            }
-
-            // RIS is the source of truth for who can use RIS. A Deactivated
-            // record is rejected here regardless of what the IdP currently
-            // believes about the account (it may still show as "active"
-            // there — IdP sync is best-effort, see AdminUserService::update())
-            // and regardless of OCMS state. This runs before role
-            // resolution so a deactivated admin can't slip back in through
-            // any branch below, including a fresh SSO login that would
-            // otherwise just issue a brand-new token.
-            if ($existing && $existing->status === 'Deactivated') {
-                throw new AccountDeactivatedException(
-                    'This RIS account has been deactivated. Please contact the registrar.'
-                );
-            }
-
-            // BUG FIX (QA #11 — "Expired Status Not Auto-Tagged"): mirrors
-            // the Deactivated check directly above. provisioning:expire-stale
-            // only flips 'Pending Activation' -> 'Expired' once a day, so
-            // without this, an invite past its 14-day pending_expires_at
-            // window could still be silently activated below for up to
-            // ~24h after it should have been rejected — the stored `status`
-            // column lagging reality is exactly what QA flagged. Checking
-            // pending_expires_at directly here, on every login attempt,
-            // closes that window instead of waiting on the sweep.
-            //
-            // Self-heals the row while we're already here (same audit
-            // action + attribution convention ExpireStaleProvisioning
-            // uses) rather than just rejecting silently — so the account
-            // reads correctly everywhere immediately, not just on this
-            // one request.
-            if (
-                $existing
-                && $existing->status === 'Pending Activation'
-                && $existing->pending_expires_at
-                && $existing->pending_expires_at->isPast()
-            ) {
-                $existing->update(['status' => 'Expired']);
-
-                $this->auditLogger->log($request, $existing, AuditLog::ACTION_ADMIN_EXPIRED, [
-                    'target_user_id' => $existing->user_id,
-                    'target_email'   => $existing->email,
+            if ($emailTaken) {
+                Log::error('SSO: cannot sync changed email — new email already belongs to a different user_id', [
+                    'user_id'   => $existing->user_id,
+                    'old_email' => $existing->email,
+                    'new_email' => $email,
                 ]);
-
-                throw new AccountExpiredException(
-                    'This invitation has expired. Please contact the registrar for a new invite.'
-                );
+            } else {
+                Log::info('SSO: email changed at IdP, syncing local record', [
+                    'user_id'   => $existing->user_id,
+                    'old_email' => $existing->email,
+                    'new_email' => $email,
+                ]);
+                $existing->email = $email;
+                $existing->save();
             }
+        }
 
+        // RIS is the source of truth for who can use RIS. A Deactivated
+        // record is rejected here regardless of what the IdP currently
+        // believes about the account (it may still show as "active"
+        // there — IdP sync is best-effort, see AdminUserService::update())
+        // and regardless of OCMS state. This runs before role
+        // resolution so a deactivated admin can't slip back in through
+        // any branch below, including a fresh SSO login that would
+        // otherwise just issue a brand-new token.
+        if ($existing && $existing->status === 'Deactivated') {
+            throw new AccountDeactivatedException(
+                'This RIS account has been deactivated. Please contact the registrar.'
+            );
+        }
+
+        // Undergrad Requestor Registration — Phase 3 (D8). 'Rejected'
+        // is set exclusively by the Admin reject action (Phase 4) on
+        // an Undergrad Requestor's verification — see
+        // AccountRejectedException's docblock for why checking this
+        // single column is sufficient with no extra join. Runs
+        // before role resolution for the same reason the Deactivated
+        // check above does: a rejected account must never slip back
+        // in through any branch below, including auto-registration.
+        if ($existing && $existing->status === 'Rejected' && (int) $existing->role_id === SystemUser::ROLE_UNDERGRAD_REQUESTOR) {
+            throw new AccountRejectedException(
+                'Your Undergrad Requestor registration was not approved. Please contact the registrar for more information.'
+            );
+        }
+
+        // BUG FIX (QA #11 — "Expired Status Not Auto-Tagged"): mirrors
+        // the Deactivated check directly above. provisioning:expire-stale
+        // only flips 'Pending Activation' -> 'Expired' once a day, so
+        // without this, an invite past its 14-day pending_expires_at
+        // window could still be silently activated below for up to
+        // ~24h after it should have been rejected — the stored `status`
+        // column lagging reality is exactly what QA flagged. Checking
+        // pending_expires_at directly here, on every login attempt,
+        // closes that window instead of waiting on the sweep.
+        //
+        // Self-heals the row while we're already here (same audit
+        // action + attribution convention ExpireStaleProvisioning
+        // uses) rather than just rejecting silently — so the account
+        // reads correctly everywhere immediately, not just on this
+        // one request. This write now commits on its own, immediately,
+        // BEFORE the exception below is thrown — see the top-of-method
+        // note explaining why these guards live outside DB::transaction().
+        //
+        // Undergrad Requestor Registration — Phase 3 (D9): widened
+        // (not duplicated) to also cover an Undergrad Requestor's
+        // 'Pending Verification' row whose pending_expires_at (set
+        // at onboarding submission time — see
+        // UndergradRequestorRegistrationService::register()) has
+        // elapsed. Same mechanic, same target status ('Expired'),
+        // same column, same 14-day window — Phase 4's
+        // "extend/clone ExpireStaleProvisioning" sweep reuses this
+        // exact widening for its own scheduled version of this
+        // check; this is the live, on-login variant of it.
+        if (
+            $existing
+            && $existing->pending_expires_at
+            && $existing->pending_expires_at->isPast()
+            && (
+                $existing->status === 'Pending Activation'
+                || ($existing->status === 'Pending Verification' && (int) $existing->role_id === SystemUser::ROLE_UNDERGRAD_REQUESTOR)
+            )
+        ) {
+            $existing->update(['status' => 'Expired']);
+
+            $this->auditLogger->log($request, $existing, AuditLog::ACTION_ADMIN_EXPIRED, [
+                'target_user_id' => $existing->user_id,
+                'target_email'   => $existing->email,
+            ]);
+
+            throw new AccountExpiredException(
+                'This invitation has expired. Please contact the registrar for a new invite.'
+            );
+        }
+
+        // Undergrad Requestor Registration — Phase 3. A genuinely
+        // still-Pending (not yet past its 14-day window — the block
+        // above already caught and redirected that case to
+        // 'Expired') Undergrad Requestor account. Blocks login
+        // before a Sanctum token is ever issued, same enforcement
+        // point as every other status in this family — see
+        // AccountPendingVerificationException's docblock for why
+        // this is deliberately NOT left to EnsureAccountActive to
+        // catch on a later request.
+        //
+        // BUG FIX (Phase 4): this guard previously keyed on
+        // status + role alone, with no reference to the verification
+        // record — which made it fire for APPROVED requestors too,
+        // before execution could ever reach the auto-activation
+        // branch below. An approved person could never log in.
+        //
+        // Two changes fix it, and they are deliberately belt-and-
+        // braces rather than either alone:
+        //   (a) Phase 4's approve action now moves the account to
+        //       'Pending Activation' — "approved, awaiting the
+        //       person's first IDP login" — so 'Pending Verification'
+        //       means exactly one thing again: awaiting a human
+        //       reviewer. That is what D2 specified when it
+        //       distinguished the two statuses by CAUSE.
+        //   (b) The isApproved() check below, so any row left at
+        //       'Pending Verification' by an older code path (or a
+        //       manual DB fix) still self-heals into the activation
+        //       branch instead of being permanently locked out.
+        if (
+            $existing
+            && $existing->status === 'Pending Verification'
+            && (int) $existing->role_id === SystemUser::ROLE_UNDERGRAD_REQUESTOR
+            && !$existing->undergradRequestorVerification?->isApproved()
+        ) {
+            throw new AccountPendingVerificationException(
+                'Your Undergrad Requestor registration is still under review by the Registrar\'s Office. You\'ll be notified once a decision has been made.'
+            );
+        }
+
+        return DB::transaction(function () use ($existing, $email, $idpUserId, $firstName, $middleName, $lastName, $profile, $request) {
             $roleId = $this->roleResolver->resolve($existing);
 
             // Captured only if the not-pre-registered branch below ends up
@@ -215,7 +307,26 @@ class UserProvisioningService
             // DB is always the source of truth for *who* this is (role,
             // policy) — this only ever transitions Pending -> Activated and
             // backfills idp_user_id, it never re-derives role from the IdP.
-            if ($existing
+            //
+            // Undergrad Requestor Registration — Phase 3 (D4, D8). Widened
+            // (not duplicated — see this method's own comment above)
+            // to also auto-activate an Undergrad Requestor's first IDP
+            // login, matched by email exactly like an admin invite is —
+            // but ONLY once undergrad_requestor_verifications.status is
+            // Approved (loaded via the eager-loadable relation on
+            // SystemUser; see UndergradRequestorVerification). The two
+            // guard blocks above (now run before this transaction opens)
+            // already ensure a still-Pending or Rejected Undergrad
+            // Requestor never reaches this line at all, so isApproved()
+            // here is really just confirming what "we got this far"
+            // already implies — kept as an explicit check anyway rather
+            // than assumed, since this transition is the one line that
+            // actually grants RIS access and should never rely on
+            // reasoning about earlier lines to stay correct.
+            $isApprovedUndergradRequestor = $roleId === SystemUser::ROLE_UNDERGRAD_REQUESTOR
+                && $existing?->undergradRequestorVerification?->isApproved();
+
+            $isAdminPendingActivation = $existing
                 && $existing->status === 'Pending Activation'
                 // Belt-and-suspenders: the guard above already throws
                 // before reaching here whenever pending_expires_at has
@@ -224,8 +335,29 @@ class UserProvisioningService
                 // added between the two checks that reaches this code
                 // without passing through the guard.
                 && (!$existing->pending_expires_at || $existing->pending_expires_at->isFuture())
-                && in_array($roleId, [SystemUser::ROLE_ADMIN, SystemUser::ROLE_SUPER_ADMIN], true)
-            ) {
+                && in_array($roleId, [SystemUser::ROLE_ADMIN, SystemUser::ROLE_SUPER_ADMIN], true);
+
+            // Phase 4: an approved Undergrad Requestor sits at
+            // 'Pending Activation' — the SAME status an admin invite
+            // occupies between creation and first SSO login, which is the
+            // whole point: one status, one meaning, one activation
+            // mechanic. 'Pending Verification' is still accepted here so
+            // any row approved before that change (or repaired by hand)
+            // activates on next login rather than needing a data fix; the
+            // guard above has already ensured only APPROVED rows can
+            // reach this line in that state.
+            //
+            // The pending_expires_at condition mirrors
+            // $isAdminPendingActivation's: approve() clears that column,
+            // so in practice it is null here and the check is a
+            // formality — kept explicit so this branch never depends on
+            // reasoning about what an earlier line did.
+            $isUndergradRequestorPendingApproval = $existing
+                && in_array($existing->status, ['Pending Activation', 'Pending Verification'], true)
+                && (!$existing->pending_expires_at || $existing->pending_expires_at->isFuture())
+                && $isApprovedUndergradRequestor;
+
+            if ($isAdminPendingActivation || $isUndergradRequestorPendingApproval) {
                 $user->idp_user_id        = $profile['id'] ?? $user->idp_user_id;
                 $user->status             = 'Activated';
                 $user->pending_expires_at = null;
@@ -236,11 +368,18 @@ class UserProvisioningService
                 // action performed on them by someone else. Matches the
                 // ACTION_LOGIN entry SsoAuthService writes right after with
                 // the same actor.
-                $this->auditLogger->log($request, $user, AuditLog::ACTION_ADMIN_ACTIVATED, [
-                    'target_user_id' => $user->user_id,
-                    'target_email'   => $user->email,
-                    'role_id'        => $user->role_id,
-                ]);
+                $this->auditLogger->log(
+                    $request,
+                    $user,
+                    $isApprovedUndergradRequestor
+                        ? AuditLog::ACTION_UNDERGRAD_REQUESTOR_ACTIVATED
+                        : AuditLog::ACTION_ADMIN_ACTIVATED,
+                    [
+                        'target_user_id' => $user->user_id,
+                        'target_email'   => $user->email,
+                        'role_id'        => $user->role_id,
+                    ]
+                );
             }
 
             $needsOnboarding = $this->provisionProfile(

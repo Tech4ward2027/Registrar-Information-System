@@ -35,6 +35,12 @@ class UserResource extends JsonResource
             // Will return data once alumni module is built
             'alumni_profile'  => $this->whenLoaded('alumniProfile'),
 
+            // Undergrad Requestor Registration — Phase 5. Only present
+            // if loaded (see SystemUser::loadIdentityRelations()'s new
+            // branch) — no academic_record counterpart, since D5 gave
+            // this role no such record to have.
+            'undergrad_requestor_profile' => $this->whenLoaded('undergradRequestorProfile'),
+
             // Admin/Super Admin relation — only present if loaded
             // Will return data once admin profile module is built
             'admin_profile'   => $this->whenLoaded('adminProfile'),
@@ -245,6 +251,15 @@ class UserResource extends JsonResource
             $profile = $this->studentProfile;
         } elseif ($this->relationLoaded('alumniProfile') && $this->alumniProfile) {
             $profile = $this->alumniProfile;
+        } elseif ($this->relationLoaded('undergradRequestorProfile') && $this->undergradRequestorProfile) {
+            // Undergrad Requestor Registration — Phase 5. Without this
+            // branch an Approved, logged-in Undergrad Requestor saw a
+            // blank display_name everywhere this resource is used
+            // (dashboard header, etc.) — the same "guest" placeholder
+            // gap RIS-PROCESS-BUGS #10 fixed for student-staff, now
+            // reopened for a role that didn't exist when that fix
+            // shipped.
+            $profile = $this->undergradRequestorProfile;
         }
 
         if (!$profile || !$profile->first_name) {
@@ -268,11 +283,17 @@ class UserResource extends JsonResource
     private function resolveRoleName(int $roleId): string
     {
         return match ($roleId) {
-            SystemUser::ROLE_STUDENT     => 'student',
-            SystemUser::ROLE_ALUMNI      => 'alumni',
-            SystemUser::ROLE_ADMIN       => 'admin',
-            SystemUser::ROLE_SUPER_ADMIN => 'super_admin',
-            default                      => 'unknown',
+            SystemUser::ROLE_STUDENT             => 'student',
+            SystemUser::ROLE_ALUMNI              => 'alumni',
+            // Undergrad Requestor Registration — Phase 5. Used both for
+            // this account's own role_name/base_role_name (frontend
+            // dashboard chrome, routing) and — via GrantableUserResource,
+            // a separate class with its own copy of this mapping — the
+            // Cashier OR override and role-assignment pickers.
+            SystemUser::ROLE_UNDERGRAD_REQUESTOR => 'undergrad_requestor',
+            SystemUser::ROLE_ADMIN               => 'admin',
+            SystemUser::ROLE_SUPER_ADMIN          => 'super_admin',
+            default                               => 'unknown',
         };
     }
 }

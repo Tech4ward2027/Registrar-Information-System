@@ -19,11 +19,42 @@ import {
 import { formatDateFormal, formatDateOrdinal, CURRENT_YEAR } from "./formatters.js";
 import puplogoimage from "../assets/puplogoimage.png";
 
+export const getSalutationAndLastName = (fullName) => {
+  if (!fullName || typeof fullName !== "string") return "";
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0];
+
+  const firstPart = parts[0].replace(".", "").toLowerCase();
+  const knownPrefixes = ["mr", "ms", "mrs", "mx", "dr", "prof"];
+
+  if (knownPrefixes.includes(firstPart)) {
+    return `${parts[0]} ${parts[parts.length - 1]}`;
+  }
+  return `Mr./Ms. ${parts[parts.length - 1]}`;
+};
+
+export const getGwaRange = (gwa, honorName) => {
+  const honor = (honorName || "").toLowerCase();
+  if (honor.includes("summa")) return "1.0000 to 1.1500";
+  if (honor.includes("magna")) return "1.1501 to 1.3500";
+  if (honor.includes("cum laude")) return "1.3501 to 1.6000";
+
+  const numericGwa = parseFloat(gwa);
+  if (!isNaN(numericGwa)) {
+    if (numericGwa <= 1.15) return "1.0000 to 1.1500";
+    if (numericGwa <= 1.35) return "1.1501 to 1.3500";
+    if (numericGwa <= 1.60) return "1.3501 to 1.6000";
+  }
+  return "1.3501 to 1.6000";
+};
+
 /** "syAdmitted is not yet fully functional - need update" */
 export const CERT_CONFIG = {
   1: {
     id: 1,
     name: "Certificate of GWA",
+    otherNames: ["General Weighted Average", "Certification Fee - General Weighted Average", "Certified True Copy - General Weighted Average", "General Weighted Average (GWA)", "Certificate of General Weighted Average", "GWA"],
     fields: ["fullName", "course", "gwa", "officialReceiptNum","educationLevel"],
     renderBody: (data) => (
       <StandardCertLayout date={data.date}>
@@ -42,6 +73,7 @@ export const CERT_CONFIG = {
   2: {
     id: 2,
     name: "Non Issuance of SO",
+    otherNames: ["Non-Issuance of S.O.", "Non-Issuance of Special Order", "Non Issuance of Special Order", "Certification Fee - Non-Issuance of S.O.", "Certification of Non-Issuance of Special Order", "Special Order"],
     fields: ["fullName", "course", "major", "officialReceiptNum"],
     renderBody: (data) => (
       <StandardCertLayout date={data.date}>
@@ -67,6 +99,7 @@ export const CERT_CONFIG = {
   3: {
     id: 3,
     name: "Certification of Medium of Instruction",
+    otherNames: ["English as Medium of Instruction", "Medium of Instruction", "Certification Fee - Medium of Instruction", "Certification Fee - English as Medium of Instruction", "English as Medium of Instruction (MOI)"],
     fields: ["fullName", "course", "dateGraduated", "officialReceiptNum", "date"],
     renderBody: (data) => (
       <>
@@ -97,6 +130,7 @@ export const CERT_CONFIG = {
   4: {
     id: 4,
     name: "Certification of Medium of Instruction with Units",
+    otherNames: ["Certification of Medium of Instruction with Units", "Medium of Instruction with Units"],
     fields: ["fullName", "course", "dateGraduated", "semestersNum", "units", "officialReceiptNum", "date"],
     renderBody: (data) => (
       <>
@@ -149,6 +183,7 @@ export const CERT_CONFIG = {
   6: {
     id: 6,
     name: "Certificate of Graduation",
+    otherNames: ["Certificate of Graduation", "Certificate of Graduation - 2nd copy", "Certification of Graduation"],
     fields: ["fullName", "course", "latinHonors", "dateGraduated", "diplomaNum"],
     renderBody: (data) => (
       <StandardCertLayout date={data.date}>
@@ -187,6 +222,7 @@ export const CERT_CONFIG = {
   8: {
     id: 8,
     name: "Certificate of Graduate Honor",
+    otherNames: ["Graduate Honor", "Certificate of Graduate Honor"],
     fields: ["fullName", "course", "latinHonors", "major", "eligibilityType", "officialReceiptNum", "dateGraduated"],
     renderBody: (data) => (
       <StandardCertLayout date={data.date}>
@@ -258,6 +294,7 @@ export const CERT_CONFIG = {
   10: {
     id: 10,
     name: "Certificate of Enrollment - PRESENT",
+    otherNames: ["Enrollment", "Certificate of Enrollment", "Certificate of Enrollment - PRESENT", "Certificate of Enrollment (PRESENT)"],
     fields: ["fullName", "course", "semesters", "syAdmitted", "diplomaNum"],
     renderBody: (data) => (
       <StandardCertLayout date={data.date}>
@@ -275,6 +312,7 @@ export const CERT_CONFIG = {
   11: {
     id: 11,
     name: "Certificate of Enrollment - UNDERGRAD",
+    otherNames: ["Certificate of Enrollment - UNDERGRAD", "Enrollment - UNDERGRAD", "Certificate of Enrollment (UNDERGRAD)"],
     fields: ["fullName", "course", "semesters", "lastSemesters", "syAdmitted", "lastSy", "diplomaNum", "units", "semestersNum"],
     renderBody: (data) => (
       <StandardCertLayout date={data.date}>
@@ -319,6 +357,7 @@ export const CERT_CONFIG = {
   13: {
     id: 13,
     name: "CAV Request Letter",
+    otherNames: ["CAV/Apostille (DFA)", "CAV (DFA)", "CAV (DFA) - undergraduate", "CAV (DFA) with Special Certification", "CAV/Apostille (DFA) - undergraduate", "CAV Request Letter"],
     hideHeaderFooter: true,
     fields: ["fullName", "course", "major", "studentStatus", "date"],
     renderBody: (data, layout) => (
@@ -410,6 +449,7 @@ export const CERT_CONFIG = {
   14: {
     id: 14,
     name: "CAV",
+    otherNames: ["CAV (CHED)", "CAV (CHED) AND CAV/Apostille (DFA) -undergraduate", "Certification, Authentication, and Verification"],
     fields: ["fullName", "course", "major", "syAdmitted", "dateGraduated", "cavNum", "cavSeries", "officialReceiptNum", "amount", "date"],
     renderBody: (data) => (
       <>
@@ -493,6 +533,7 @@ export const CERT_CONFIG = {
   15: {
     id: 15,
     name: "Certification of NSTP-CWTS",
+    otherNames: ["NSTP Serial No.", "NSTP Serial Number", "NSTP", "NSTP-CWTS", "Certification of NSTP-CWTS"],
     fields: ["fullName", "semesters", "syAdmitted", "nstpSerialNum", "officialReceiptNum", "date"],
     renderBody: (data) => (
       <>
@@ -522,6 +563,7 @@ export const CERT_CONFIG = {
   16: {
     id: 16,
     name: "Endorsement Letter",
+    otherNames: ["Endorsement", "1st Endorsement", "Endorsement Letter"],
     hideHeaderFooter: true,
     fields: ["fullName", "course", "major", "date"],
     renderBody: (data, layout) => (
@@ -695,5 +737,105 @@ export const CERT_CONFIG = {
         </TextBlock>
       </>
     ),
+  },
+
+  18: {
+    id: 18,
+    name: "Certification Fee - Latin Honors",
+    otherNames: [
+      "Certification Fee - Latin Honors",
+      "Latin Honor",
+      "Latin Honors",
+      "Certification for Candidate with Latin Honor",
+      "Candidate for Graduation with Latin Honor",
+      "Certificate of Candidate for Latin Honor",
+      "Latin Honor (Candidate)",
+      "Certification of Candidate for Graduation with Latin Honors",
+      "Latin Honor Candidate",
+      "Latin Honor - Candidate",
+    ],
+    fields: ["fullName", "course", "gwa", "units", "latinHonors", "dateGraduated", "officialReceiptNum", "date"],
+    renderBody: (data) => {
+      const salutationAndName = getSalutationAndLastName(data.fullName);
+      const formattedConfermentDate = data.dateGraduated
+        ? formatDateFormal(data.dateGraduated)
+        : "";
+      const honorName = data.latinHonors ? data.latinHonors.replace(/[()]/g, "").trim() : "Cum Laude";
+      const gwaRange = getGwaRange(data.gwa, honorName);
+
+      return (
+        <>
+          <RegistrarDateTitle date={data.date} />
+          <CertificateTitle title="C E R T I F I C A T I O N" />
+          <div className="space-y-4 text-[12px] sm:text-[13px] leading-relaxed text-justify px-2 sm:px-4 print:text-[11pt]">
+            <TextBlock className="font-lucida">To Whom It May Concern:</TextBlock>
+            <CertParagraph>
+              This is to certify that {fillOrLine(data.fullName)} is a {bold("candidate for graduation")} at the Polytechnic University of the Philippines – Taguig Campus, having successfully completed the requirements for the degree of {fillOrLine(data.course)} with the esteemed distinction of “{bold(honorName)}” to be conferred on {fillOrLine(formattedConfermentDate)}.
+            </CertParagraph>
+            <CertParagraph>
+              {fillOrLine(salutationAndName)} achieved a commendable {bold("General Weighted Average")} of {fillOrLine(data.gwa)}, based on the completion of {fillOrLine(data.units)} required units. This notable achievement is in accordance with the standards set forth in the PUP Student Handbook 2019, Section 16, which stipulates that a weighted average ranging from {fillOrLine(gwaRange)} qualifies for the distinction of <i>{honorName}</i>.
+            </CertParagraph>
+            <CertParagraph>
+              Furthermore, this certification attests that no prior requests for {fillOrLine(salutationAndName)}’s Transcript of Records (TOR) for scholarship purposes have been made. The TOR will be issued following the {bold("conferment of degrees on")} {fillOrLine(formattedConfermentDate)}. For employment or scholarship purposes, an Informative Copy of Grades may be requested in the meantime.
+            </CertParagraph>
+            <CertParagraph className="mb-10">
+              This certification is issued on {formatDateFormal(data.date)}, upon the specific request of {fillOrLine(salutationAndName)} in support of her application for scholarship for graduates with Latin Honors.
+            </CertParagraph>
+          </div>
+          <RegistrarSignature signee={data.signee} />
+          <ReceiptInfo officialReceiptNum={data.officialReceiptNum} date={bold(formatDateFormal(data.date))} />
+        </>
+      );
+    },
+  },
+
+  28: {
+    id: 28,
+    name: "Certification Fee - Latin Honors",
+    otherNames: [
+      "Certification Fee - Latin Honors",
+      "Latin Honor",
+      "Latin Honors",
+      "Certification for Candidate with Latin Honor",
+      "Candidate for Graduation with Latin Honor",
+      "Certificate of Candidate for Latin Honor",
+      "Latin Honor (Candidate)",
+      "Certification of Candidate for Graduation with Latin Honors",
+      "Latin Honor Candidate",
+      "Latin Honor - Candidate",
+    ],
+    fields: ["fullName", "course", "gwa", "units", "latinHonors", "dateGraduated", "officialReceiptNum", "date"],
+    renderBody: (data) => {
+      const salutationAndName = getSalutationAndLastName(data.fullName);
+      const formattedConfermentDate = data.dateGraduated
+        ? formatDateFormal(data.dateGraduated)
+        : "";
+      const honorName = data.latinHonors ? data.latinHonors.replace(/[()]/g, "").trim() : "Cum Laude";
+      const gwaRange = getGwaRange(data.gwa, honorName);
+
+      return (
+        <>
+          <RegistrarDateTitle date={data.date} />
+          <CertificateTitle title="C E R T I F I C A T I O N" />
+          <div className="space-y-4 text-[12px] sm:text-[13px] leading-relaxed text-justify px-2 sm:px-4 print:text-[11pt]">
+            <TextBlock className="font-lucida">To Whom It May Concern:</TextBlock>
+            <CertParagraph>
+              This is to certify that {fillOrLine(data.fullName)} is a {bold("candidate for graduation")} at the Polytechnic University of the Philippines – Taguig Campus, having successfully completed the requirements for the degree of {fillOrLine(data.course)} with the esteemed distinction of “{bold(honorName)}” to be conferred on {fillOrLine(formattedConfermentDate)}.
+            </CertParagraph>
+            <CertParagraph>
+              {fillOrLine(salutationAndName)} achieved a commendable {bold("General Weighted Average")} of {fillOrLine(data.gwa)}, based on the completion of {fillOrLine(data.units)} required units. This notable achievement is in accordance with the standards set forth in the PUP Student Handbook 2019, Section 16, which stipulates that a weighted average ranging from {fillOrLine(gwaRange)} qualifies for the distinction of <i>{honorName}</i>.
+            </CertParagraph>
+            <CertParagraph>
+              Furthermore, this certification attests that no prior requests for {fillOrLine(salutationAndName)}’s Transcript of Records (TOR) for scholarship purposes have been made. The TOR will be issued following the {bold("conferment of degrees on")} {fillOrLine(formattedConfermentDate)}. For employment or scholarship purposes, an Informative Copy of Grades may be requested in the meantime.
+            </CertParagraph>
+            <CertParagraph className="mb-10">
+              This certification is issued on {formatDateFormal(data.date)}, upon the specific request of {fillOrLine(salutationAndName)} in support of her application for scholarship for graduates with Latin Honors.
+            </CertParagraph>
+          </div>
+          <RegistrarSignature signee={data.signee} />
+          <ReceiptInfo officialReceiptNum={data.officialReceiptNum} date={bold(formatDateFormal(data.date))} />
+        </>
+      );
+    },
   },
 };

@@ -32,7 +32,7 @@ class Policy extends Model
      * touching this array (plus the frontend's mirrored MODULE_KEYS in
      * src/utils/policy.js).
      */
-    public const MODULE_KEYS = ['dashboard', 'inbox', 'analytics', 'logbook', 'profile', 'access_requests', 'business_calendar', 'cashier_overrides', 'free_requests'];
+    public const MODULE_KEYS = ['dashboard', 'inbox', 'analytics', 'logbook', 'profile', 'access_requests', 'business_calendar', 'cashier_overrides', 'free_requests', 'undergrad_verification'];
 
     /**
      * Per-module action vocabulary — the single source of truth for
@@ -90,6 +90,23 @@ class Policy extends Model
         // rather than a hardcoded permission or user ID, so reassigning
         // it later never requires a deployment.
         'free_requests' => ['View', 'File', 'Verify', 'Override'],
+
+        // Undergrad Requestor Registration — Phase 0/4.
+        //   View    — see the Admin verification queue (Phase 4) of
+        //             email-verified, Pending submissions.
+        //   Approve — approve a submission, unlocking that account's
+        //             SSO auto-activation (Phase 3) and request-flow
+        //             access (Phase 5).
+        //   Reject  — reject a submission (requires a rejection_reason),
+        //             triggering AccountRejectedException + IdP token
+        //             revocation on that account's next login attempt.
+        //
+        // Separate tokens (rather than a single "Manage") for the same
+        // reason as free_requests' Verify/Override split above: today
+        // one Registrar Admin group performs all three, but restricting
+        // who may Approve/Reject vs. merely View the queue should live
+        // in policy configuration, not a hardcoded role check.
+        'undergrad_verification' => ['View', 'Approve', 'Reject'],
     ];
 
     /**

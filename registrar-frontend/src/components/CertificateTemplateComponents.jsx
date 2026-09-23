@@ -69,10 +69,10 @@ export const CertificatePreviewCanvas = ({ layout, certId }) => {
     <div className="relative w-full overflow-auto">
       <div className="flex min-h-180 flex-col">
         {!certConfig?.hideHeaderFooter && <CertHeader layout={layout} />}
-        <div className="flex-1">{certConfig?.renderBody(SAMPLE_FORM_DATA, layout)}</div>
+        <div className="flex-1 min-h-0">{certConfig?.renderBody(SAMPLE_FORM_DATA, layout)}</div>
 
         {!certConfig?.hideHeaderFooter && (
-          <div className="mt-4">
+          <div className="mt-auto shrink-0 pt-4">
             <CertFooter layout={layout} />
           </div>
         )}

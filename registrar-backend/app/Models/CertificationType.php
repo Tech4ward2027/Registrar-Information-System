@@ -18,6 +18,7 @@ class CertificationType extends Model
         'certificate_name', 'certificate_requirements', 'certificate_process_period', 'access_id',
         'layout_header_left_url', 'layout_header_right_url', 'layout_footer_urls',
         'layout_header_logo_size', 'layout_footer_logo_size',
+        'layout_header_lines', 'layout_header_font_size',
         'cashier_document_patterns', 'is_archived', 'archived_on', 'archived_by',
         'logbook_category_id', 'requires_source_submission', 'fulfillment_track_id',
         // FESPEC-0008 — see DocumentType's matching comment.
@@ -25,6 +26,8 @@ class CertificationType extends Model
     ];
 
     protected $casts = [
+        'layout_header_lines'        => 'array',
+        'layout_header_font_size'    => 'integer',
         'cashier_document_patterns'  => 'array',
         'is_archived'                => 'boolean',
         'archived_on'                => 'datetime',

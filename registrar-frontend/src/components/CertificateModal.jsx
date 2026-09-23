@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import GenerateCertification from '../layouts/GenerateCertificate.jsx';
 import { CERT_CONFIG } from '../utils/Certification.jsx';
 import LoadingOverlay from './LoadingOverlay.jsx';
+import ConfirmationModal from './ConfirmationModal.jsx';
 import { createPortal } from 'react-dom';
 
 const CertificateModal = ({ request, onClose, onCertificatePrinted }) => {
@@ -25,7 +26,14 @@ const CertificateModal = ({ request, onClose, onCertificatePrinted }) => {
     .map(normalizeCertName)
     .filter(Boolean);
 
-  const certNames = Array.from(new Set(requestedNames)).filter((name) => configNames.includes(name));
+  const matchedConfigs = Object.values(CERT_CONFIG).filter((cfg) => {
+    const primaryNorm = normalizeCertName(cfg?.name);
+    const otherNorms = (cfg?.otherNames || []).map(normalizeCertName);
+    const allNorms = [primaryNorm, ...otherNorms];
+    return requestedNames.some((reqName) => allNorms.includes(reqName));
+  });
+
+  const certNames = matchedConfigs.map((cfg) => cfg.name);
   const fallbackCertName = configNames[0] ?? '';
 
   // Name -> request_certificate_id map, built from the real backend rows
@@ -54,6 +62,7 @@ const CertificateModal = ({ request, onClose, onCertificatePrinted }) => {
   const [opening, setOpening] = useState(true);
   const [editLoading, setEditLoading] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(101);
+  const [proceedUnmatched, setProceedUnmatched] = useState(false);
 
   useEffect(() => {
     const headerElement = document.querySelector('header');
@@ -89,14 +98,15 @@ const CertificateModal = ({ request, onClose, onCertificatePrinted }) => {
     setTimeout(onClose, 300);
   };
 
-  const selectedCert = certNames.length > 0 ? certNames[0] : fallbackCertName;
+  const hasMatchingCert = certNames.length > 0;
+  const selectedCert = hasMatchingCert ? certNames[0] : (proceedUnmatched ? fallbackCertName : null);
 
   if (!visible) return null;
 
   const initialData = {
     requestId: request.id,
     docType: selectedCert,
-    certificateNames: certNames,
+    certificateNames: hasMatchingCert ? certNames : [],
     fullName: request.studentName ?? '',
     studentNum: request.studentNum?? '',
     course: request.course ?? '',
@@ -123,28 +133,43 @@ const CertificateModal = ({ request, onClose, onCertificatePrinted }) => {
         aria-hidden="true"
       />
 
+      {/* Confirmation Modal when no matching certification requested */}
+      {!hasMatchingCert && !proceedUnmatched && (
+        <ConfirmationModal
+          isOpen={true}
+          type="confirm"
+          title="No Matching Certification Found"
+          message="This request does not specify a matched certification template (e.g. Certificate of GWA, Non-Issuance of SO)."
+          confirmLabel="Continue"
+          onClose={handleClose}
+          onConfirm={() => setProceedUnmatched(true)}
+        />
+      )}
+
       {/* Slide-in Panel */}
-      <div
-        id="cert-modal-panel"
-        className={`fixed bottom-0 left-0 right-0 lg:left-72 bg-white dark:bg-[#18191a] flex flex-col shadow-2xl transition-all duration-300 ease-in-out ${
-          visible ? "translate-x-0" : "translate-x-full"
-        }`}
-        style={{ zIndex: 9999, top: `${headerHeight}px` }}
-      >
-        <div id="cert-modal-content" className="flex-1 overflow-auto h-full bg-white dark:bg-[#18191a]">
-          <GenerateCertification
-            key={selectedCert}
-            initialData={initialData}
-            onClose={handleClose}
-            onCertificatePrinted={onCertificatePrinted}
-            onLoadingChange={setEditLoading}
-          />
+      {(hasMatchingCert || proceedUnmatched) && (
+        <div
+          id="cert-modal-panel"
+          className={`fixed bottom-0 left-0 right-0 lg:left-72 bg-white dark:bg-[#18191a] flex flex-col shadow-2xl transition-all duration-300 ease-in-out ${
+            visible ? "translate-x-0" : "translate-x-full"
+          }`}
+          style={{ zIndex: 9999, top: `${headerHeight}px` }}
+        >
+          <div id="cert-modal-content" className="flex-1 overflow-auto h-full bg-white dark:bg-[#18191a]">
+            <GenerateCertification
+              key={selectedCert}
+              initialData={initialData}
+              onClose={handleClose}
+              onCertificatePrinted={onCertificatePrinted}
+              onLoadingChange={setEditLoading}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       <LoadingOverlay
         isVisible={opening || editLoading}
-        message= "Loading Certificate..." 
+        message="Loading Certificate..." 
       />
     </div>,
     document.body

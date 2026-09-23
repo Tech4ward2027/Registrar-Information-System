@@ -193,21 +193,29 @@
     box-shadow: none !important;
     border: none !important;
     background: transparent !important;
+    transform: none !important;
+    position: static !important;
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
   }
 
   /* ── Print area layout ── */
   #print-area {
     visibility: visible !important;
     position: absolute !important;
-    width: 100% !important;
-    height: 100% !important;
-    box-sizing: border-box !important;
-    page-break-inside: avoid !important;
     top: 0 !important;
     left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
     max-width: 100% !important;
+    max-height: 100% !important;
+    box-sizing: border-box !important;
+    page-break-inside: avoid !important;
     margin: 0 !important;
-    padding: var(--print-margin, 1.5cm) !important;
+    padding: var(--print-margin, 0.5in) !important;
     box-shadow: none !important;
     border: none !important;
     background: white !important;
@@ -1285,6 +1293,10 @@
 }
 
 /* Fix browser autofill dark/blue-gray background overriding light styles */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
 .lp-modal input:-webkit-autofill,
 .lp-modal input:-webkit-autofill:hover,
 .lp-modal input:-webkit-autofill:focus,

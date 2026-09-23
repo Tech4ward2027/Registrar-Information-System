@@ -45,6 +45,15 @@ class DatabaseSeeder extends Seeder
         // unclaimed-document policy, on top of the base set seeded above.
         $this->call(NotificationTypeSeeder::class);
 
+        // Undergrad Requestor Registration — Phase 4. Adds the
+        // approved/rejected decision notification types. Keyed on
+        // trigger_event rather than an explicit notification_type_id —
+        // see that seeder's docblock for why. Must be called from here
+        // (not only run by hand) or NotificationService::send() logs
+        // "unknown trigger_event" and the decision notification silently
+        // never exists, including in every RefreshDatabase test run.
+        $this->call(UndergradRequestorNotificationTypeSeeder::class);
+
         // LocalAuthPasswordSeeder was removed — it contained real plaintext
         // passwords committed to source control. Do not recreate it with
         // real credentials. For local dev accounts, use LocalDevSeeder,
@@ -199,7 +208,13 @@ class DatabaseSeeder extends Seeder
     // Referenced by users.role_id (FK, restrict on delete). Values and
     // exact string casing confirmed against a real database export —
     // matches SystemUser::ROLE_* constants (1=student, 2=alumni,
-    // 3=admin, 4=super_admin).
+    // 3=admin, 4=super_admin, 5=undergrad_requestor).
+    //
+    // role_id 5 (undergrad_requestor) is also inserted directly by
+    // 2026_09_14_000000_add_undergrad_requestor_role.php so it reliably
+    // exists after a plain `php artisan migrate` — this seeder entry
+    // keeps `migrate:fresh --seed` consistent with that migration
+    // rather than being the only place the row is created.
     // ─────────────────────────────────────────────
     private function seedRoles(): void
     {
@@ -208,6 +223,7 @@ class DatabaseSeeder extends Seeder
             ['role_id' => 2, 'role_name' => 'alumni'],
             ['role_id' => 3, 'role_name' => 'admin'],
             ['role_id' => 4, 'role_name' => 'super_admin'],
+            ['role_id' => 5, 'role_name' => 'undergrad_requestor'],
         ];
 
         foreach ($rows as $row) {

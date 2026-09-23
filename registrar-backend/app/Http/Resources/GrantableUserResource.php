@@ -42,6 +42,15 @@ class GrantableUserResource extends JsonResource
             SystemUser::ROLE_STUDENT => $this->studentProfile,
             SystemUser::ROLE_ADMIN, SystemUser::ROLE_SUPER_ADMIN => $this->adminProfile,
             SystemUser::ROLE_ALUMNI => $this->alumniProfile,
+            // Undergrad Requestor Registration — Phase 5. Without this
+            // case, this resource — used by BOTH
+            // RoleAssignmentController::searchUsers() and (Phase 5)
+            // CashierOrOverrideController::searchUsers() — silently
+            // fell through to `default => null` for every Undergrad
+            // Requestor result, showing the admin their raw email in
+            // the picker instead of a name, the moment role 5 became
+            // searchable through either endpoint.
+            SystemUser::ROLE_UNDERGRAD_REQUESTOR => $this->undergradRequestorProfile,
             default => null,
         };
 
@@ -55,11 +64,16 @@ class GrantableUserResource extends JsonResource
     private function resolveRoleName(int $roleId): string
     {
         return match ($roleId) {
-            SystemUser::ROLE_STUDENT     => 'Student',
-            SystemUser::ROLE_ALUMNI      => 'Alumni',
-            SystemUser::ROLE_ADMIN       => 'Admin',
-            SystemUser::ROLE_SUPER_ADMIN => 'Super Admin',
-            default                      => 'Unknown',
+            SystemUser::ROLE_STUDENT             => 'Student',
+            SystemUser::ROLE_ALUMNI              => 'Alumni',
+            // Undergrad Requestor Registration — Phase 5. Same gap as
+            // resolveFullName() above — this role is now a real result
+            // in both pickers this resource backs, so 'Unknown' is no
+            // longer an acceptable fallback for it specifically.
+            SystemUser::ROLE_UNDERGRAD_REQUESTOR => 'Undergrad Requestor',
+            SystemUser::ROLE_ADMIN               => 'Admin',
+            SystemUser::ROLE_SUPER_ADMIN          => 'Super Admin',
+            default                               => 'Unknown',
         };
     }
 }

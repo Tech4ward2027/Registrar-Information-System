@@ -35,12 +35,16 @@ export const useCertificateTemplates = () => {
   const isUndoRedoActionRef = useRef(false);
 
   const pushToHistory = (currentLayout) => {
-    const imageState = {
+    const layoutSnapshot = {
       headerLeftUrl: currentLayout.headerLeftUrl,
       headerRightUrl: currentLayout.headerRightUrl,
-      footerUrls: [...currentLayout.footerUrls],
+      footerUrls: [...(currentLayout.footerUrls || [])],
+      headerLogoSize: currentLayout.headerLogoSize,
+      footerLogoSize: currentLayout.footerLogoSize,
+      headerFontSize: currentLayout.headerFontSize,
+      headerLines: [...(currentLayout.headerLines || [])],
     };
-    setPast((prev) => [...prev, imageState]);
+    setPast((prev) => [...prev, layoutSnapshot]);
     setFuture([]);
   };
 
@@ -446,29 +450,35 @@ export const useCertificateTemplates = () => {
   const resetLayout = () => {
     pushToHistory(layout);
     setLayout({ ...DEFAULT_CERTIFICATE_LAYOUT });
+    setSuccessMessage("Layout reset to defaults.");
+    setTimeout(() => {
+      setSuccessMessage("");
+    }, 3000);
   };
 
   const undo = () => {
     if (past.length === 0) return;
 
-    const previousImageState = past[past.length - 1];
+    const previousState = past[past.length - 1];
     const newPast = past.slice(0, -1);
 
-    const currentImageState = {
+    const currentState = {
       headerLeftUrl: layout.headerLeftUrl,
       headerRightUrl: layout.headerRightUrl,
-      footerUrls: [...layout.footerUrls],
+      footerUrls: [...(layout.footerUrls || [])],
+      headerLogoSize: layout.headerLogoSize,
+      footerLogoSize: layout.footerLogoSize,
+      headerFontSize: layout.headerFontSize,
+      headerLines: [...(layout.headerLines || [])],
     };
 
-    setFuture((prevFuture) => [currentImageState, ...prevFuture]);
+    setFuture((prevFuture) => [currentState, ...prevFuture]);
     setPast(newPast);
 
     isUndoRedoActionRef.current = true;
     setLayout((prev) => ({
       ...prev,
-      headerLeftUrl: previousImageState.headerLeftUrl,
-      headerRightUrl: previousImageState.headerRightUrl,
-      footerUrls: previousImageState.footerUrls,
+      ...previousState,
     }));
     setSaveSuccess(false);
   };
@@ -476,24 +486,26 @@ export const useCertificateTemplates = () => {
   const redo = () => {
     if (future.length === 0) return;
 
-    const nextImageState = future[0];
+    const nextState = future[0];
     const newFuture = future.slice(1);
 
-    const currentImageState = {
+    const currentState = {
       headerLeftUrl: layout.headerLeftUrl,
       headerRightUrl: layout.headerRightUrl,
-      footerUrls: [...layout.footerUrls],
+      footerUrls: [...(layout.footerUrls || [])],
+      headerLogoSize: layout.headerLogoSize,
+      footerLogoSize: layout.footerLogoSize,
+      headerFontSize: layout.headerFontSize,
+      headerLines: [...(layout.headerLines || [])],
     };
 
-    setPast((prevPast) => [...prevPast, currentImageState]);
+    setPast((prevPast) => [...prevPast, currentState]);
     setFuture(newFuture);
 
     isUndoRedoActionRef.current = true;
     setLayout((prev) => ({
       ...prev,
-      headerLeftUrl: nextImageState.headerLeftUrl,
-      headerRightUrl: nextImageState.headerRightUrl,
-      footerUrls: nextImageState.footerUrls,
+      ...nextState,
     }));
     setSaveSuccess(false);
   };

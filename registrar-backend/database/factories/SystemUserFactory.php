@@ -19,4 +19,23 @@ class SystemUserFactory extends Factory
             'status'   => 'Activated',
         ];
     }
+
+    /**
+     * Undergrad Requestor Registration — Phase 1 (D3, D4). IDP is the
+     * sole authenticator for this role: no password, no idp_user_id
+     * until the person's first matched SSO login (Phase 3), and
+     * status starts at 'Pending Verification' — exactly the shape
+     * UndergradRequestorRegistrationService creates at onboarding
+     * submission time (Phase 2).
+     */
+    public function undergradRequestor(): static
+    {
+        return $this->state(fn () => [
+            'role_id'            => SystemUser::ROLE_UNDERGRAD_REQUESTOR,
+            'status'             => 'Pending Verification',
+            'password'           => null,
+            'idp_user_id'        => null,
+            'local_auth_enabled' => 0,
+        ]);
+    }
 }

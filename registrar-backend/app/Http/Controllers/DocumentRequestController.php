@@ -55,6 +55,15 @@ class DocumentRequestController extends Controller
         'academicRecord',
         'alumniProfile',
         'alumniAcademicRecord',
+        // Undergrad Requestor Registration — Phase 5. Unlike
+        // studentProfile/alumniProfile above, this is not a belongsTo
+        // through a stored FK on document_request (all four
+        // academic-record FK columns stay NULL for this role — see
+        // DocumentRequestService::buildRequestData()); it's a hasOne
+        // joined on user_id, since an Undergrad Requestor has no
+        // academic-record row for a request to point at. See
+        // DocumentRequest::undergradRequestorProfile().
+        'undergradRequestorProfile',
         'status',
         'requestPurpose',
         'documents.documentType',
@@ -514,13 +523,23 @@ class DocumentRequestController extends Controller
             ];
         }
 
-        // Resolve the customer name from the user's profile. Students and
-        // alumni have separate profile tables; admins submitting on behalf
-        // of a student are not expected to hit this path (walk-in requests
-        // bypass OR validation entirely) — and verifyOfficialReceipt() is
-        // only ever reachable by role:1,2 (student/alumni) per the route,
-        // so this branch is a defensive fallback there, not the common case.
-        $profile = $user->studentProfile ?? $user->alumniProfile ?? null;
+        // Resolve the customer name from the user's profile. Students,
+        // alumni, and (Phase 5) Undergrad Requestors each have their own
+        // profile table; admins submitting on behalf of a student are not
+        // expected to hit this path (walk-in requests bypass OR validation
+        // entirely) — and verifyOfficialReceipt() is only ever reachable
+        // by role:1,2,5 (student/alumni/undergrad-requestor) per the
+        // route, so this branch is a defensive fallback there, not the
+        // common case.
+        //
+        // Undergrad Requestor Registration — Phase 5: undergradRequestorProfile
+        // added to the chain. Without it, an Undergrad Requestor's real
+        // OR verification would silently fall through to the $profile
+        // === null branch below, which returns is_mock = true and SKIPS
+        // the Cashier cross-check entirely — turning a missing fallback
+        // into an accidental bypass of a money-facing control, not a
+        // harmless no-op.
+        $profile = $user->studentProfile ?? $user->alumniProfile ?? $user->undergradRequestorProfile ?? null;
 
         if (!$profile) {
             return ['error' => null, 'cashier_items' => [], 'is_mock' => true, 'override' => null];

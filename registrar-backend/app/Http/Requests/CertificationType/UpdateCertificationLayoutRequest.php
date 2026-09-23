@@ -25,6 +25,9 @@ class UpdateCertificationLayoutRequest extends FormRequest
             'layout_footer_urls.*'    => 'string|max:2048',
             'layout_header_logo_size' => 'nullable|integer|min:24|max:240',
             'layout_footer_logo_size' => 'nullable|integer|min:16|max:240',
+            'layout_header_lines'     => 'nullable|array',
+            'layout_header_lines.*'   => 'nullable|string|max:255',
+            'layout_header_font_size' => 'nullable|integer|min:8|max:36',
         ];
     }
 }

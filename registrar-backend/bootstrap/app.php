@@ -67,6 +67,14 @@ return Application::configure(basePath: dirname(__DIR__))
             // routes that opt into a specific flag (e.g.
             // 'feature:free_request_page'), never globally.
             'feature' => \App\Http\Middleware\EnsureFeatureEnabled::class,
+            // Undergrad Requestor Registration — Phase 5. Blocks
+            // document-request-filing endpoints for an Undergrad
+            // Requestor whose verification isn't Approved; a no-op for
+            // every other role. See EnsureUndergradRequestorApproved's
+            // docblock for why this exists as defense-in-depth on top
+            // of the SSO-provisioning gate (Phase 3) rather than as the
+            // sole control.
+            'undergrad_approved' => \App\Http\Middleware\EnsureUndergradRequestorApproved::class,
         ]);
 
         // ── Auth redirect behaviour ──────────────────────────────────────────

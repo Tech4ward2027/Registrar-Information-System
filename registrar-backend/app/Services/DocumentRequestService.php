@@ -1162,6 +1162,49 @@ class DocumentRequestService implements DocumentRequestServiceInterface
             ]);
         }
 
+        // Undergrad Requestor Registration — Phase 5.
+        //
+        // All four of document_requests' academic-record FKs
+        // (student_profile_id / student_academic_id / alumni_profile_id
+        // / alumni_academic_id) stay NULL for this role — every one of
+        // them is nullable at the schema level (see
+        // 2026_04_01_000000_create_base_schema.php), and an Undergrad
+        // Requestor has none of those records by definition: D5
+        // deliberately gave this feature its OWN profile table
+        // (undergrad_requestor_profiles) precisely so it would never be
+        // mistaken for — or need to borrow columns from — a
+        // student/alumni academic record. Display data (name, student
+        // number, program) comes from DocumentRequest::undergradRequestorProfile()
+        // instead, a hasOne joined on user_id rather than a stored FK,
+        // since there is no academic-record row to point one at.
+        //
+        // Defense-in-depth approval check: by the time this method
+        // runs, THREE layers have already said yes — RoleMiddleware
+        // ('role:1,2,5'), EnsureUndergradRequestorApproved (route
+        // middleware), and DocumentRequestPolicy::create(). This is
+        // deliberately a FOURTH, re-deriving the answer from the live
+        // DB row immediately before the write it actually protects,
+        // the same "recheck right before the write, inside the
+        // transaction" posture this class already uses for
+        // authorizeStatusChange() (see its own docblock) and the same
+        // reasoning EnsureAccountActive's docblock gives for existing
+        // on top of AdminUserService's immediate token revocation. A
+        // gap in any ONE of the other three layers — a future route
+        // edit that drops the middleware, a policy left stale — still
+        // cannot produce a DocumentRequest for an unapproved account.
+        if ($user->isUndergradRequestor()) {
+            if (!$user->undergradRequestorVerification?->isApproved()) {
+                abort(403, 'This Undergrad Requestor account has not been approved and cannot file document requests.');
+            }
+
+            return array_merge($base, [
+                'student_profile_id'  => null,
+                'student_academic_id' => null,
+                'alumni_profile_id'   => null,
+                'alumni_academic_id'  => null,
+            ]);
+        }
+
         abort(403, 'Unauthorized role.');
     }
 

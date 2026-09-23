@@ -19,8 +19,10 @@ const InputGroup = ({
   labelColor = "text-white",
   voiceEnabled = true,
   language = "en-US",
+  isDark: isDarkProp,
 }) => {
-  const { isDark } = useTheme();
+  const { isDark: themeIsDark } = useTheme();
+  const isDark = isDarkProp !== undefined ? isDarkProp : themeIsDark;
   const lastProcessedRef = useRef('');
 
   const { isListening, transcript, interimTranscript, isSupported, toggle, reset } = useVoiceRecognition({

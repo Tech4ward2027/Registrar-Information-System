@@ -77,6 +77,7 @@ export const ROLE_CONFIG = {
           { name: 'Access Requests', to: 'access-requests', icon: ClipboardDocumentCheckIcon, module: MODULE_KEYS.ACCESS_REQUESTS },
           { name: 'Cashier OR Overrides', to: 'cashier-overrides', icon: ShieldCheckIcon, module: MODULE_KEYS.CASHIER_OVERRIDES },
           { name: 'Free Requests', to: 'free-requests', icon: DocumentDuplicateIcon, module: MODULE_KEYS.FREE_REQUESTS },
+          { name: 'Undergrad Requestors', to: 'undergrad-requestors', icon: AcademicCapIcon, module: MODULE_KEYS.UNDERGRAD_VERIFICATION },
         ],
       },
       {

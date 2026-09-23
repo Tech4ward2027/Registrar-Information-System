@@ -131,11 +131,27 @@ export const resolveStatusIds = (requestStatuses) => {
  * Default dashboard visibility rules:
  *  - Awaiting Submission / Pending / Processing / Pending Signature /
  *    Ready to Claim → always shown
- *  - Completed → shown only within 1 day of the request date
+ *  - Completed → shown only within 1 day of when it was actually
+ *    completed (NOT the original request/filing date — see
+ *    statusUpdatedTimestamp below)
  *  - Everything else (Forfeited, Cancelled, ...) → hidden unless filtered/searched
+ *
+ * BUG FIX — "QR scan succeeds but the dashboard status doesn't change":
+ * the Completed branch used to key off `timestamp`, which is
+ * requested_at — the date the request was originally FILED, not the
+ * date it was completed. Real requests almost always take longer than
+ * 24h between filing and being claimed, so by the time staff actually
+ * scanned the ticket, (Date.now() - requested_at) was already past the
+ * window — the request would flip to Completed in the database and
+ * then immediately vanish from the default "Active requests" view with
+ * no visible confirmation, which read as "nothing happened." Backend
+ * now stamps document_request.status_updated_at on every real status
+ * change (see DocumentRequest::booted()'s saving() hook, migration
+ * 2026_09_16_000000_add_status_updated_at_to_document_request); this
+ * checks that real completion timestamp instead.
  */
 export const isDefaultVisible = (req, resolvedStatusIds) => {
-  const { statusId, statusName, timestamp } = req;
+  const { statusId, statusName, timestamp, statusUpdatedTimestamp } = req;
   const name = String(statusName ?? '').trim().toLowerCase();
   if (statusId === resolvedStatusIds.AWAITING_SUBMISSION || name === 'awaiting submission') return true;
   if (statusId === resolvedStatusIds.PENDING || name === 'pending')         return true;
@@ -143,7 +159,14 @@ export const isDefaultVisible = (req, resolvedStatusIds) => {
   if (statusId === resolvedStatusIds.PENDING_SIGNATURE || name === 'pending signature') return true;
   if (statusId === resolvedStatusIds.READY || name === 'ready to claim')    return true;
   if (statusId === resolvedStatusIds.COMPLETED || name === 'completed') {
-    return timestamp > 0 && (Date.now() - timestamp) <= COMPLETED_VISIBILITY_MS;
+    // Fall back to `timestamp` (requested_at) only for the rare case
+    // where status_updated_at hasn't been populated yet (e.g. the API
+    // response predates the backend deploy) — same "never let a
+    // missing value silently break the check" spirit as
+    // STATUS_FALLBACK above, not a reintroduction of the bug: once the
+    // migration backfill runs, every row has a real value here.
+    const effectiveTimestamp = statusUpdatedTimestamp > 0 ? statusUpdatedTimestamp : timestamp;
+    return effectiveTimestamp > 0 && (Date.now() - effectiveTimestamp) <= COMPLETED_VISIBILITY_MS;
   }
   return false;
 };
@@ -153,6 +176,16 @@ export const isDefaultVisible = (req, resolvedStatusIds) => {
  */
 export const mapDocumentRequest = (r, resolvedStatusIds, docTypeName) => {
   const requestDate = r.requested_at ? new Date(r.requested_at) : null;
+
+  // Bug fix — Staff Dashboard "Completed" visibility window (see
+  // isDefaultVisible's docblock below for the full writeup). Backed by
+  // the new document_request.status_updated_at column, stamped by the
+  // backend every time status_id actually changes — falls back to
+  // requested_at only when that column hasn't been populated yet (an
+  // API response from before the migration/deploy), never as the
+  // everyday case.
+  const statusUpdatedDate = r.status_updated_at ? new Date(r.status_updated_at) : requestDate;
+  const statusUpdatedTimestamp = statusUpdatedDate ? statusUpdatedDate.getTime() : 0;
 
   let computedStatusId = r.status?.status_id;
   let computedStatusName = r.status?.status_name;
@@ -206,7 +239,7 @@ export const mapDocumentRequest = (r, resolvedStatusIds, docTypeName) => {
     if (r.certificates?.length > 0) {
       r.certificates.forEach(c => {
         if (c.certification_type?.certificate_name) {
-          docs.push(`Certification: ${c.certification_type.certificate_name}`);
+          docs.push(c.certification_type.certificate_name);
         }
       });
     }
@@ -246,14 +279,20 @@ export const mapDocumentRequest = (r, resolvedStatusIds, docTypeName) => {
     eventTitle: r.event_title ?? '',
     or_number: r.or_number ?? '',
     date: requestDate
-      ? requestDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+      ? requestDate.toLocaleDateString('en-US', { month: 'long', day: '2-digit', year: 'numeric' })
       : 'N/A',
     time: requestDate
-      ? requestDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+      ? requestDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
       : '',
     statusId: computedStatusId,
     statusName: computedStatusName,
     timestamp: requestDate ? requestDate.getTime() : 0,
+    // See isDefaultVisible() below — this is the request's actual last
+    // status-change time (status_updated_at), NOT its filing date.
+    // Intentionally a separate field from `timestamp` above: sorting by
+    // "Recent/Old Requests" should still order by filing date, only the
+    // Completed-visibility window needs the completion date instead.
+    statusUpdatedTimestamp,
     // Archive state — a flag independent of status_id, not a status
     // itself. Restoring a record leaves statusId/statusName exactly
     // as they were (Archive Rules policy).

@@ -27,7 +27,7 @@ export const STATUS_CONFIG = {
   4:  { label: "Forfeited",          classes: "bg-red-100 text-red-700 border-red-200"         },
   5:  { label: "Cancelled",          classes: "bg-orange-100 text-orange-700 border-orange-200"},
   6:  { label: "Awaiting Signature", classes: "bg-orange-100 text-orange-700 border-orange-200"},
-  12: { label: "Awaiting Submission",classes: "bg-purple-100 text-purple-700 border-purple-200"},
+  12: { label: "Awaiting Submission",classes: "bg-emerald-100 text-emerald-700 border-emerald-200"},
   13: { label: "Withdrawn",          classes: "bg-red-100 text-red-700 border-red-200"       },
   14: { label: "Closed - Unable to Process", classes: "bg-red-100 text-red-700 border-red-200" },
 };

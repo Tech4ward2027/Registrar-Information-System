@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthProvider";
 import risImage  from "../assets/RIS1.png";
 import logoImage from "../assets/puplogoimage.png";
@@ -13,6 +13,7 @@ const GMAIL_COMPOSE_URL = "https://mail.google.com/mail/?view=cm&fs=1&to=tech4wa
 const NAV_ITEMS = [
   { id: "hero", label: "Home" },
   { id: "announcements", label: "Announcements" },
+  { id: "faqs", label: "FAQs" },
   { id: "about", label: "About Us" },
 ];
 
@@ -127,7 +128,14 @@ const LandingPage = () => {
   const scrollTo = (id) => {
     const element = document.getElementById(id);
     if (element) {
-      element.scrollIntoView({ behavior: "smooth" });
+      const headerOffset = 90;
+      const elementPosition = element.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: "smooth"
+      });
     }
   };
 

@@ -99,8 +99,11 @@ const buildFieldConfig = (courseOptions) => [
 ];
 
 // ─── Memoized Certificate Preview ───
-  const CertificatePreview = React.memo(({ certConfig, activeLayout, debouncedFormData, isDark, pageDimensions, marginValue }) => {
+  const CertificatePreview = React.memo(({ certConfig, activeLayout, debouncedFormData, isDark, pageDimensions, marginValue, margins }) => {
     const pageSizeSpec = `${pageDimensions.widthInches}in ${pageDimensions.heightInches}in`;
+
+    const fontScale = useMemo(() => 1.0, []);
+
     return (
       <div 
         id="print-area" 
@@ -117,7 +120,7 @@ const buildFieldConfig = (courseOptions) => [
           flexDirection: "column",
           boxSizing: "border-box",
         }}
-        className="bg-white text-black"
+        className="bg-white text-black print:!w-full print:!h-full print:!min-h-0 print:!max-h-full"
       >
         <style dangerouslySetInnerHTML={{__html: `
           @page {
@@ -127,7 +130,12 @@ const buildFieldConfig = (courseOptions) => [
         `}} />
         {!certConfig?.hideHeaderFooter && <CertHeader layout={activeLayout} />}
         
-        <div className="flex-1 overflow-visible">{certConfig?.renderBody(debouncedFormData, activeLayout)}</div>
+        <div 
+          className="flex-1 min-h-0 overflow-visible transition-all"
+          style={{ fontSize: `${fontScale * 100}%` }}
+        >
+          {certConfig?.renderBody(debouncedFormData, activeLayout)}
+        </div>
         
         {!certConfig?.hideHeaderFooter && <CertFooter layout={activeLayout} />}
       </div>
@@ -150,7 +158,13 @@ const GenerateCertification = ({ initialData, onClose, onCertificatePrinted, onL
       const normalizedDocType = normalizeCertName(docType);
       if (!normalizedDocType) return null;
 
-      const matchedEntry = Object.entries(CERT_CONFIG).find(([, config]) => normalizeCertName(config.name) === normalizedDocType);
+      const matchedEntry = Object.entries(CERT_CONFIG).find(([, config]) => {
+        if (normalizeCertName(config.name) === normalizedDocType) return true;
+        if (Array.isArray(config.otherNames)) {
+          return config.otherNames.some((alias) => normalizeCertName(alias) === normalizedDocType);
+        }
+        return false;
+      });
       return matchedEntry ? Number(matchedEntry[0]) : null;
     },
     []
@@ -215,7 +229,10 @@ useEffect(() => {
         certs.forEach((cert) => {
           const normalizedName = normalizeCertName(cert?.certificate_name);
           const certConfigId = Object.entries(CERT_CONFIG).find(
-            ([_, config]) => normalizeCertName(config.name) === normalizedName
+            ([id, config]) =>
+              Number(id) === Number(cert.certificate_type_id) ||
+              normalizeCertName(config.name) === normalizedName ||
+              (Array.isArray(config.otherNames) && config.otherNames.some((alias) => normalizeCertName(alias) === normalizedName))
           )?.[0];
           
           if (certConfigId) {
@@ -246,9 +263,13 @@ useEffect(() => {
         if (lockDocTypeToRequest) {
           const requestedIdsFromNames = requestedCertNames
             .map((name) => {
-              return Object.entries(CERT_CONFIG).find(
-                ([_, config]) => normalizeCertName(config.name) === name
-              )?.[0];
+              return Object.entries(CERT_CONFIG).find(([_, config]) => {
+                if (normalizeCertName(config.name) === name) return true;
+                if (Array.isArray(config.otherNames)) {
+                  return config.otherNames.some((alias) => normalizeCertName(alias) === name);
+                }
+                return false;
+              })?.[0];
             })
             .filter(Boolean)
             .map(Number);
@@ -260,10 +281,8 @@ useEffect(() => {
             ])
           );
           
-          // Apply the restriction if we successfully mapped the requested IDs
-          if (requestedIds.length > 0) {
-            finalDocTypeOptions = requestedIds;
-          }
+          // Apply the restriction to requested IDs
+          finalDocTypeOptions = requestedIds;
         }
 
         // 4. Update the States
@@ -274,12 +293,16 @@ useEffect(() => {
         // Ensure the current selection is valid for the new restricted list
         setFormData((prev) => {
           const prevDocType = Number(prev.docType);
-          const defaultId = finalDocTypeOptions.includes(prevDocType) ? prevDocType : (finalDocTypeOptions[0] ?? prevDocType ?? null);
+          const defaultId = finalDocTypeOptions.includes(prevDocType)
+            ? prevDocType
+            : (finalDocTypeOptions.length > 0 ? finalDocTypeOptions[0] : null);
           return { ...prev, docType: defaultId };
         });
         setSavedData((prev) => {
           const prevDocType = Number(prev.docType);
-          const defaultId = finalDocTypeOptions.includes(prevDocType) ? prevDocType : (finalDocTypeOptions[0] ?? prevDocType ?? null);
+          const defaultId = finalDocTypeOptions.includes(prevDocType)
+            ? prevDocType
+            : (finalDocTypeOptions.length > 0 ? finalDocTypeOptions[0] : null);
           return { ...prev, docType: defaultId };
         });
 
@@ -487,11 +510,13 @@ useEffect(() => {
 
   const updateScale = useCallback(() => {
     if (!previewContainerRef.current) return;
-    const containerWidth = previewContainerRef.current.clientWidth;
-    const availableWidth = Math.max(200, containerWidth - 32); 
-    const targetWidth = pageDimensions.width;
-    setScale(Math.min(1, availableWidth / targetWidth));
-  }, [pageDimensions.width]);
+    const rect = previewContainerRef.current.getBoundingClientRect();
+    const availableWidth = Math.max(200, rect.width - 32);
+    const availableHeight = Math.max(200, rect.height - 32);
+    const scaleX = availableWidth / pageDimensions.width;
+    const scaleY = availableHeight / pageDimensions.height;
+    setScale(Math.min(1, scaleX, scaleY));
+  }, [pageDimensions.width, pageDimensions.height]);
 
   useEffect(() => {
     updateScale();
@@ -527,51 +552,59 @@ useEffect(() => {
     setSavedData((prev) => (prev.signee ? prev : { ...prev, signee: signatories[0].name }));
   }, [signatories]);
 
+  const debouncedFormData = useDebounce(formData, 200);
+
   const FIELD_CONFIG = buildFieldConfig(courseOptions);
 
   return (
-    <div className={`flex flex-col p-5 bg-transparent ${isDark ? 'bg-[#18191a]' : 'bg-white'}`}>
+    <div className={`flex flex-col min-h-screen p-4 md:p-6 transition-colors ${isDark ? 'bg-[#18191a] text-[#e4e6eb]' : 'bg-gray-50 text-gray-900'}`}>
 
       {/* Header Toolbar */}
-      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 pt-4 pb-3 md:px-6 md:pt-6 md:pb-4 print:hidden">
-        <div className={`flex flex-col gap-4 rounded-2xl px-4 py-4 shadow-sm backdrop-blur supports-backdrop-filter:bg-white/10 md:flex-row md:items-end md:justify-between md:px-5 md:py-5 ${isDark ? 'border-[#3e4042] bg-[#0f0f0f]' : 'border-stone-200/80 bg-white/90'}`}>
-          <div className="flex flex-wrap items-end gap-4 relative z-10 w-full md:flex-1">
-            <div className="w-full md:max-w-xs shrink-0">
+      <div className="relative z-10 w-full max-w-7xl mx-auto mb-4 print:hidden">
+        <div className={`flex flex-col gap-4 rounded-2xl p-4 sm:p-5 shadow-sm border transition-colors md:flex-row md:items-center md:justify-between ${
+          isDark ? 'border-[#3e4042] bg-[#242526]' : 'border-gray-200 bg-white'
+        }`}>
+          <div className="flex flex-wrap items-center gap-3 relative z-10 w-full md:flex-1">
+            <div className="w-full sm:w-64 md:max-w-xs shrink-0">
               <DropDown
                 label="Certification Type"
                 name="docType"
                 value={certIdToName[formData.docType] || "Certificate"}
                 onChange={handleChange}
                 options={docTypeDisplayOptions}
-                labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}
+                labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-700'}
               />
             </div>
-            <div className="w-30 md:w-35 shrink-0">
+            <div className="w-28 sm:w-32 shrink-0">
               <DropDown
-                label="Size"
+                label="Paper Size"
                 name="paperSize"
                 value={paperSize}
                 onChange={(e) => setPaperSize(e.target.value)}
                 options={["Letter", "A4", "Legal"]}
-                labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}
+                labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-700'}
               />
             </div>
-            <div className="w-37.5 md:w-45 shrink-0">
+            <div className="w-36 sm:w-40 shrink-0">
               <DropDown
                 label="Margins"
                 name="margins"
                 value={margins}
                 onChange={(e) => setMargins(e.target.value)}
                 options={["Normal (0.75\")", "Narrow (0.25\")", "Wide (1.0\")", "None"]}
-                labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}
+                labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-700'}
               />
             </div>
           </div>
-          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+          <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
             {onClose && (
               <button
                 onClick={onClose}
-                className={`w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm transition-all active:scale-95 md:px-6 md:py-3 md:text-base ${isDark ? 'border-[#3e4042] bg-[#2a2a2f] text-[#e4e6eb]' : 'border-stone-300 bg-stone-100 text-stone-700 hover:bg-stone-200'}`}
+                className={`flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold shadow-xs transition-all active:scale-95 ${
+                  isDark
+                    ? 'border-[#3e4042] bg-[#2a2a2f] text-[#e4e6eb] hover:bg-[#353539]'
+                    : 'border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
               >
                 ← Back
               </button>
@@ -579,118 +612,126 @@ useEffect(() => {
             <button
               onClick={handlePrint}
               disabled={printLoading}
-              className={`w-full sm:w-auto flex-1 md:flex-none flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-bold 
-                shadow-lg transition-all md:px-8 md:py-3 md:text-base ${
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold shadow-md transition-all active:scale-95 ${
                 printLoading
-                  ? 'bg-gray-400 cursor-not-allowed opacity-75 text-white'
+                  ? 'bg-gray-400 cursor-not-allowed text-white'
                   : isDark
-                    ? 'bg-[#2a2a2f] hover:bg-[#353539] text-[#e4e6eb] border border-[#3e4042] active:scale-95'
-                    : 'bg-pup-dark-maroon hover:bg-[#4a0000] text-white active:scale-95 shadow-stone-400/40'
+                    ? 'bg-[#2a2a2f] hover:bg-[#353539] text-[#e4e6eb] border border-[#3e4042]'
+                    : 'bg-[#800000] hover:bg-[#600000] text-white shadow-red-950/20'
               }`}
             >
-              <PrinterIcon className="w-4 h-4 md:w-5 md:h-5" />
-              {printLoading ? 'Preparing...' : 'Print File'}
+              <PrinterIcon className="w-4 h-4" />
+              {printLoading ? 'Preparing...' : 'Print Certificate'}
             </button>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col lg:flex-row gap-6 items-start w-full max-w-7xl mx-auto px-4 md:px-6 pb-6 
-      overflow-visible lg:overflow-visible print:block print:max-w-none print:px-0 print:pb-0 print:overflow-visible">
+      <div className="flex-1 flex flex-col lg:flex-row gap-6 items-start w-full max-w-7xl mx-auto print:block print:max-w-none print:p-0">
 
-        {/* Left Sidebar */}
-        <div className="w-full lg:w-88 xl:w-96 shrink-0 order-1 print:hidden">
-          <div className="relative p-2 md:p-3">
-            <div className={`rounded-2xl p-4 md:p-6 overflow-visible ${isDark ? 'border-[#3e4042] bg-[#242526]/95 text-[#e4e6eb]' : 
-              'border-stone-200/80 bg-white/95 shadow-md shadow-stone-200/60'}`}>
-              <h3 className={`mb-6 text-base font-extrabold uppercase tracking-tight md:text-lg ${isDark ? 'text-white' : 'text-[#800000]'}`}>Edit Information</h3>
-              <form className={`space-y-4 md:space-y-6 ${loading ? "opacity-50 pointer-events-none" : ""}`}>
-                {loading && <p className="text-xs md:text-sm text-stone-500 animate-pulse">Fetching academic records...</p>}
+        {/* Form Controls Sidebar */}
+        <div className="w-full lg:w-96 shrink-0 order-1 print:hidden">
+          <div className={`rounded-2xl border p-5 shadow-sm transition-colors ${
+            isDark ? 'border-[#3e4042] bg-[#242526] text-[#e4e6eb]' : 'border-gray-200 bg-white text-gray-900'
+          }`}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-base font-extrabold uppercase tracking-tight ${isDark ? 'text-white' : 'text-[#800000]'}`}>
+                Edit Information
+              </h3>
+              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                isDark ? 'bg-[#3a3b3c] text-[#b0b3b8]' : 'bg-gray-100 text-gray-600'
+              }`}>
+                Live Preview
+              </span>
+            </div>
 
+            <form className={`space-y-4 ${loading ? "opacity-50 pointer-events-none" : ""}`}>
+              {loading && <p className="text-xs text-amber-500 animate-pulse">Loading academic record data...</p>}
 
-
-                {FIELD_CONFIG.map(([name, type, label, props]) => {
-                  if (!shouldShow(name)) return null;
-                  if (type === "dropdown") {
-                    return (
-                      <DropDown
-                        key={name}
-                        label={label}
-                        name={name}
-                        value={formData[name]}
-                        onChange={handleChange}
-                        options={props.options}
-                        labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}
-                      />
-                    );
-                  }
+              {FIELD_CONFIG.map(([name, type, label, props]) => {
+                if (!shouldShow(name)) return null;
+                if (type === "dropdown") {
                   return (
-                    <InputGroup
+                    <DropDown
                       key={name}
                       label={label}
                       name={name}
                       value={formData[name]}
                       onChange={handleChange}
-                      {...props}
-                      voiceEnabled={props.type !== "date"}
-                      labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-600'} 
+                      options={props.options}
+                      labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-700'}
                     />
                   );
-                })}
+                }
+                return (
+                  <InputGroup
+                    key={name}
+                    label={label}
+                    name={name}
+                    value={formData[name]}
+                    onChange={handleChange}
+                    {...props}
+                    voiceEnabled={props.type !== "date"}
+                    labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-700'} 
+                  />
+                );
+              })}
 
-                <InputGroup
-                  label="Date Issued"
-                  type="date"
-                  name="date"
-                  value={formData.date}
-                  onChange={handleChange}
-                  voiceEnabled={false}
-                  labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}
-                  max={getTodayDate()}
-                />
+              <InputGroup
+                label="Date Issued"
+                type="date"
+                name="date"
+                value={formData.date}
+                onChange={handleChange}
+                voiceEnabled={false}
+                labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-700'}
+                max={getTodayDate()}
+              />
 
-                <DropDown
-                  label="Signee"
-                  name="signee"
-                  value={formData.signee}
-                  onChange={handleChange}
-                  options={signeeOptions}
-                  labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}
-                />
+              <DropDown
+                label="Signee"
+                name="signee"
+                value={formData.signee}
+                onChange={handleChange}
+                options={signeeOptions}
+                labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-700'}
+              />
 
-                <button
-                  type="button"
-                  onClick={() => setSavedData({ ...formData })}
-                  className={`w-full mt-6 rounded-lg font-semibold py-2.5 transition-all active:scale-95 ${
-                    isDark
-                      ? 'bg-[#2a2a2f] hover:bg-[#353539] text-[#e4e6eb] border border-[#3e4042]'
-                      : 'bg-pup-dark-maroon hover:bg-[#4a0000] text-white'
-                  }`}
-                >
-                  Save Changes
-                </button>
-              </form>
-            </div>
+              <button
+                type="button"
+                onClick={() => setSavedData({ ...formData })}
+                className={`w-full mt-5 rounded-xl font-bold py-2.5 text-sm transition-all active:scale-95 ${
+                  isDark
+                    ? 'bg-[#2a2a2f] hover:bg-[#353539] text-[#e4e6eb] border border-[#3e4042]'
+                    : 'bg-[#800000] hover:bg-[#600000] text-white shadow-md'
+                }`}
+              >
+                Apply Changes
+              </button>
+            </form>
           </div>
         </div>
 
-        {/* Certificate Preview */}
-        <div className={`relative order-2 flex flex-1 flex-col overflow-y-auto custom-scrollbar rounded-2xl min-h-96 
-          sm:min-h-120 lg:min-h-150 max-h-[78vh] lg:max-h-[80vh] print:bg-white print:text-black print:rounded-none 
-          print:border-0 print:min-h-0 print:max-h-none print:overflow-visible ${isDark ? 'border-[#3e4042] bg-[#242526]/90 text-[#e4e6eb]' : 
-          'border-stone-200/80 bg-white/90 shadow-lg shadow-stone-200/70'}`}>
-          <div className="pointer-events-none absolute inset-0 
-          bg-[radial-gradient(circle_at_15%_20%,rgba(90,90,90,0.07),transparent_40%),radial-gradient(circle_at_85%_10%,rgba(120,120,120,0.06),transparent_35%)] 
-          print:hidden" />
-          <div className={`relative p-4 border-b shrink-0 print:hidden ${isDark ? 'bg-[#242526]/95 border-[#3e4042]' : 'bg-white/95 border-stone-200'}`}>
-            <div className="flex items-center justify-between max-w-187.5 mx-auto w-full">
-              <h2 className={`text-lg font-extrabold uppercase tracking-tight ${isDark ? 'text-white' : 'text-stone-800'}`}>Certificate Preview</h2>
-            </div>
+        {/* Certificate Preview Card */}
+        <div className={`relative order-2 flex flex-1 flex-col rounded-2xl border min-h-[500px] max-h-[82vh] overflow-hidden transition-colors print:bg-white print:text-black print:rounded-none print:border-0 print:min-h-0 print:max-h-none ${
+          isDark ? 'border-[#3e4042] bg-[#353638] text-[#e4e6eb]' : 'border-gray-200 bg-gray-100 text-gray-900'
+        }`}>
+          <div className={`flex items-center justify-between px-5 py-3 border-b shrink-0 print:hidden ${
+            isDark ? 'bg-[#242526] border-[#3e4042]' : 'bg-white border-gray-200'
+          }`}>
+            <h2 className={`text-sm font-extrabold uppercase tracking-tight ${isDark ? 'text-white' : 'text-gray-800'}`}>
+              Certificate Preview
+            </h2>
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${
+              isDark ? 'border-[#3e4042] bg-[#1f1f1f] text-[#b0b3b8]' : 'border-gray-200 bg-gray-50 text-gray-600'
+            }`}>
+              Scale: {Math.round(scale * 100)}%
+            </span>
           </div>
           
           <div 
             ref={previewContainerRef}
-            className="flex-1 flex justify-center items-start p-4 overflow-auto min-h-0 print:p-0 print:overflow-visible"
+            className="flex-1 flex justify-center items-start p-4 sm:p-6 overflow-auto print:p-0 print:overflow-visible"
           >
             <div 
               style={{
@@ -699,7 +740,7 @@ useEffect(() => {
                 overflow: "hidden",
                 position: "relative",
               }}
-              className="print:shadow-none print:border-0 print:w-full print:h-full shrink-0"
+              className="rounded-lg shadow-2xl transition-all border border-gray-300 dark:border-zinc-700 shrink-0 print:shadow-none print:border-0 print:!w-full print:!h-full print:!transform-none print:!static print:!p-0 print:!m-0"
             >
               <div
                 style={{
@@ -711,15 +752,16 @@ useEffect(() => {
                   top: 0,
                   left: 0,
                 }}
-                className="print:static print:transform-none"
+                className="print:!static print:!transform-none print:!w-full print:!h-full print:!p-0 print:!m-0"
               >
                 <CertificatePreview 
                   certConfig={previewCertConfig} 
                   activeLayout={activeLayout} 
-                  debouncedFormData={savedData} 
+                  debouncedFormData={debouncedFormData} 
                   isDark={isDark} 
                   pageDimensions={pageDimensions}
                   marginValue={marginValue}
+                  margins={margins}
                 />
               </div>
             </div>

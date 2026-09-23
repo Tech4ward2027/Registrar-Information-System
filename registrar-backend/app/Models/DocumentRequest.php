@@ -67,13 +67,20 @@ class DocumentRequest extends Model
     ];
 
     protected $casts = [
-        'requested_at' => 'datetime',
-        'receipt_date' => 'date',
-        'deleted_at'   => 'datetime',
-        'is_archived'  => 'boolean',
-        'archived_on'  => 'datetime',
-        'restored_on'  => 'datetime',
-        'closed_at'    => 'datetime',
+        'requested_at'      => 'datetime',
+        'receipt_date'      => 'date',
+        'deleted_at'        => 'datetime',
+        'is_archived'       => 'boolean',
+        'archived_on'       => 'datetime',
+        'restored_on'       => 'datetime',
+        'closed_at'         => 'datetime',
+        // Bug fix — Staff Dashboard "Completed" visibility window. See
+        // migration 2026_09_16_000000_add_status_updated_at_to_document_
+        // request's docblock for the full history. Deliberately NOT in
+        // $fillable below: this must only ever be set by the booted()
+        // hook off a real status_id change, never by mass assignment
+        // from a controller/request payload.
+        'status_updated_at' => 'datetime',
     ];
 
     /**
@@ -98,6 +105,18 @@ class DocumentRequest extends Model
      * Also registers ExcludeArchivedScope so archived requests are
      * invisible to every query by default — see the scope's docblock
      * for why this is a global scope rather than a per-call-site filter.
+     *
+     * Also auto-stamps status_updated_at whenever status_id changes —
+     * see migration 2026_09_16_000000_add_status_updated_at_to_document_
+     * request's docblock for the full bug history this fixes. Using a
+     * single static::saving() hook here means every current and future
+     * write path (DocumentRequestService::claimRequest()/updateRequest()/
+     * withdraw()/closeUnableToProcess(), RequestReleaseGroupService's
+     * item/group claims, RequestItemStatusService::recomputeAggregate
+     * Status(), the ShredExpiredRequests auto-forfeit cron) gets this
+     * for free, as long as it goes through an Eloquent model instance
+     * (->update()/->save()) rather than a raw query-builder bulk update
+     * — true of every status_id write site in this codebase today.
      */
     protected static function booted(): void
     {
@@ -108,6 +127,12 @@ class DocumentRequest extends Model
 
             if (empty($request->claim_code)) {
                 $request->claim_code = static::generateUniqueClaimCode();
+            }
+        });
+
+        static::saving(function (DocumentRequest $request) {
+            if ($request->isDirty('status_id')) {
+                $request->status_updated_at = now();
             }
         });
 
@@ -177,6 +202,27 @@ class DocumentRequest extends Model
     public function alumniAcademicRecord()
     {
         return $this->belongsTo(AlumniAcademicRecord::class, 'alumni_academic_id');
+    }
+
+    /**
+     * Undergrad Requestor Registration — Phase 5.
+     *
+     * Deliberately a hasOne on user_id, NOT a belongsTo like
+     * studentProfile()/alumniProfile() above. Those two follow a stored
+     * FK column on this table (student_profile_id / alumni_profile_id)
+     * because a request is tied to a specific ACADEMIC RECORD snapshot.
+     * An Undergrad Requestor has no academic record at all (D5) — both
+     * of this table's academic-record FK pairs stay NULL for this role
+     * (see DocumentRequestService::buildRequestData()) — so there is
+     * nothing for a denormalized FK to point at. Joining on user_id
+     * instead reaches the same self-declared profile
+     * SystemUser::undergradRequestorProfile() does, without needing a
+     * fifth FK column added to this table for a relationship that's
+     * always 1:1 with the request's owner anyway.
+     */
+    public function undergradRequestorProfile()
+    {
+        return $this->hasOne(UndergradRequestorProfile::class, 'user_id', 'user_id');
     }
 
     public function status()

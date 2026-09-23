@@ -23,6 +23,7 @@ export const ROLES = {
   ALUMNI:      "alumni",
   ADMIN:       "admin",
   SUPER_ADMIN: "super_admin",
+  UNDERGRAD_REQUESTOR: "undergrad_requestor",
 };
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -31,6 +32,7 @@ export const ROLE_HOME = {
   [ROLES.ALUMNI]:      "/alumni",
   [ROLES.ADMIN]:       "/staff",
   [ROLES.SUPER_ADMIN]: "/super-admin",
+  [ROLES.UNDERGRAD_REQUESTOR]: "/student",
 };
 
 // Mirrors SystemUser::ROLE_STUDENT / ROLE_ALUMNI / ROLE_ADMIN /
@@ -43,6 +45,7 @@ export const ROLE_ID = {
   ALUMNI:      2,
   ADMIN:       3,
   SUPER_ADMIN: 4,
+  UNDERGRAD_REQUESTOR: 5,
 };
 
 const ROLE_ID_TO_NAME = {
@@ -50,6 +53,8 @@ const ROLE_ID_TO_NAME = {
   [ROLE_ID.ALUMNI]:      ROLES.ALUMNI,
   [ROLE_ID.ADMIN]:       ROLES.ADMIN,
   [ROLE_ID.SUPER_ADMIN]: ROLES.SUPER_ADMIN,
+  [ROLE_ID.UNDERGRAD_REQUESTOR]: ROLES.UNDERGRAD_REQUESTOR,
+
 };
 
 export const AuthProvider = ({ children }) => {
@@ -211,6 +216,32 @@ export const AuthProvider = ({ children }) => {
 
   // -------------------------------------------------------
   // SSO callback — called by SsoCallbackPage after IdP redirect.
+  //
+  // Undergrad Requestor Registration — Phase 3 wiring. The backend's
+  // SsoCallbackController now returns THREE distinct shapes on a 403,
+  // not one, and this function must tell them apart rather than
+  // collapsing all of them into the old flat "unregistered" case:
+  //
+  //   - Unregistered / Deactivated / Expired invite:
+  //       403 { message, logout_url }                    — has logout_url
+  //   - Rejected Undergrad Requestor (D8):
+  //       403 { message, logout_url, rejected: true }     — has logout_url
+  //   - Still-Pending Undergrad Requestor (calm, expected state):
+  //       403 { message, pending_review: true }           — NO logout_url
+  //
+  // Before this fix, only `status === 403 && logoutUrl` was checked, so
+  // a still-Pending submission (which the backend deliberately sends
+  // with NO logout_url and an 'info', not 'warning', log level — see
+  // the backend controller's docblock) fell through to the generic
+  // `throw err` branch below and surfaced as a scary, auto-redirecting
+  // "Login failed" screen instead of the calm "you're still under
+  // review" message the backend was designed to support. `rejected`
+  // was also being silently dropped, so a rejected account saw the same
+  // "please register" copy as someone who never registered at all.
+  //
+  // SsoCallbackPage reads `rejection.pendingReview` / `rejection.rejected`
+  // / `rejection.logoutUrl` / `rejection.message` (all optional) off the
+  // thrown error to decide which screen to render.
   // -------------------------------------------------------
   const ssoCallback = async (code) => {
     try {
@@ -222,14 +253,21 @@ export const AuthProvider = ({ children }) => {
       const assignments = await refreshRoleAssignments();
       routeAfterAuth(userData, assignments);
     } catch (err) {
-      const status    = err.response?.status;
-      const logoutUrl = err.response?.data?.logout_url;
+      const status        = err.response?.status;
+      const body          = err.response?.data ?? {};
+      const logoutUrl     = body.logout_url;
+      const isRejected    = status === 403 && body.rejected === true;
+      const isPending     = status === 403 && body.pending_review === true;
+      const isUnregistered = status === 403 && !!logoutUrl && !isRejected;
 
       setUser(null);
 
-      if (status === 403 && logoutUrl) {
-        const rejection     = new Error("unregistered");
-        rejection.logoutUrl = logoutUrl;
+      if (isPending || isRejected || isUnregistered) {
+        const rejection        = new Error(isPending ? "pending_review" : isRejected ? "rejected" : "unregistered");
+        rejection.message      = body.message || rejection.message;
+        rejection.logoutUrl    = logoutUrl ?? null;
+        rejection.rejected     = isRejected;
+        rejection.pendingReview = isPending;
         throw rejection;
       }
       throw err;

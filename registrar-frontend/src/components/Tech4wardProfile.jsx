@@ -176,7 +176,7 @@ const Tech4wardProfile = ({ bgImage }) => {
 
   return (
     <div className="w-full overflow-hidden bg-gray-50 border-y-4 border-yellow-400">
-      <section id="announcements" className="lp-section lp-section--alt border-t-4 border-yellow-400 py-16">
+      <section id="announcements" className="lp-section lp-section--alt border-t-4 border-yellow-400 py-16 scroll-mt-28">
         <div className="lp-section-inner">
           <div className="lp-section-label text-center">Latest Updates</div>
           <h2 className="lp-section-title text-center">
@@ -245,7 +245,7 @@ const Tech4wardProfile = ({ bgImage }) => {
       </section>
 
       {/* New FAQs Section matching the design */}
-      <div id="faqs" className="relative w-full py-20 px-6 overflow-hidden border-t-4 border-yellow-400">
+      <div id="faqs" className="relative w-full py-20 px-6 overflow-hidden border-t-4 border-yellow-400 scroll-mt-28">
         <div className="absolute inset-0">
           <img src={bg} alt="Campus" className="w-full h-full object-cover" />
           <div className="absolute inset-0 lp-hero-bg-overlay" />

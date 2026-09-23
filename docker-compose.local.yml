@@ -78,6 +78,7 @@ services:
     environment:
       APP_ENV: local
       REDIS_HOST: redis
+      REDIS_CLIENT: predis    
       REDIS_PASSWORD: ${REDIS_PASSWORD:-local_dev_only}
       DB_HOST: mysql
       DB_DATABASE: ${DB_DATABASE:-ris_local}

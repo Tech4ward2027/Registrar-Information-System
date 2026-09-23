@@ -15,7 +15,13 @@ use Illuminate\Validation\Validator;
  * SystemUser::hasModuleAccess(); a regular admin needs the
  * "Cashier OR Overrides" module explicitly granted through Policy
  * Management) — so authorize() only needs to confirm the target account
- * is actually a student/alumni, not staff.
+ * is actually a student/alumni/undergrad-requestor, not staff.
+ *
+ * Undergrad Requestor Registration — Phase 5 (§3.7): an Undergrad
+ * Requestor uses the same Cashier payment flow as Student/Alumni, so
+ * belongs in the same eligibility set here. Deliberately NOT
+ * conditioned on verification status being Approved — see
+ * withValidator() below for why.
  *
  * Deliberately does NOT check "is this OR already used" or "does an
  * active override already exist for this pair" here — those are
@@ -79,10 +85,29 @@ class StoreCashierOrOverrideRequest extends FormRequest
             /** @var SystemUser|null $target */
             $target = SystemUser::find($userId);
 
-            if ($target && !in_array($target->role_id, [SystemUser::ROLE_STUDENT, SystemUser::ROLE_ALUMNI], true)) {
+            $eligibleRoles = [
+                SystemUser::ROLE_STUDENT,
+                SystemUser::ROLE_ALUMNI,
+                // Undergrad Requestor Registration — Phase 5 (§3.7).
+                // Deliberately not additionally restricted to Approved
+                // verifications: an override exists for the case where
+                // a real, valid payment doesn't match what the Cashier
+                // API expects (see the cashier_or_overrides migration's
+                // docblock), and that can happen for someone who paid
+                // in person before their registration was decided. The
+                // request-flow gate that matters — whether this person
+                // may actually FILE a document request — is enforced
+                // separately and later, by EnsureUndergradRequestorApproved
+                // and DocumentRequestService::buildRequestData(), at the
+                // point the override is actually consumed.
+                SystemUser::ROLE_UNDERGRAD_REQUESTOR,
+            ];
+
+            if ($target && !in_array($target->role_id, $eligibleRoles, true)) {
                 $validator->errors()->add(
                     'user_id',
-                    'A cashier OR override can only be issued for a student or alumni account.'
+                    'A cashier OR override can only be issued for a student, alumni, or undergrad requestor '
+                        . 'account.'
                 );
             }
         });

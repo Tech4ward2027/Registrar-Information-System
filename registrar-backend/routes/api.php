@@ -36,6 +36,8 @@ use App\Http\Controllers\CalendarExceptionController;
 use App\Http\Controllers\CalendarOverrideController;
 use App\Http\Controllers\SuperAdminAnalyticsController;
 use App\Http\Controllers\SecurityEventController;
+use App\Http\Controllers\UndergradRequestorController;
+use App\Http\Controllers\UndergradRequestorVerificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -60,6 +62,67 @@ Route::get('/business-hours/status', [BusinessHoursController::class, 'status'])
 // days) for the same public request-form banner.
 Route::get('/business-hours/upcoming-closures', [BusinessHoursController::class, 'upcomingClosures'])
     ->middleware('throttle:60,1');
+
+// Undergrad Requestor Registration — Phase 2, hardened in Phase 6.
+//
+// Public and unauthenticated by design: this IS the entry point that
+// pre-creates a 'Pending Verification' account (D4), and it is the only
+// unauthenticated WRITE endpoint in RIS. See
+// docs/undergrad-requestor-threat-model.md.
+//
+// Phase 6 replaces the anonymous per-IP throttles these routes shipped
+// with in Phase 2 ('throttle:10,1,<prefix>') with NAMED limiters
+// registered in AppServiceProvider::boot(). Three things the anonymous
+// form cannot do:
+//   1. Key on anything but the IP. A per-EMAIL bucket is what stops
+//      someone mail-bombing one person's inbox from a pool of addresses;
+//      no per-IP limit can express that.
+//   2. Stack buckets with different decay periods (per-minute AND
+//      per-day) on a single route.
+//   3. Expose a ->response() hook — which is what lets a tripped limit
+//      land in security_events instead of being a silent 429 nobody
+//      ever looks at.
+//
+// The limits themselves are config-driven: see
+// config/undergrad_requestor.php, 'rate_limits'.
+Route::post('/undergrad-requestors/register', [UndergradRequestorController::class, 'register'])
+    ->middleware('throttle:undergrad-requestor-register');
+
+Route::post('/undergrad-requestors/confirm-email', [UndergradRequestorController::class, 'confirmEmail'])
+    ->middleware('throttle:undergrad-requestor-confirm-email');
+
+// Phase 6 (RA 10173). Serves the Data Privacy Act notice text together
+// with the version identifier that will be recorded against any
+// submission made after reading it, so the wording the form displays and
+// the consent version the backend stores can never drift apart. A notice
+// hardcoded in the SPA would diverge from consent_version on the first
+// copy edit, and nobody would find out until an audit.
+//
+// Read-only and PII-free, but still throttled — it is a public endpoint,
+// and "harmless" is not the same as "free to serve".
+Route::get('/undergrad-requestors/registration-notice', [UndergradRequestorController::class, 'registrationNotice'])
+    ->middleware('throttle:undergrad-requestor-notice');
+
+// Undergrad Requestor Registration — Program/Course dropdown (hotfix).
+//
+// The onboarding form's Program/Course dropdown needs the same reference
+// data GET /programs already serves (see the "Read-only reference data"
+// section further down), but that route sits inside the auth:sanctum
+// group and this form is deliberately unauthenticated — no session exists
+// yet at this point in the flow. An anonymous request to /programs gets a
+// 401, the dropdown gets an empty array back, and it silently renders
+// "No options found." with no error surfaced to the user.
+//
+// Rather than removing auth from /programs — which would widen that
+// route's exposure for every other authenticated consumer of it — this
+// gives the public onboarding flow its own narrow, rate-limited route to
+// the SAME controller action. No new business logic: ProgramController::
+// index() already returns only non-sensitive reference data
+// (ogos_course_id, code, name), so nothing here requires gating behind a
+// session. ProgramController is already imported above for the
+// authenticated /programs route.
+Route::get('/undergrad-requestors/programs', [ProgramController::class, 'index'])
+    ->middleware('throttle:undergrad-requestor-programs');
 
 /*
 |--------------------------------------------------------------------------
@@ -193,10 +256,19 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         // value (10/min effectively became ~5/min). See the same fix
         // applied to system-users store, ai-report/ai-query, and
         // search-users below — all had the identical collision.
+        // Undergrad Requestor Registration — Phase 5. Widened from
+        // 'role:1,2' to 'role:1,2,5' on this and the two routes below
+        // (request-documents store further down this file) so an
+        // Undergrad Requestor can reach the SAME filing endpoints
+        // Students/Alumni use — no parallel request-filing pathway, per
+        // the plan's explicit goal for this phase. 'undergrad_approved'
+        // stacks after role: it is a no-op for roles 1/2 and enforces
+        // Approved-only for role 5 — see
+        // EnsureUndergradRequestorApproved's docblock.
         Route::post('verify-or', [DocumentRequestController::class, 'verifyOfficialReceipt'])
-            ->middleware(['role:1,2', 'throttle:10,1,verify-or']);
+            ->middleware(['role:1,2,5', 'undergrad_approved', 'throttle:10,1,verify-or']);
         Route::get('{documentRequest}', [DocumentRequestController::class, 'show'])->middleware('module:dashboard,View');
-        Route::post('/', [DocumentRequestController::class, 'store'])->middleware('role:1,2');
+        Route::post('/', [DocumentRequestController::class, 'store'])->middleware(['role:1,2,5', 'undergrad_approved']);
         Route::put('{documentRequest}',    [DocumentRequestController::class, 'update'])->middleware(['role:3', 'module:dashboard,Process|Complete']);
         // Deficiency Notice & Withdrawn Status — Phase 1. Same coarse
         // role/module gate as every other admin status-write action on
@@ -272,7 +344,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
     Route::prefix('request-documents')->group(function () {
         Route::get('/',     [RequestDocumentController::class, 'index']);
         Route::get('{id}',  [RequestDocumentController::class, 'show']);
-        Route::post('/',    [RequestDocumentController::class, 'store'])->middleware('role:1,2');
+        // Undergrad Requestor Registration — Phase 5. See the matching
+        // note on document-requests' store/verify-or routes above.
+        Route::post('/',    [RequestDocumentController::class, 'store'])->middleware(['role:1,2,5', 'undergrad_approved']);
         Route::put('{id}',  [RequestDocumentController::class, 'update'])->middleware('role:3');
         Route::delete('{id}', [RequestDocumentController::class, 'destroy'])->middleware('role:3');
     });
@@ -561,6 +635,44 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::post('{accessRequest}/approve', [AccessRequestController::class, 'approve']);
             Route::post('{accessRequest}/reject',  [AccessRequestController::class, 'reject']);
         });
+    });
+
+    // Undergrad Requestor Registration — Phase 4 (Admin verification
+    // queue). RESTORED IN PHASE 6: this block existed when Phase 4
+    // shipped, but was lost when Phase 5 replaced this file wholesale
+    // from a copy that predated it — leaving the controller, service,
+    // resources, container bindings and the Policy module registration
+    // all present with no way to reach any of them. Kept here, next to
+    // access-requests, because it is the same shape of workflow: a
+    // queue of pending submissions that a privileged reviewer approves
+    // or rejects.
+    //
+    // Gated on BOTH axes, deliberately:
+    //   role:3,4  — Registrar Admin or Super Admin.
+    //   module:undergrad_verification,<Action>  — the module identifier
+    //              reserved in Phase 0, with the per-action vocabulary
+    //              declared in Policy::MODULE_ACTIONS. Splitting View
+    //              from Approve/Reject means a clerk can be given the
+    //              queue to triage without being given the authority to
+    //              decide, configured in policy rather than in code.
+    //
+    // {undergradRequestor} binds a SystemUser by user_id. The service —
+    // not the route — asserts the bound account is actually a reviewable
+    // Undergrad Requestor submission, so an arbitrary user_id belonging
+    // to, say, an Admin gets a validation error rather than leaking a
+    // record. See UndergradRequestorVerificationController's docblock.
+    Route::prefix('admin/undergrad-requestors')->middleware('role:3,4')->group(function () {
+        Route::get('/', [UndergradRequestorVerificationController::class, 'index'])
+            ->middleware('module:undergrad_verification,View');
+
+        Route::get('{undergradRequestor}', [UndergradRequestorVerificationController::class, 'show'])
+            ->middleware('module:undergrad_verification,View');
+
+        Route::post('{undergradRequestor}/approve', [UndergradRequestorVerificationController::class, 'approve'])
+            ->middleware('module:undergrad_verification,Approve');
+
+        Route::post('{undergradRequestor}/reject', [UndergradRequestorVerificationController::class, 'reject'])
+            ->middleware('module:undergrad_verification,Reject');
     });
 
     // Role assignments — onboarding/offboarding a secondary role onto an

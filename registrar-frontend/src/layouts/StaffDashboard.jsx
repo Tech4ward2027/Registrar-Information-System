@@ -74,8 +74,15 @@ const RowActionsDropdown = ({
     };
   }, [isOpen]);
 
-  // Feature flag: Generate Certificate is currently disabled until certificate templates are available.
-  const showGenerateCert = false;
+  // Enable Generate Certificate in 3-dots dropdown menu when not in archived view
+  // and only for requests that actually include certificate items
+  const hasCertificates = Boolean(
+    req?.hasCertificates ||
+    (Array.isArray(req?.certificates) && req.certificates.length > 0) ||
+    (Array.isArray(req?.certificateNames) && req.certificateNames.length > 0) ||
+    (Array.isArray(req?.rawRequest?.certificates) && req.rawRequest.certificates.length > 0)
+  );
+  const showGenerateCert = Boolean(onGenerateCert && viewMode !== 'archived' && hasCertificates);
   const isUpdating = updatingId === req.id;
 
   return (
@@ -99,7 +106,7 @@ const RowActionsDropdown = ({
 
       {isOpen && (
         <div
-          className={`absolute right-0 mt-1.5 w-44 rounded-xl shadow-lg border z-50 overflow-hidden text-left ${
+          className={`absolute right-0 mt-1.5 w-48 rounded-xl shadow-lg border z-50 overflow-hidden text-left ${
             isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042]' : 'bg-white text-gray-700 border-gray-200'
           }`}
           style={{
@@ -122,7 +129,7 @@ const RowActionsDropdown = ({
               View Details
             </button>
 
-            {/* Generate Certificate (if applicable) */}
+            {/* Generate Certificate */}
             {showGenerateCert && (
               <button
                 type="button"
@@ -134,7 +141,7 @@ const RowActionsDropdown = ({
                   isDark ? 'hover:bg-[#2a2a2f] text-[#e4e6eb]' : 'hover:bg-gray-50 text-gray-700'
                 }`}
               >
-                <ArrowDownTrayIcon className="w-4 h-4 text-gray-400 dark:text-[#808080]" />
+                <PrinterIcon className="w-4 h-4 text-gray-400 dark:text-[#808080]" />
                 Generate Certificate
               </button>
             )}
@@ -369,9 +376,8 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
     // 4. Any child still Processing/Pending -> "X of Y Processing"
     const doneCount = completedCount + readyCount;
     return (
-      <span className={`px-3 py-1 rounded-full text-xs font-bold border whitespace-nowrap ${
-        isDark ? 'bg-yellow-900/20 text-yellow-400 border-yellow-600' : 'bg-yellow-100 text-yellow-700 border-yellow-200'
-      }`}>
+      <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap ${isDark ? 'bg-yellow-900/20 text-yellow-400 border-yellow-600' : 'bg-yellow-100 text-yellow-700 border-yellow-200'
+        }`}>
         {doneCount > 0 ? `${doneCount} of ${totalCount} Processing` : `Processing (${totalCount} docs)`}
       </span>
     );
@@ -490,7 +496,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
 
       {/* ---------------- CARDS ---------------- */}
       {viewMode === 'archived' ? (
-        <div className="grid grid-cols-1 gap-6 mb-8">
+        <div className="grid grid-cols-1 gap-3 sm:gap-4 mb-4">
           <StatCard 
             title="Archived Requests" 
             count={requests.length} 
@@ -498,17 +504,17 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
           />
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-          <StatCard title="New Requests"        count={requests.filter(r => r.statusId === resolvedStatusIds.PENDING).length}    color="yellow" />
-          <StatCard title="Awaiting Submission" count={requests.filter(r => r.statusId === resolvedStatusIds.AWAITING_SUBMISSION).length} color="orange" />
-          <StatCard title="Processing"          count={requests.filter(r => r.statusName?.toLowerCase() === 'processing').length} color="blue" />
-          <StatCard title="Awaiting Signature"  count={requests.filter(r => r.statusId === resolvedStatusIds.PENDING_SIGNATURE).length} color="amber" />
-          <StatCard title="Ready for Pickup"    count={requests.filter(r => r.statusId === resolvedStatusIds.READY).length}       color="green" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-4">
+          <StatCard title="New Requests" count={requests.filter(r => r.statusId === resolvedStatusIds.PENDING).length} color="yellow" />
+          <StatCard title="Awaiting Submission" count={requests.filter(r => r.statusId === resolvedStatusIds.AWAITING_SUBMISSION).length} color="emerald" />
+          <StatCard title="Processing" count={requests.filter(r => r.statusName?.toLowerCase() === 'processing').length} color="blue" />
+          <StatCard title="Awaiting Signature" count={requests.filter(r => r.statusId === resolvedStatusIds.PENDING_SIGNATURE).length} color="amber" />
+          <StatCard title="Ready for Pickup" count={requests.filter(r => r.statusId === resolvedStatusIds.READY).length} color="green" />
         </div>
       )}
 
       {/* ---------------- TOOLBAR ---------------- */}
-      <div className={isEmbedded ? "mb-6 flex flex-col md:flex-row gap-4 justify-between items-center w-full" : `p-4 rounded-xl shadow-sm mb-6 flex flex-col md:flex-row gap-4 justify-between items-center ${isDark ? 'bg-[#242526] border border-[#3e4042]' : 'bg-white border border-gray-100'}`}>
+      <div className={isEmbedded ? "mb-4 flex flex-col md:flex-row gap-2.5 justify-between items-center w-full" : `p-2.5 sm:p-3 rounded-xl shadow-sm mb-4 flex flex-col md:flex-row gap-2.5 justify-between items-center ${isDark ? 'bg-[#242526] border border-[#3e4042]' : 'bg-white border border-gray-100'}`}>
         {selectedIds.length > 0 ? (
           <div className={`flex flex-wrap items-center gap-3 p-2 rounded-lg border w-full md:w-auto ${isDark ? 'bg-[#1f1f1f] border-[#3e4042]' : 'bg-blue-50/30 border-blue-100'}`}>
             <span className={`font-bold text-sm ml-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{selectedIds.length} Selected</span>
@@ -517,7 +523,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                 {canProcess && (
                   <button 
                     onClick={handleBulkReadyClick}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg shadow-sm transition-colors cursor-pointer"
+                    className="flex items-center justify-center gap-1.5 w-32 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
                   >
                     <CheckCircleIcon className="w-4 h-4" /> Mark Ready
                   </button>
@@ -525,7 +531,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                 {canComplete && (
                   <button 
                     onClick={handleBulkDoneClick}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-lg shadow-sm transition-colors cursor-pointer"
+                    className="flex items-center justify-center gap-1.5 w-32 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
                   >
                     <CheckCircleIcon className="w-4 h-4" /> Mark Done
                   </button>
@@ -633,10 +639,10 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
         <table className={`min-w-full divide-y ${isDark ? 'divide-[#3e4042]' : 'divide-gray-100'}`}>
           <thead className={isDark ? 'bg-[#18191a]/80' : 'bg-gray-50'}>
             <tr>
-              <th className="px-6 py-4 w-10 text-center">
-                <input 
-                  type="checkbox" 
-                  className={`w-4 h-4 rounded cursor-pointer ${isDark ? 'border-[#4e4f50] text-blue-400 focus:ring-blue-400 bg-[#242526]' : 'border-gray-300 text-blue-600 focus:ring-blue-500'}`}
+              <th className="px-3 py-2.5 w-8 text-center">
+                <input
+                  type="checkbox"
+                  className={`w-3.5 h-3.5 rounded cursor-pointer ${isDark ? 'border-[#4e4f50] text-blue-400 focus:ring-blue-400 bg-[#242526]' : 'border-gray-300 text-blue-600 focus:ring-blue-500'}`}
                   onChange={handleSelectAll}
                   checked={currentItems.length > 0 && selectedIds.length === currentItems.length}
                 />
@@ -667,7 +673,6 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                   isOpen={documentDropdownOpen}
                   setIsOpen={setDocumentDropdownOpen}
                   dropdownRef={documentDropdownRef}
-                  align="center"
                   width="w-64"
                   trigger={<span>Document</span>}
                   sections={[
@@ -696,7 +701,6 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                   )}
                 </button>
               </Th>
-              <Th center>No. of Copies</Th>
               <Th center>
                 <DashboardDropdown
                   isOpen={statusDropdownOpen}
@@ -716,13 +720,13 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                   ]}
                 />
               </Th>
-              <th className={`px-6 py-4 text-xs uppercase font-bold ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'} text-center w-[320px] min-w-[320px]`}>Actions</th>
+              <th className={`px-3 py-2.5 text-[11px] uppercase font-bold tracking-wider ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'} text-center w-62.5 min-w-62.5`}>Actions</th>
             </tr>
           </thead>
           <tbody className={isDark ? 'divide-y divide-[#3e4042]' : 'divide-y divide-gray-100'}>
             {currentItems.length === 0 ? (
               <tr>
-                <td colSpan="9" className="px-6 py-16 text-center">
+                <td colSpan="8" className="px-6 py-16 text-center">
                   <div className="flex flex-col items-center justify-center gap-3">
                     <svg
                       className={`w-12 h-12 ${isDark ? 'text-gray-600' : 'text-gray-300'}`}
@@ -758,44 +762,45 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                 return (
                   <React.Fragment key={req.id}>
                     <tr className={`transition-colors ${isDark ? 'hover:bg-[#3a3b3c]' : 'hover:bg-gray-50'} ${selectedIds.includes(req.id) ? (isDark ? 'bg-blue-900/15' : 'bg-blue-50') : ''}`}>
-                      <td className="px-6 py-4 text-center">
-                        <input 
-                          type="checkbox" 
-                          className={`w-4 h-4 rounded cursor-pointer ${isDark ? 'border-[#4e4f50] bg-[#242526]' : 'border-gray-300'}`}
+                      <td className="px-3 py-2 text-center">
+                        <input
+                          type="checkbox"
+                          className={`w-3.5 h-3.5 rounded cursor-pointer ${isDark ? 'border-[#4e4f50] bg-[#242526]' : 'border-gray-300'}`}
                           checked={selectedIds.includes(req.id)}
                           onChange={() => handleSelectOne(req.id)}
                         />
                       </td>
                       <Td center>
-                        <div className="flex items-center justify-center gap-1.5">
-                          {isMultiItem && (
-                            <button
-                              type="button"
-                              onClick={() => toggleRowExpand(req.id)}
-                              className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-800 transition cursor-pointer text-gray-500 dark:text-gray-400"
-                              title={isExpanded ? 'Collapse line items' : 'Expand line items'}
-                            >
-                              <ChevronDownIcon className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-gray-900 dark:text-white' : ''}`} />
-                            </button>
-                          )}
-                          <span className="font-semibold text-xs text-gray-600 dark:text-gray-300">
-                            {indexOfFirstItem + idx + 1}
-                          </span>
-                        </div>
+                        <span className="font-semibold text-xs text-gray-600 dark:text-gray-300">
+                          {indexOfFirstItem + idx + 1}
+                        </span>
                       </Td>
-                      <Td>
+                      <Td center>
                         <span className="font-bold">{req.studentName}</span>
                       </Td>
                       <Td center>
-                        <span className="text-xs font-bold tracking-wide">
-                          {req.userType.toUpperCase()}
+                        <span className="text-xs tracking-wide font-semibold">
+                          {req.userType || 'Unknown'}
                         </span>
                       </Td>
-                      <Td>
+                      <Td center>
                         {req.documentDetailsArray.length > 1 ? (
-                          <span className={`font-bold text-xs sm:text-sm ${isDark ? 'text-[#e4e6eb]' : 'text-gray-900'}`} title={req.documentDetailsArray.join(', ')}>
-                            {req.documentDetailsArray.length} Request
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => toggleRowExpand(req.id)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all cursor-pointer active:scale-95 ${isExpanded
+                                ? (isDark
+                                  ? 'bg-[#3a3b3c] text-white border-[#5a5b5c]'
+                                  : 'bg-gray-200 text-gray-900 border-gray-300')
+                                : (isDark
+                                  ? 'bg-[#1f1f1f] text-[#e4e6eb] hover:bg-[#2a2a2f] border-[#3e4042]'
+                                  : 'bg-white text-gray-700 hover:bg-gray-100 border-gray-200 shadow-xs')
+                              }`}
+                            title={req.documentDetailsArray.join(', ')}
+                          >
+                            <span>{req.documentDetailsArray.length} Requests</span>
+                            <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-gray-900 dark:text-white' : 'text-gray-400'}`} />
+                          </button>
                         ) : (
                           <span className="font-semibold text-xs sm:text-sm" title={req.documentDetailsArray[0]}>
                             {req.documentDetailsArray[0] || 'Unknown Document'}
@@ -806,12 +811,11 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                         <div className={isDark ? 'text-xs text-[#b0b3b8]' : 'text-xs text-gray-400'}>{req.date}</div>
                         <div className={isDark ? 'text-xs text-[#b0b3b8]' : 'text-xs text-gray-400'}>{req.time}</div>
                       </Td>
-                      <Td center><span className={isDark ? 'font-semibold text-[#e4e6eb]' : 'font-semibold text-gray-700'}>{req.copies}</span></Td>
                       <Td center>
                         {getSummaryStatusPill(req)}
                       </Td>
-                      <td className={`px-6 py-4 text-sm ${isDark ? 'text-[#e4e6eb]' : 'text-inherit'} w-[320px] min-w-[320px]`}>
-                        <div className="flex items-center justify-end gap-2 w-full">
+                      <td className={`px-3 py-2 text-xs ${isDark ? 'text-[#e4e6eb]' : 'text-inherit'} w-62.5 min-w-62.5`}>
+                        <div className="flex items-center justify-end gap-1.5 w-full">
                           {/* For single-item requests ONLY, render direct parent row action button */}
                           {(() => {
                             const effectiveStatusId = subItems.length === 1 ? subItems[0].statusId : req.statusId;
@@ -823,12 +827,11 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                   <button
                                     disabled={updatingId === req.id}
                                     onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.PENDING) : handleStatusUpdate(req.id, resolvedStatusIds.PENDING)}
-                                    className={`flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg shadow transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-purple-900/20 hover:bg-purple-900/30 text-purple-400 border border-purple-600' : 'bg-purple-100 hover:bg-purple-200 text-purple-700 border border-purple-200'}`}
+                                    className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-emerald-900/20 hover:bg-emerald-900/30 text-emerald-400 border border-emerald-600' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700 border border-emerald-200'}`}
                                     title="Confirm source document received."
                                   >
-                                    <span className={`flex items-center justify-center w-4 h-4 rounded-full shrink-0 ${
-                                      isDark ? 'bg-purple-900/40 text-purple-400' : 'bg-white text-purple-700'
-                                    }`}>
+                                    <span className={`flex items-center justify-center w-3.5 h-3.5 rounded-full shrink-0 ${isDark ? 'bg-emerald-900/40 text-emerald-400' : 'bg-white text-emerald-700'
+                                      }`}>
                                       <CheckIcon className="w-2.5 h-2.5" strokeWidth={4} />
                                     </span>
                                     <span>Confirm Received</span>
@@ -838,13 +841,11 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                   <button
                                     disabled={updatingId === req.id}
                                     onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.PENDING_SIGNATURE) : handleStatusUpdate(req.id, resolvedStatusIds.PENDING_SIGNATURE)}
-                                    className={`flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg shadow transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
-                                      isDark ? 'bg-amber-900/20 hover:bg-amber-900/30 text-amber-400 border border-amber-600' : 'bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-200'
-                                    }`}
+                                    className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-amber-900/20 hover:bg-amber-900/30 text-amber-400 border border-amber-600' : 'bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-200'
+                                      }`}
                                   >
-                                    <span className={`flex items-center justify-center w-4 h-4 rounded-full shrink-0 ${
-                                      isDark ? 'bg-amber-900/40 text-amber-400' : 'bg-white text-amber-700'
-                                    }`}>
+                                    <span className={`flex items-center justify-center w-3.5 h-3.5 rounded-full shrink-0 ${isDark ? 'bg-amber-900/40 text-amber-400' : 'bg-white text-amber-700'
+                                      }`}>
                                       <CheckIcon className="w-2.5 h-2.5" strokeWidth={4} />
                                     </span>
                                     <span>Pending Signature</span>
@@ -854,20 +855,19 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                   <button
                                     disabled={updatingId === req.id}
                                     onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.READY) : handleStatusUpdate(req.id, resolvedStatusIds.READY)}
-                                    className={`flex items-center gap-1 px-3 py-1.5 text-white text-xs font-bold rounded-lg shadow transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
-                                      isDark ? 'bg-blue-900/20 hover:bg-blue-900/30 text-blue-400 border border-blue-600' : 'bg-blue-500 hover:bg-blue-700'
-                                    }`}
+                                    className={`flex items-center justify-center gap-1 w-18 px-2.5 py-1 text-white text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-blue-900/20 hover:bg-blue-900/30 text-blue-400 border border-blue-600' : 'bg-blue-500 hover:bg-blue-700'
+                                      }`}
                                   >
-                                    <CheckCircleIcon className="w-4 h-4" /> Ready
+                                    <CheckCircleIcon className="w-3.5 h-3.5" /> Ready
                                   </button>
                                 )}
                                 {!requestIsWithdrawn && !isMultiItem && canComplete && !req.isArchived && effectiveStatusId === resolvedStatusIds.READY && (
                                   <button
                                     disabled={updatingId === req.id}
                                     onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.COMPLETED) : handleStatusUpdate(req.id, resolvedStatusIds.COMPLETED)}
-                                    className={`flex items-center gap-1 px-3 py-1.5 text-white text-xs font-bold rounded-lg shadow transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap ${isDark ? 'bg-green-900/20 hover:bg-green-900/30 text-green-400 border border-green-600' : 'bg-green-500 hover:bg-green-700'}`}
+                                    className={`flex items-center justify-center gap-1 w-18 px-2.5 py-1 text-white text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap ${isDark ? 'bg-green-900/20 hover:bg-green-900/30 text-green-400 border border-green-600' : 'bg-green-500 hover:bg-green-700'}`}
                                   >
-                                    <CheckCircleIcon className="w-4 h-4" /> Done
+                                    <CheckCircleIcon className="w-3.5 h-3.5" /> Done
                                   </button>
                                 )}
                               </>
@@ -910,37 +910,30 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                       return (
                         <tr key={`sub-${subItem.id}`} className={`transition-colors border-t border-gray-100 dark:border-zinc-800/60 ${isDark ? 'bg-[#18191a]/40 hover:bg-[#18191a]/80' : 'bg-gray-50/50 hover:bg-gray-50'}`}>
                           {/* Col 1: Checkbox */}
-                          <td className="px-6 py-3 text-center"></td>
+                          <td className="px-3 py-2 text-center"></td>
 
                           {/* Col 2: Tree connector line */}
-                          <td className="px-2 py-3 text-center">
+                          <td className="px-2 py-2 text-center">
                             <div className="flex items-center justify-center pl-2">
                               <div className="w-3.5 h-4 border-l-2 border-b-2 border-gray-300 dark:border-zinc-600 rounded-bl-xs shrink-0 -mt-2" />
                             </div>
                           </td>
 
                           {/* Col 3: Student Name */}
-                          <td className="px-6 py-3"></td>
+                          <td className="px-3 py-2"></td>
 
                           {/* Col 4: Classification */}
-                          <td className="px-6 py-3"></td>
+                          <td className="px-3 py-2"></td>
 
                           {/* Col 5: DOCUMENT Name */}
-                          <td className="px-6 py-3">
-                            <span className={`font-semibold text-xs sm:text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          <td className="px-3 py-2">
+                            <span className={`font-semibold text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
                               {subItem.name}
                             </span>
                           </td>
 
                           {/* Col 6: DATE & TIME */}
-                          <td className="px-6 py-3"></td>
-
-                          {/* Col 7: QTY */}
-                          <Td center>
-                            <span className={`font-semibold text-xs ${isDark ? 'text-zinc-300' : 'text-gray-700'}`}>
-                              {subItem.qty}
-                            </span>
-                          </Td>
+                          <td className="px-3 py-2"></td>
 
                           {/* Col 8: STATUS Badge */}
                           <Td center>
@@ -948,21 +941,19 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                           </Td>
 
                           {/* Col 9: ACTIONS — Per-item Action Button */}
-                          <td className={`px-6 py-3 text-sm ${isDark ? 'text-[#e4e6eb]' : 'text-inherit'} w-[320px] min-w-[320px]`}>
-                            <div className="flex items-center justify-end gap-2 w-full">
+                          <td className={`px-3 py-2 text-xs ${isDark ? 'text-[#e4e6eb]' : 'text-inherit'} w-62.5 min-w-62.5`}>
+                            <div className="flex items-center justify-end gap-1.5 w-full">
                               {canProcess && isItemAwaiting && (
                                 <button
                                   type="button"
                                   disabled={updatingId === req.id}
                                   onClick={() => handleItemStatusUpdate(req.id, subItem, resolvedStatusIds.PENDING)}
-                                  className={`flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg shadow transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
-                                    isDark ? 'bg-purple-900/20 hover:bg-purple-900/30 text-purple-400 border border-purple-600' : 'bg-purple-100 hover:bg-purple-200 text-purple-700 border border-purple-200'
-                                  }`}
+                                  className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-emerald-900/20 hover:bg-emerald-900/30 text-emerald-400 border border-emerald-600' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700 border border-emerald-200'
+                                    }`}
                                   title="Confirm source document received."
                                 >
-                                  <span className={`flex items-center justify-center w-4 h-4 rounded-full shrink-0 ${
-                                    isDark ? 'bg-purple-900/40 text-purple-400' : 'bg-white text-purple-700'
-                                  }`}>
+                                  <span className={`flex items-center justify-center w-3.5 h-3.5 rounded-full shrink-0 ${isDark ? 'bg-emerald-900/40 text-emerald-400' : 'bg-white text-emerald-700'
+                                    }`}>
                                     <CheckIcon className="w-2.5 h-2.5" strokeWidth={4} />
                                   </span>
                                   <span>Confirm Received</span>
@@ -974,13 +965,11 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                   type="button"
                                   disabled={updatingId === req.id}
                                   onClick={() => handleItemStatusUpdate(req.id, subItem, resolvedStatusIds.PENDING_SIGNATURE)}
-                                  className={`flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg shadow transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
-                                    isDark ? 'bg-amber-900/20 hover:bg-amber-900/30 text-amber-400 border border-amber-600' : 'bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-200'
-                                  }`}
+                                  className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-amber-900/20 hover:bg-amber-900/30 text-amber-400 border border-amber-600' : 'bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-200'
+                                    }`}
                                 >
-                                  <span className={`flex items-center justify-center w-4 h-4 rounded-full shrink-0 ${
-                                    isDark ? 'bg-amber-900/40 text-amber-400' : 'bg-white text-amber-700'
-                                  }`}>
+                                  <span className={`flex items-center justify-center w-3.5 h-3.5 rounded-full shrink-0 ${isDark ? 'bg-amber-900/40 text-amber-400' : 'bg-white text-amber-700'
+                                    }`}>
                                     <CheckIcon className="w-2.5 h-2.5" strokeWidth={4} />
                                   </span>
                                   <span>Pending Signature</span>
@@ -992,9 +981,8 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                   type="button"
                                   disabled={updatingId === req.id}
                                   onClick={() => handleItemStatusUpdate(req.id, subItem, resolvedStatusIds.READY)}
-                                  className={`flex items-center gap-1 px-3 py-1.5 text-white text-xs font-bold rounded-lg shadow transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
-                                    isDark ? 'bg-blue-900/20 hover:bg-blue-900/30 text-blue-400 border border-blue-600' : 'bg-blue-500 hover:bg-blue-700'
-                                  }`}
+                                  className={`flex items-center justify-center gap-1 w-18 px-2.5 py-1 text-white text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-blue-900/20 hover:bg-blue-900/30 text-blue-400 border border-blue-600' : 'bg-blue-500 hover:bg-blue-700'
+                                    }`}
                                 >
                                   <CheckCircleIcon className="w-3.5 h-3.5" />
                                   <span>Ready</span>
@@ -1006,9 +994,8 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                   type="button"
                                   disabled={updatingId === req.id}
                                   onClick={() => handleItemStatusUpdate(req.id, subItem, resolvedStatusIds.COMPLETED)}
-                                  className={`flex items-center gap-1 px-3 py-1.5 text-white text-xs font-bold rounded-lg shadow transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap ${
-                                    isDark ? 'bg-green-900/20 hover:bg-green-900/30 text-green-400 border border-green-600' : 'bg-green-500 hover:bg-green-700'
-                                  }`}
+                                  className={`flex items-center justify-center gap-1 w-18 px-2.5 py-1 text-white text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap ${isDark ? 'bg-green-900/20 hover:bg-green-900/30 text-green-400 border border-green-600' : 'bg-green-500 hover:bg-green-700'
+                                    }`}
                                 >
                                   <CheckCircleIcon className="w-3.5 h-3.5 text-white" />
                                   <span>Done</span>

@@ -37,6 +37,9 @@ const AccessControlPage = lazy(() => import('./pages/AccessControlPage.jsx'));
 const RequestAccessPage = lazy(() => import('./pages/RequestAccessPage.jsx'));
 const DocumentAndCertificateManagement = lazy(() => import('./pages/DocumentAndCertificateManagement.jsx'));
 const StudentDashboard = lazy(() => import('./layouts/StudentDashboard.jsx'));
+const UndergradRequestorRegisterPage = lazy(() => import('./pages/UndergradRequestorRegisterPage.jsx'));
+const UndergradRequestorVerifyEmailPage = lazy(() => import('./pages/UndergradRequestorVerifyEmailPage.jsx'));
+const UndergradRequestorVerificationPage = lazy(() => import('./pages/UndergradRequestorVerificationPage.jsx'));
 
 // Lazy-loaded Layouts
 const DocumentLists = lazy(() => import('./layouts/DocumentLists.jsx'));
@@ -98,12 +101,14 @@ const App = () => {
                   <Route path="/forbidden" element={<ForbiddenPage />} />
                   <Route path="/auth/callback" element={<SsoCallbackPage />} />
                   <Route path="/access-control" element={<AccessControlPage />} />
+                  <Route path="/undergrad-requestor/register" element={<UndergradRequestorRegisterPage />} />
+                  <Route path="/undergrad-requestor/verify-email" element={<UndergradRequestorVerifyEmailPage />} />
 
-                  {/* STUDENT (role: student) */}
+                  {/* STUDENT (role: student & undergrad_requestor) */}
                   <Route
                     path="/student"
                     element={
-                      <ProtectedRoute allowedRoles={[ROLES.STUDENT]}>
+                      <ProtectedRoute allowedRoles={[ROLES.STUDENT, ROLES.UNDERGRAD_REQUESTOR]}>
                         <StudentPage />
                       </ProtectedRoute>
                     }
@@ -177,6 +182,9 @@ const App = () => {
                     } />
                     <Route path="free-requests" element={
                       <ModuleRoute module={MODULE_KEYS.FREE_REQUESTS}><FreeRequestPage /></ModuleRoute>
+                    } />
+                    <Route path="undergrad-requestors" element={
+                      <ModuleRoute module={MODULE_KEYS.UNDERGRAD_VERIFICATION}><UndergradRequestorVerificationPage /></ModuleRoute>
                     } />
                   </Route>
 

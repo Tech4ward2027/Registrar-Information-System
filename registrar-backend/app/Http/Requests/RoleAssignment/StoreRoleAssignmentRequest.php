@@ -18,6 +18,18 @@ class StoreRoleAssignmentRequest extends FormRequest
     {
         return [
             'user_id'   => 'required|integer|exists:users,user_id',
+            // Undergrad Requestor Registration — Phase 5: deliberately
+            // NOT added here, unlike Student/Alumni. Considered and
+            // rejected — see RoleAssignmentService::assertDirectionAllowed()'s
+            // matching note for the full reasoning: this role has
+            // exactly one valid path into existence (the public
+            // onboarding + Admin approval pipeline, D4), and a
+            // role_assignments grant would produce a role_id = 5
+            // account with no undergrad_requestor_verifications row —
+            // permanently and correctly refused by
+            // EnsureUndergradRequestorApproved, since that middleware
+            // has no way to distinguish "never verified" from "not yet
+            // approved." A dead-end account, not a usable grant.
             'role_id'   => 'required|integer|in:' . implode(',', [
                 SystemUser::ROLE_STUDENT,
                 SystemUser::ROLE_ALUMNI,
