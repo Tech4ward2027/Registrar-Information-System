@@ -13,6 +13,7 @@ import {
   getProcessedAt,
   getProcessingDuration,
   getClaimedAt,
+  findMatchingItem,
 } from './logbookHelpers.js';
 // FE-2 migration: helpers imported from logbookHelpers.js
 const fetchImageData = async (src) => {
@@ -213,7 +214,7 @@ const buildFooter = async () => {
   });
 };
 
-export const logbookDocx = async (sectionsOrRows, pupLogoSrc = null, bpLogoSrc = null, historyByRequestId = {}, dateRangeLabel = null) => {
+export const logbookDocx = async (sectionsOrRows, pupLogoSrc = null, bpLogoSrc = null, historyByRequestId = {}, dateRangeLabel = null, logbookCategoryNameById = null) => {
   const header = await buildHeader(pupLogoSrc, bpLogoSrc);
   const footer = await buildFooter();
 
@@ -272,7 +273,7 @@ export const logbookDocx = async (sectionsOrRows, pupLogoSrc = null, bpLogoSrc =
 
   const sections = normalizeSections();
 
-  const buildRows = (rows) => {
+  const buildRows = (rows, sectionTitle = '') => {
     if (!Array.isArray(rows) || rows.length === 0) {
       return [new TableRow({
         children: [
@@ -296,19 +297,21 @@ export const logbookDocx = async (sectionsOrRows, pupLogoSrc = null, bpLogoSrc =
       })];
     }
 
-    return rows.map((row) => new TableRow({
-    children: [
-      cell(formatDateLong(row.requested_at) || 'N/A', { width: colWidths[0], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
-      cell(getFullName(row), { width: colWidths[1], align: AlignmentType.LEFT, size: DEFAULT_TEXT_SIZE }),
-      cell(getCourse(row), { width: colWidths[2], align: AlignmentType.LEFT, size: DEFAULT_TEXT_SIZE }),
-      cell(getGender(row), { width: colWidths[3], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
-      cell(getEmail(row), { width: colWidths[4], align: AlignmentType.LEFT, size: DEFAULT_TEXT_SIZE }),
-      cell(formatDateLong(getProcessedAt(row, historyByRequestId), true) || '---', { width: colWidths[5], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
-      cell(formatMinutesDuration(getProcessingDuration(row, historyByRequestId)), { width: colWidths[6], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
-      cell(formatDateLong(getClaimedAt(row, historyByRequestId)) || 'Pending', { width: colWidths[7], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
-    ],
-  }));
-
+    return rows.map((row) => {
+      const targetItem = findMatchingItem(row, sectionTitle, logbookCategoryNameById);
+      return new TableRow({
+        children: [
+          cell(formatDateLong(row.requested_at) || 'N/A', { width: colWidths[0], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
+          cell(getFullName(row), { width: colWidths[1], align: AlignmentType.LEFT, size: DEFAULT_TEXT_SIZE }),
+          cell(getCourse(row), { width: colWidths[2], align: AlignmentType.LEFT, size: DEFAULT_TEXT_SIZE }),
+          cell(getGender(row), { width: colWidths[3], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
+          cell(getEmail(row), { width: colWidths[4], align: AlignmentType.LEFT, size: DEFAULT_TEXT_SIZE }),
+          cell(formatDateLong(getProcessedAt(row, historyByRequestId, targetItem), true) || '---', { width: colWidths[5], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
+          cell(formatMinutesDuration(getProcessingDuration(row, historyByRequestId, targetItem)), { width: colWidths[6], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
+          cell(formatDateLong(getClaimedAt(row, historyByRequestId, targetItem)) || 'Pending', { width: colWidths[7], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
+        ],
+      });
+    });
   };
 
   const contentChildren = [];
@@ -330,7 +333,7 @@ export const logbookDocx = async (sectionsOrRows, pupLogoSrc = null, bpLogoSrc =
     if (isUmbrella) {
       // push table without the section title
       contentChildren.push(
-        new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [headerRow, ...buildRows(section.rows)] })
+        new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [headerRow, ...buildRows(section.rows, section.title)] })
       );
     } else {
       // create a title row that spans all columns to ensure visibility and prevent overlap with headers
@@ -352,7 +355,7 @@ export const logbookDocx = async (sectionsOrRows, pupLogoSrc = null, bpLogoSrc =
       });
 
       contentChildren.push(
-        new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [titleRow, headerRow, ...buildRows(section.rows)] })
+        new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [titleRow, headerRow, ...buildRows(section.rows, section.title)] })
       );
     }
   });

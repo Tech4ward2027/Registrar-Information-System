@@ -17,6 +17,7 @@ import {
   resolveLogbookLabel,
   formatDateLong,
   getClaimedAt,
+  findMatchingItem,
 } from '../utils/logbookHelpers.js';
 
 import DropDown from '../components/DropDown';
@@ -402,7 +403,7 @@ const LogbookRecords = () => {
       const rangeLabel = (dateFrom && dateTo)
         ? `${dateFrom}_to_${dateTo}`
         : (dateFrom ? `from_${dateFrom}` : (dateTo ? `to_${dateTo}` : null));
-      await logbookDocx(getExportSections(), pupLogoSrc, bpLogoSrc, historyByRequestId, rangeLabel);
+      await logbookDocx(getExportSections(), pupLogoSrc, bpLogoSrc, historyByRequestId, rangeLabel, logbookCategoryNameById);
       setToastSuccess('Exporting Report completed.');
     } catch (e) {
       console.error('Export to DOCX failed', e);
@@ -468,10 +469,10 @@ const LogbookRecords = () => {
           <div className={`mb-6 print:hidden rounded-xl border p-3.5 sm:p-5 ${isDark ? 'bg-[#1e1f20] border-[#3e4042]' : 'bg-gray-50 border-gray-200'}`}>
 
             {/* Controls Row */}
-            <div className="flex flex-wrap items-end gap-3 w-full">
+            <div className="flex flex-col sm:flex-row flex-wrap items-end gap-3.5 w-full">
 
               {/* Document Type multi-select checkbox dropdown */}
-              <div className="w-full md:w-85 shrink-0">
+              <div className="w-full sm:w-72 shrink-0">
                 <MultiSelectDropdown
                   label="Document Category"
                   name="docCategory"
@@ -590,8 +591,14 @@ const LogbookRecords = () => {
             <tbody>
               {currentData.map((row) => (
                 (() => {
-                  const processedAt = getProcessedAt(row);
-                  const claimedAt = getClaimedAt(row);
+                  const targetCategory = (selectedDocCategories && selectedDocCategories.length === 1 && selectedDocCategories[0] !== 'All Document')
+                    ? selectedDocCategories[0]
+                    : (isCertificationMode && selectedCertificationLabel && selectedCertificationLabel !== 'All Certification')
+                    ? selectedCertificationLabel
+                    : null;
+                  const targetItem = targetCategory ? findMatchingItem(row, targetCategory, logbookCategoryNameById) : null;
+                  const processedAt = getProcessedAt(row, historyByRequestId, targetItem);
+                  const claimedAt = getClaimedAt(row, historyByRequestId, targetItem);
 
                   return (
                     <tr key={row.request_id || row.id} className={`border-b text-[11px] sm:text-[12px] transition-colors 
@@ -623,7 +630,7 @@ const LogbookRecords = () => {
                       </td>
 
                       <td className="p-3 sm:p-4 text-center whitespace-nowrap">
-                        {formatMinutesDuration(getProcessingDuration(row))}
+                        {formatMinutesDuration(getProcessingDuration(row, historyByRequestId, targetItem))}
                       </td>
 
                       <td className="p-3 sm:p-4 text-center italic text-gray-400 whitespace-nowrap">
@@ -653,8 +660,14 @@ const LogbookRecords = () => {
           )}
 
           {currentData.map((row) => {
-            const processedAt = getProcessedAt(row);
-            const claimedAt = getClaimedAt(row);
+            const targetCategory = (selectedDocCategories && selectedDocCategories.length === 1 && selectedDocCategories[0] !== 'All Document')
+              ? selectedDocCategories[0]
+              : (isCertificationMode && selectedCertificationLabel && selectedCertificationLabel !== 'All Certification')
+              ? selectedCertificationLabel
+              : null;
+            const targetItem = targetCategory ? findMatchingItem(row, targetCategory, logbookCategoryNameById) : null;
+            const processedAt = getProcessedAt(row, historyByRequestId, targetItem);
+            const claimedAt = getClaimedAt(row, historyByRequestId, targetItem);
 
             return (
               <div
@@ -714,7 +727,7 @@ const LogbookRecords = () => {
                       Business Minutes
                     </span>
                     <span className={`font-bold ${isDark ? 'text-[#f5c542]' : 'text-[#800000]'}`}>
-                      {formatMinutesDuration(getProcessingDuration(row))}
+                      {formatMinutesDuration(getProcessingDuration(row, historyByRequestId, targetItem))}
                     </span>
                   </div>
 
