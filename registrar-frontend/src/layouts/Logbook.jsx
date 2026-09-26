@@ -23,6 +23,7 @@ import {
 import DropDown from '../components/DropDown';
 import MultiSelectDropdown from '../components/MultiSelection.jsx';
 import LogbookDateRangeModal from '../components/LogbookDateRangeModal';
+import VoiceSearchInput from '../components/VoiceSearchInput.jsx';
 import { LogbookSkeleton } from '../components/LoadingSkeleton';
 import SuccessToast from '../components/SuccessToast.jsx';
 import ErrorToast from '../components/ErrorToast.jsx';
@@ -61,6 +62,7 @@ const LogbookRecords = () => {
   const [exporting, setExporting] = useState(false);
   const [toastSuccess, setToastSuccess] = useState('');
   const [toastError, setToastError] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [activePreset, setActivePreset] = useState('');
@@ -273,6 +275,7 @@ const LogbookRecords = () => {
   const filteredData = useMemo(() => {
     const from = dateFrom ? new Date(dateFrom + 'T00:00:00') : null;
     const to = dateTo ? new Date(dateTo + 'T23:59:59') : null;
+    const search = searchTerm.trim().toLowerCase();
 
     const completedOnly = data.filter(item => {
       if (from || to) {
@@ -281,6 +284,31 @@ const LogbookRecords = () => {
         if (from && req < from) return false;
         if (to && req > to) return false;
       }
+
+      if (search) {
+        const name = getFullName(item).toLowerCase();
+        const email = getEmail(item).toLowerCase();
+        const course = getCourse(item).toLowerCase();
+        const claimCode = (item.claim_code || '').toLowerCase();
+        const orNum = (item.or_number || '').toLowerCase();
+        const studentNum = (
+          item.student_profile?.student_number ||
+          item.user?.student_profile?.student_number ||
+          item.alumni_profile?.student_number ||
+          ''
+        ).toLowerCase();
+
+        const matchesSearch =
+          name.includes(search) ||
+          email.includes(search) ||
+          course.includes(search) ||
+          claimCode.includes(search) ||
+          orNum.includes(search) ||
+          studentNum.includes(search);
+
+        if (!matchesSearch) return false;
+      }
+
       return true;
     });
 
@@ -322,7 +350,7 @@ const LogbookRecords = () => {
         });
       });
     });
-  }, [selectedDocCategories, data, isCertificationMode, selectedCertificationLabel, logbookCategoryNameById, dateFrom, dateTo]);
+  }, [selectedDocCategories, data, isCertificationMode, selectedCertificationLabel, logbookCategoryNameById, dateFrom, dateTo, searchTerm]);
 
   // Sort filtered data by request timestamp (most recent first)
   const sortedData = useMemo(() => {
@@ -470,6 +498,21 @@ const LogbookRecords = () => {
 
             {/* Controls Row */}
             <div className="flex flex-col sm:flex-row flex-wrap items-end gap-3.5 w-full">
+
+            {/* Search Input for Client Name / Keywords */}
+              <div className="w-full sm:w-64 shrink-0 flex flex-col">
+                <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}`}>
+                  Search 
+                </label>
+                <VoiceSearchInput
+                  value={searchTerm}
+                  onChange={(val) => {
+                    setSearchTerm(val);
+                    setCurrentPage(1);
+                  }}
+                  placeholder="Search name, email..."
+                />
+              </div>
 
               {/* Document Type multi-select checkbox dropdown */}
               <div className="w-full sm:w-72 shrink-0">
