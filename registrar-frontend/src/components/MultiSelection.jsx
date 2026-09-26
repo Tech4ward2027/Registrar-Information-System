@@ -40,11 +40,6 @@ const MultiSelectDropdown = ({
   useEffect(() => {
     if (!isOpen) {
       setSearchTerm("");
-    } else {
-      const timer = setTimeout(() => {
-        searchInputRef.current?.focus();
-      }, 50);
-      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 
@@ -81,57 +76,42 @@ const MultiSelectDropdown = ({
         </label>
       )}
 
-      {/* Trigger Box / Input (Matches DropDown.jsx box design) */}
+      {/* Trigger Box / Input */}
       <div className="relative">
         <div
-          onClick={() => {
-            setIsOpen(true);
-            searchInputRef.current?.focus();
-          }}
+          onClick={() => setIsOpen((prev) => !prev)}
           className={`
-            w-full flex items-center justify-between gap-2 pl-3 pr-10 py-2.5 rounded-lg text-sm font-medium shadow-sm border transition-colors text-left cursor-text min-h-[46px]
+            w-full flex items-center justify-between gap-2 pl-3 pr-10 py-2.5 rounded-lg text-sm font-medium shadow-sm border transition-colors text-left cursor-pointer min-h-[46px]
             ${isOpen ? 'ring-2 ring-[#FFC72C] border-transparent' : 'border-gray-200 hover:border-gray-300'}
             ${isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042]' : 'bg-white text-gray-700 border-gray-200'}
           `}
         >
           <div className="flex flex-wrap gap-1.5 items-center flex-1 pr-1">
-            {selectedValues.map((val) => (
-              <span
-                key={val}
-                className={`text-xs px-2.5 py-1 rounded-md flex items-center gap-1 shadow-xs ${
-                  isDark ? 'bg-pup-yellow text-pup-maroon font-bold' : 'bg-[#800000] text-white font-medium'
-                }`}
-              >
-                <span className="truncate max-w-[200px]">{val}</span>
-                <button
-                  type="button"
-                  aria-label={`Remove ${val}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleOption(val);
-                    searchInputRef.current?.focus();
-                  }}
-                  className="hover:opacity-80 cursor-pointer flex items-center focus:outline-none ml-0.5"
+            {selectedValues.length === 0 ? (
+              <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>{placeholder}</span>
+            ) : (
+              selectedValues.map((val) => (
+                <span
+                  key={val}
+                  className={`text-xs px-2.5 py-1 rounded-md flex items-center gap-1 shadow-xs ${
+                    isDark ? 'bg-pup-yellow text-pup-maroon font-bold' : 'bg-[#800000] text-white font-medium'
+                  }`}
                 >
-                  <XMarkIcon className="w-3.5 h-3.5" />
-                </button>
-              </span>
-            ))}
-
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder={selectedValues.length === 0 ? placeholder : ""}
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setIsOpen(true);
-              }}
-              onFocus={() => setIsOpen(true)}
-              className={`flex-grow bg-transparent border-0 outline-none p-0 text-sm min-w-[100px] focus:ring-0 ${
-                isDark ? 'text-[#e4e6eb] placeholder-gray-500' : 'text-gray-700 placeholder-gray-400'
-              }`}
-            />
+                  <span className="truncate max-w-[200px]">{val}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${val}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleOption(val);
+                    }}
+                    className="hover:opacity-80 cursor-pointer flex items-center focus:outline-none ml-0.5"
+                  >
+                    <XMarkIcon className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              ))
+            )}
           </div>
         </div>
 
@@ -157,6 +137,20 @@ const MultiSelectDropdown = ({
             className={`absolute z-50 mt-1.5 w-full rounded-xl overflow-hidden ${isDark ? 'bg-[#1f1f1f]' : 'bg-white'}`}
             style={{ boxShadow: '0 8px 32px -4px rgba(0,0,0,0.18), 0 2px 8px -2px rgba(0,0,0,0.10)', border: '1px solid #FFC72C' }}
           >
+            {/* Search Input inside the dropdown popover when options are many */}
+            {options.length > 5 && (
+              <div className={`p-2 border-b ${isDark ? 'border-[#3e4042] bg-[#242526]' : 'border-gray-200 bg-gray-50'}`}>
+                <input
+                  type="text"
+                  placeholder="Search options..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className={`w-full px-3 py-1.5 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#FFC72C] ${
+                    isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] placeholder-gray-500 border border-[#3e4042]' : 'bg-white text-gray-800 placeholder-gray-400 border border-gray-200'
+                  }`}
+                />
+              </div>
+            )}
             <ul className="max-h-56 overflow-y-auto py-1 dropdown-scroll">
               {filteredOptions.length > 0 ? (
                 filteredOptions.map((option) => {
