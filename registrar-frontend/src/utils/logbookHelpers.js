@@ -113,15 +113,34 @@ export const getEmail = (row) =>
 // historyByRequestId lookup map (legacy; kept for backward-compatibility).
 // ---------------------------------------------------------------------------
 
-/** Return sorted history entries for a row (most recent first) */
-export const getHistoryRows = (row, historyByRequestId = {}) => {
-  const fromMap = historyByRequestId?.[row.request_id];
+/** Return sorted history entries for a row (most recent first), filtered by item if provided */
+export const getHistoryRows = (row, historyByRequestId = {}, item = null) => {
+  const fromMap = historyByRequestId?.[row?.request_id];
   const base = Array.isArray(fromMap)
     ? fromMap
-    : Array.isArray(row.history)
+    : Array.isArray(row?.history)
     ? row.history
     : [];
-  return [...base].sort(
+
+  let filtered = base;
+  if (item) {
+    const docId = item.request_document_id || item.rawItem?.request_document_id;
+    const certId = item.request_certificate_id || item.rawItem?.request_certificate_id;
+
+    if (docId) {
+      const itemSpecific = base.filter(
+        (h) => Number(h.request_document_id) === Number(docId)
+      );
+      if (itemSpecific.length > 0) filtered = itemSpecific;
+    } else if (certId) {
+      const itemSpecific = base.filter(
+        (h) => Number(h.request_certificate_id) === Number(certId)
+      );
+      if (itemSpecific.length > 0) filtered = itemSpecific;
+    }
+  }
+
+  return [...filtered].sort(
     (a, b) =>
       new Date(b?.changed_at || 0).getTime() - new Date(a?.changed_at || 0).getTime()
   );
@@ -132,8 +151,8 @@ export const getHistoryRows = (row, historyByRequestId = {}) => {
  *  which for a completed request is the Completed transition.
  *  Fix applied by migration FE-1.
  */
-export const getProcessedAt = (row, historyByRequestId = {}) => {
-  const history = getHistoryRows(row, historyByRequestId);
+export const getProcessedAt = (row, historyByRequestId = {}, item = null) => {
+  const history = getHistoryRows(row, historyByRequestId, item);
   const entry = history.find((h) => h.new_status_id === 2  /* ReadyToClaim — migration FE-1 */);
   return entry?.changed_at || null;
 };
@@ -147,8 +166,8 @@ export const getProcessedAt = (row, historyByRequestId = {}) => {
  * getProcessingDuration() instead, which prefers the business-hours-aware
  * figure and only falls back to this.
  */
-export const getMinutesProcessed = (row, historyByRequestId = {}) => {
-  const history = getHistoryRows(row, historyByRequestId);
+export const getMinutesProcessed = (row, historyByRequestId = {}, item = null) => {
+  const history = getHistoryRows(row, historyByRequestId, item);
   const entry = history.find((h) => h.new_status_id === 2);
   return entry?.minutes_processed ?? null;
 };
@@ -182,8 +201,8 @@ export const getMinutesProcessed = (row, historyByRequestId = {}) => {
  *     for those older records rather than mixing business-hours and
  *     wall-clock minutes into one total.
  */
-export const getBusinessMinutesProcessed = (row, historyByRequestId = {}) => {
-  const history = getHistoryRows(row, historyByRequestId); // newest first
+export const getBusinessMinutesProcessed = (row, historyByRequestId = {}, item = null) => {
+  const history = getHistoryRows(row, historyByRequestId, item); // newest first
   const readyIndex = history.findIndex((h) => h.new_status_id === 2);
   if (readyIndex === -1) return null;
 
@@ -208,14 +227,14 @@ export const getBusinessMinutesProcessed = (row, historyByRequestId = {}) => {
  * raw cumulative figure for requests that predate the business_minutes
  * column so older records still display something rather than "---".
  */
-export const getProcessingDuration = (row, historyByRequestId = {}) => {
-  const businessMinutes = getBusinessMinutesProcessed(row, historyByRequestId);
-  return businessMinutes ?? getMinutesProcessed(row, historyByRequestId);
+export const getProcessingDuration = (row, historyByRequestId = {}, item = null) => {
+  const businessMinutes = getBusinessMinutesProcessed(row, historyByRequestId, item);
+  return businessMinutes ?? getMinutesProcessed(row, historyByRequestId, item);
 };
 
 /** Timestamp when the request was claimed (new_status_id === 3) */
-export const getClaimedAt = (row, historyByRequestId = {}) => {
-  const history = getHistoryRows(row, historyByRequestId);
+export const getClaimedAt = (row, historyByRequestId = {}, item = null) => {
+  const history = getHistoryRows(row, historyByRequestId, item);
   const entry = history.find((h) => h.new_status_id === 3);
   return entry?.changed_at || null;
 };
@@ -351,3 +370,41 @@ export const getCertificationLogbookLabels = (row, categoryNameById) =>
       return resolveLogbookLabel(categoryId, ownName, categoryNameById);
     })
     .filter(Boolean);
+
+/**
+ * Find the specific document or certificate item inside a request row matching a target logbook category/title.
+ */
+export const findMatchingItem = (row, categoryOrTitle, categoryNameById) => {
+  if (!row || !categoryOrTitle) return null;
+  const target = String(categoryOrTitle).trim().toLowerCase();
+  if (!target || target === 'all document' || target === 'all certification') return null;
+
+  if (Array.isArray(row.documents)) {
+    const doc = row.documents.find((d) => {
+      const type = d?.documentType ?? d?.document_type;
+      const categoryId = type?.logbook_category_id ?? d?.logbook_category_id ?? null;
+      const ownName = type?.document_name ?? d?.document_name ?? '';
+      const label = resolveLogbookLabel(categoryId, ownName, categoryNameById).toLowerCase();
+      if (label === target) return true;
+      const name = String(ownName || d?.name || '').toLowerCase();
+      if (target === 'completion fee') return name.includes('completion') || name.includes('incomplete') || name.includes('correction of entry');
+      if (target === 'transcript of records') return name.includes('transcript') || name.includes('tor');
+      if (target === 'certified true copy of records') return name.includes('certified true copy') || name.includes('ctc');
+      return name === target;
+    });
+    if (doc) return doc;
+  }
+
+  if (Array.isArray(row.certificates)) {
+    const cert = row.certificates.find((c) => {
+      const type = c?.certificationType ?? c?.certification_type;
+      const categoryId = type?.logbook_category_id ?? c?.logbook_category_id ?? null;
+      const ownName = type?.certificate_name ?? c?.certificate_name ?? c?.name ?? '';
+      const label = resolveLogbookLabel(categoryId, ownName, categoryNameById).toLowerCase();
+      return label === target;
+    });
+    if (cert) return cert;
+  }
+
+  return null;
+};
