@@ -206,6 +206,22 @@ enum RequestStatusEnum: int
         };
     }
 
+    /**
+     * True when no workflow move can ever leave this status — Completed,
+     * Forfeited, Withdrawn, ClosedUnableToProcess, and the deprecated
+     * Cancelled. Derived from allowedTransitions() rather than a second
+     * hand-maintained list, so a future status added to that map is
+     * classified correctly here with no further edit.
+     *
+     * Used to stop item-level writes (RequestItemStatusService,
+     * RequestReleaseGroupService) from re-opening or re-notifying a
+     * request that has already reached its final outcome.
+     */
+    public function isTerminal(): bool
+    {
+        return $this->allowedTransitions() === [];
+    }
+
     /** Notification trigger slug for each terminal/transitional status. */
     public function notificationTrigger(): ?string
     {

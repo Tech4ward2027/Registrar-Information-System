@@ -103,6 +103,7 @@ class RequestItemStatusService
                 ->findOrFail($item->request_id);
 
             $this->guardArchived($documentRequest);
+            $this->guardNotTerminal($documentRequest);
 
             $targetStatus = $this->validateTransition($item->status_id, $targetStatusId);
             $this->authorizeItemStatusChange($targetStatus);
@@ -142,6 +143,7 @@ class RequestItemStatusService
                 ->findOrFail($item->request_id);
 
             $this->guardArchived($documentRequest);
+            $this->guardNotTerminal($documentRequest);
 
             $targetStatus = $this->validateTransition($item->status_id, $targetStatusId);
             $this->guardCertificateGenerated($item, $targetStatus);
@@ -193,6 +195,9 @@ class RequestItemStatusService
      *   - An archived request is entirely skipped (read-only, same rule
      *     as every other write path) — restoring must happen first via
      *     DocumentRequestService::restoreRequest().
+     *   - A request that is already Completed, Forfeited, Withdrawn or
+     *     Closed is skipped with reason 'request_terminal' — its outcome
+     *     is final and its items must not be reopened or re-notified.
      *   - A request id that doesn't exist is reported back, not thrown,
      *     so one typo/stale id in a large batch doesn't fail the whole
      *     call — same "skip and report" contract as
@@ -255,6 +260,18 @@ class RequestItemStatusService
                     $result['requests_skipped'][] = [
                         'request_id' => (int) $documentRequest->request_id,
                         'reason'     => 'archived',
+                    ];
+                    continue;
+                }
+                // A request that already reached its final outcome
+                // (Completed, Forfeited, Withdrawn, Closed) is frozen.
+                // Advancing one of its items would either be a no-op or
+                // — before this check — let recomputeAggregateStatus()
+                // pull the request back out of that outcome.
+                if ($this->isTerminalRequest($documentRequest)) {
+                    $result['requests_skipped'][] = [
+                        'request_id' => (int) $documentRequest->request_id,
+                        'reason'     => 'request_terminal',
                     ];
                     continue;
                 }
@@ -444,6 +461,31 @@ class RequestItemStatusService
     }
 
     /**
+     * A request in a terminal status (Completed, Forfeited, Withdrawn,
+     * Closed - Unable to Process) has reached its final outcome. Item
+     * writes against it are refused, because recomputeAggregateStatus()
+     * would otherwise recompute the parent from whichever item rows are
+     * stale and move the request back out of that outcome, sending the
+     * student a second, contradictory notification.
+     */
+    private function guardNotTerminal(DocumentRequest $documentRequest): void
+    {
+        if ($this->isTerminalRequest($documentRequest)) {
+            $status = RequestStatusEnum::from((int) $documentRequest->status_id);
+            $label  = trim(preg_replace('/(?<!^)[A-Z]/', ' $0', $status->name));
+
+            abort(422, "This request is already {$label}, so its items can no longer be changed.");
+        }
+    }
+
+    private function isTerminalRequest(DocumentRequest $documentRequest): bool
+    {
+        $status = RequestStatusEnum::tryFrom((int) $documentRequest->status_id);
+
+        return $status !== null && $status->isTerminal();
+    }
+
+    /**
      * Throwing wrapper around certificateGeneratedIneligibilityReason()
      * for the single-item path (advanceCertificateItem()) — aborts the
      * request/response cycle on ineligibility, exactly as before this was
@@ -610,6 +652,14 @@ class RequestItemStatusService
      */
     private function recomputeAggregateStatus(DocumentRequest $documentRequest): void
     {
+        // Defense in depth behind guardNotTerminal() and the bulk skip:
+        // a request in a final status is never recomputed from its items.
+        // A stale item row must not be able to move it backward, and must
+        // not trigger a second notification.
+        if ($this->isTerminalRequest($documentRequest)) {
+            return;
+        }
+
         $itemStatusIds = DB::table('request_document')
             ->where('request_id', $documentRequest->request_id)
             ->whereNotNull('status_id')

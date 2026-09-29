@@ -17,6 +17,7 @@ use App\Contracts\NotificationServiceInterface;
 use App\Services\Concerns\FlushesAnalyticsCache;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Encapsulates all business logic for document requests.
@@ -32,6 +33,7 @@ class DocumentRequestService implements DocumentRequestServiceInterface
         private NotificationServiceInterface $notificationService,
         private BusinessCalendarService $businessCalendarService,
         private RequestReleaseGroupService $releaseGroupService,
+        private RequestStatusCascade $statusCascade,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -235,6 +237,26 @@ class DocumentRequestService implements DocumentRequestServiceInterface
      */
     public function updateRequest(DocumentRequest $documentRequest, array $validated): DocumentRequest
     {
+        return $this->performUpdate($documentRequest, $validated);
+    }
+
+    /**
+     * The body of updateRequest(), split out so claimRequest() can run
+     * extra work INSIDE the same locked transaction (see the
+     * $withinTransaction hook below) without duplicating any of the
+     * guards, history, notification or cache-flush behaviour above.
+     * updateRequest()'s own behaviour is unchanged: it calls this with
+     * no hook.
+     *
+     * @param callable(DocumentRequest, int): void|null $withinTransaction
+     *        Invoked with the locked request and its previous status_id,
+     *        after the row update and before the history row and owner
+     *        notification are written. It runs only when status_id is
+     *        actually changing, and an exception thrown from it rolls
+     *        back the whole update, so nothing has been notified by then.
+     */
+    private function performUpdate(DocumentRequest $documentRequest, array $validated, ?callable $withinTransaction = null): DocumentRequest
+    {
         // BUG FIX (RIS-PROCESS-BUGS #9 — "Omission of Completed Documents
         // in Staff Performance Analytics"): every analytics endpoint
         // (AnalyticsController) is cached for 10 minutes under the
@@ -342,6 +364,14 @@ class DocumentRequestService implements DocumentRequestServiceInterface
             $this->authorizeStatusChange($validated, $targetStatus);
 
             $documentRequest->update($validated);
+
+            if (
+                $withinTransaction !== null &&
+                isset($validated['status_id']) &&
+                (int) $validated['status_id'] !== (int) $oldStatusId
+            ) {
+                $withinTransaction($documentRequest, (int) $oldStatusId);
+            }
 
             if (isset($validated['status_id']) && (int) $validated['status_id'] !== (int) $oldStatusId) {
                 $this->recordStatusHistory($documentRequest, $oldStatusId);
@@ -513,9 +543,47 @@ class DocumentRequestService implements DocumentRequestServiceInterface
         // one that was already Completed by an earlier scan, is rejected
         // here with the same clear 422 updateRequest() already produces,
         // with no extra logic needed to distinguish those cases.
-        return $this->updateRequest($documentRequest, [
-            'status_id' => RequestStatusEnum::Completed->value,
-        ]);
+        //
+        // BUG FIX — "status doesn't update after the QR scan; admin still
+        // has to click Done": this used to write ONLY
+        // document_request.status_id. The dashboard draws each row's pill
+        // and Done button from the ITEM statuses (request_document /
+        // request_certificate), which stayed at Ready to Claim, so a
+        // claimed request still looked unclaimed. The hook below moves
+        // every still-Ready item and release group to Completed inside
+        // the SAME transaction and row lock as the parent update, so the
+        // parent and its items can never be observed out of sync, and a
+        // failure anywhere rolls the whole claim back. A repeat scan is
+        // rejected by the transition guard before the hook is reached, so
+        // it can neither re-run the cascade nor write a second set of
+        // history rows.
+        return $this->performUpdate(
+            $documentRequest,
+            ['status_id' => RequestStatusEnum::Completed->value],
+            function (DocumentRequest $lockedRequest) {
+                $moved = $this->statusCascade->cascade(
+                    $lockedRequest,
+                    RequestStatusEnum::ReadyToClaim,
+                    RequestStatusEnum::Completed,
+                    Auth::id() !== null ? (int) Auth::id() : null,
+                );
+
+                // A request can only be Ready to Claim when every item is
+                // (earliest-stage-wins), so nothing should be left over.
+                // If something is, the data had drifted before this scan.
+                // The claim still goes through — the student is standing
+                // at the counter — but the mismatch is logged so it can
+                // be found and fixed instead of staying invisible.
+                $outstanding = $this->statusCascade->countNonTerminalItems($lockedRequest);
+                if ($outstanding > 0) {
+                    Log::warning('[claimRequest] request completed with non-terminal items still attached', [
+                        'request_id'        => $lockedRequest->request_id,
+                        'outstanding_items' => $outstanding,
+                        'moved'             => $moved,
+                    ]);
+                }
+            }
+        );
     }
 
     // -------------------------------------------------------------------------

@@ -162,6 +162,17 @@ class RequestReleaseGroupService
                 abort(422, 'This request is archived and is read-only. Restore it first.');
             }
 
+            // A request that already reached its final outcome cannot
+            // have a ticket claimed against it. Without this, a group
+            // row left stale under a Completed/Forfeited/Withdrawn parent
+            // could be "claimed" here and drag the parent back through
+            // recomputeParentAggregate(), re-notifying the student.
+            $parentStatus = RequestStatusEnum::tryFrom((int) $documentRequest->status_id);
+            if ($parentStatus !== null && $parentStatus->isTerminal()) {
+                $label = trim(preg_replace('/(?<!^)[A-Z]/', ' $0', $parentStatus->name));
+                abort(422, "This request is already {$label}, so this ticket can no longer be claimed.");
+            }
+
             $currentStatus = RequestStatusEnum::from((int) $group->status_id);
             $targetStatus  = RequestStatusEnum::Completed;
 
@@ -256,6 +267,13 @@ class RequestReleaseGroupService
      */
     private function recomputeParentAggregate(DocumentRequest $documentRequest): void
     {
+        // Same rule as RequestItemStatusService::recomputeAggregateStatus():
+        // a request in a final status is never recomputed from its items.
+        $parentStatus = RequestStatusEnum::tryFrom((int) $documentRequest->status_id);
+        if ($parentStatus !== null && $parentStatus->isTerminal()) {
+            return;
+        }
+
         $itemStatusIds = DB::table('request_document')
             ->where('request_id', $documentRequest->request_id)
             ->whereNotNull('status_id')
