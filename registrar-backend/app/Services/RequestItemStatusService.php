@@ -650,7 +650,7 @@ class RequestItemStatusService
      * A request with zero items (should not occur — store() always
      * creates at least one) is left untouched rather than guessed at.
      */
-    private function recomputeAggregateStatus(DocumentRequest $documentRequest): void
+    public function recomputeAggregateStatus(DocumentRequest $documentRequest): void
     {
         // Defense in depth behind guardNotTerminal() and the bulk skip:
         // a request in a final status is never recomputed from its items.
@@ -715,7 +715,7 @@ class RequestItemStatusService
      * than guessed at, matching recomputeAggregateStatus()'s same
      * defensive choice for an empty request.
      */
-    private function recomputeReleaseGroupAggregate(int $releaseGroupId): void
+    public function recomputeReleaseGroupAggregate(int $releaseGroupId): void
     {
         // lockForUpdate() here (rather than a plain find()) guards against
         // a concurrent RequestReleaseGroupService::claimReleaseGroup() call

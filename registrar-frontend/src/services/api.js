@@ -356,8 +356,65 @@ export const deleteCalendarOverride  = (id)          => api.delete(`/calendar-ov
 // DOCUMENT REQUESTS (read: all | write: Student/Alumni | manage: Admin+)
 // Response shape from index: { current_page, data, last_page, per_page, total }
 // Read records from response.data.data, not response.data.
+//
+// Staff list params (all optional) — filtering, searching, sorting and
+// paging are done by the SERVER, so send them as query params instead of
+// downloading everything and filtering in the browser:
+//   search          min 2 characters (the server returns 422 below that).
+//                   Matches request id, claim code, requester name, student
+//                   number, document/certificate name and status name.
+//                   Names match word prefixes: "cruz" finds "Dela Cruz".
+//   status          exact status name, e.g. "Ready to Claim"
+//   classification  "Student" | "Alumni" | "Undergrad Requestor"
+//   document        document/certificate name (contains)
+//   sort            "Recent Requests" | "Old Requests" | "Classification Asc"
+//                   | "Classification Desc" | "Status Asc" | "Status Desc"
+//   view            "active" (default) | "archived"
+//   page, per_page  per_page max 200
+//   all_statuses    legacy flag, still accepted
+// "All" is ignored for status / classification / document. Build the
+// params with cleanListParams() below so empty values and too-short
+// searches are never sent.
+// Non-staff callers ignore all of this and get their own requests.
 // -------------------------------------------------------
 export const getDocumentRequests  = (params = {}) => api.get("/document-requests", { params });
+
+// Drops empty / "All" values and searches shorter than the server's
+// 2-character minimum, so a half-typed search box never causes a 422.
+// Use it on the params for getDocumentRequests() and getDocumentRequestItems().
+export const cleanListParams = (params = {}) => {
+  const out = {};
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed === "" || trimmed.toLowerCase() === "all") return;
+      if (key === "search" && trimmed.length < 2) return;
+      out[key] = trimmed;
+      return;
+    }
+    out[key] = value;
+  });
+  return out;
+};
+
+// Count per status across the WHOLE table (not one page): use it for the
+// stat cards. Every status is present (0 when empty), plus "Archived".
+// Response: { "Processing": 12, "Ready to Claim": 3, ..., "Archived": 40 }
+// Invalidate it after any status change.
+export const getDocumentRequestCounts = () => api.get("/document-requests/counts");
+
+// One row per DOCUMENT or CERTIFICATE (staff only) — the single-row
+// dashboard. Same params as getDocumentRequests(); here `status` and
+// `document` apply to the item itself. Paginated like the request list:
+// { current_page, data, last_page, per_page, total }, where each row is
+//   { type: "document"|"certificate", id, uuid, name, number_of_copies,
+//     status_id, status, completed_at,
+//     request: { request_id, uuid, requested_at, status_id, status,
+//                is_archived, requester_type, display_name, student_number,
+//                items_total, items_completed } }
+// items_completed / items_total drive the "1 of 2 Completed" badge.
+export const getDocumentRequestItems = (params = {}) => api.get("/document-requests/items", { params });
 export const getLogbookData       = (params = {}) => api.get("/document-requests/logbook", { params });
 
 // BE-2 backend fix paginated /document-requests/logbook (previously an
@@ -632,6 +689,40 @@ export const bulkDoneItems  = (ids) => api.post(`/document-requests/bulk-done`, 
 // rather than writing a new message client-side.
 // -------------------------------------------------------
 export const claimDocumentRequest = (credential) => api.post(`/document-requests/claim`, credential);
+
+// -------------------------------------------------------
+// PER-ITEM CLAIMING — two steps: look up what a code covers, then
+// confirm the documents staff chose to hand over. Staff only.
+//
+// Every document/certificate has its own uuid + claim_code, so a code can
+// be one item's own, the whole request's, or a legacy release-group ticket.
+// Pass exactly one of { uuid } (decoded QR) or { claim_code } (typed).
+//
+// lookupItemClaim(credential) — read-only, changes nothing. Returns:
+//   { matched: "item"|"request"|"release_group",
+//     request: { request_id, display_name, student_number,
+//                items_total, items_completed, ... },
+//     items: [{ type, id, uuid, name, number_of_copies, status_id, status,
+//               completed_at, claimable, reason }] }
+// Show `items` as a checklist: tick the claimable ones, and show the rest
+// (already claimed / not ready) visible but disabled, with `reason`.
+//
+// confirmItemClaim(credential, itemUuids) — releases the documents whose
+// uuids are in itemUuids (max 50) that are still Ready to Claim. Returns:
+//   { request: {...}, completed: [items], skipped: [items + skipped_reason] }
+// itemUuids may be omitted ONLY when the credential is one item's own code.
+// A repeat confirm, an archived or finished request, or an item from a
+// different request returns 422 with a readable err.response.data.message
+// — show it as-is. The request stays Processing until its LAST item is
+// claimed, so refresh the row from `request` instead of assuming Completed.
+// -------------------------------------------------------
+export const lookupItemClaim = (credential) =>
+  api.post(`/document-requests/claim/lookup`, credential);
+export const confirmItemClaim = (credential, itemUuids = undefined) =>
+  api.post(`/document-requests/claim/confirm`, {
+    ...credential,
+    ...(itemUuids ? { item_uuids: itemUuids } : {}),
+  });
 
 // -------------------------------------------------------
 // ITEM-LEVEL STATUS (Phase 2) — staff/admin only.
