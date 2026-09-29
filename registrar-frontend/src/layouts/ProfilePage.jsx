@@ -57,7 +57,9 @@ const formatSuffix = (value) => {
 const ProfilePage = ({ userType = "student" }) => {
 
   const { user } = useAuth();
-  const effectiveUserType = (user?.role_id === 4 || userType === "superAdmin") ? "superAdmin" : userType;
+  const effectiveUserType = (user?.role_id === 4 || userType === "superAdmin")
+    ? "superAdmin"
+    : (user?.role_id === 5 ? "undergrad" : userType);
   const config = ROLE_CONFIG[effectiveUserType] || ROLE_CONFIG[userType] || ROLE_CONFIG.student;
 
   const { isDark } = useTheme();
@@ -112,6 +114,7 @@ const ProfilePage = ({ userType = "student" }) => {
         middleName: user.undergrad_requestor_profile.middle_name || "",
         lastName: user.undergrad_requestor_profile.last_name || "",
         suffix: user.undergrad_requestor_profile.suffix || "",
+        studentId: user.undergrad_requestor_profile.student_number || "",
         email: user.email || ""
       });
     }
@@ -176,7 +179,7 @@ const ProfilePage = ({ userType = "student" }) => {
                 
                 {/* Role Badge */}
                 <span className="inline-block px-2.5 py-0.5 rounded bg-[#eebc48] text-[#4a1010] text-xs font-bold uppercase tracking-wider mt-1">
-                  {effectiveUserType === "superAdmin" ? "Super Admin" : effectiveUserType}
+                  {effectiveUserType === "superAdmin" ? "Super Admin" : (effectiveUserType === "undergrad" ? "Undergraduate" : effectiveUserType)}
                 </span>
               </div>
             </div>

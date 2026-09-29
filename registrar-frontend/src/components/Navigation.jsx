@@ -195,7 +195,8 @@ const Navigation = ({ isOpen, onItemClick, role = 'student' }) => {
         (user?.admin_profile?.first_name || user?.admin_profile?.last_name) ? user.admin_profile :
           (user?.student_profile?.first_name || user?.student_profile?.last_name) ? user.student_profile :
             (user?.alumni_profile?.first_name || user?.alumni_profile?.last_name) ? user.alumni_profile :
-              null;
+              (user?.undergrad_requestor_profile?.first_name || user?.undergrad_requestor_profile?.last_name) ? user.undergrad_requestor_profile :
+                null;
 
     if (p) {
       const name = [p.first_name, p.last_name, p.suffix]
@@ -217,6 +218,10 @@ const Navigation = ({ isOpen, onItemClick, role = 'student' }) => {
       return user?.policy?.name || 'Staff';
     }
 
+    if (role === 'undergrad') {
+      return 'Undergrad';
+    }
+
     if (role === 'student') {
       return 'Student';
     }
@@ -225,7 +230,7 @@ const Navigation = ({ isOpen, onItemClick, role = 'student' }) => {
       return 'Alumni';
     }
 
-    return user?.policy?.name || 'Student';
+    return user?.policy?.name || 'Undergrad';
   }, [profile, role, user]);
 
   const initials = useMemo(() => {
@@ -243,7 +248,7 @@ const Navigation = ({ isOpen, onItemClick, role = 'student' }) => {
       return getInitialsFrom(fullName);
     }
 
-    return role === 'student' ? 'S' : role === 'alumni' ? 'A' : 'SS';
+    return role === 'undergrad' ? 'U' : (role === 'student' ? 'S' : role === 'alumni' ? 'A' : 'SS');
   }, [fullName, role]);
 
   const handleLogoutClick = () => {

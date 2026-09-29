@@ -262,8 +262,9 @@ export const mapDocumentRequest = (r, resolvedStatusIds, docTypeName) => {
     studentName: formatName(r) || 'N/A',
     studentNumber: r.academic_record?.student_number
       ?? r.alumni_academic_record?.student_number
+      ?? r.undergrad_requestor_profile?.student_number
       ?? 'N/A',
-    userType: r.student_profile ? 'Student' : 'Alumni',
+    userType: (r.undergrad_requestor_profile || r.user?.role_id === 5) ? 'Undergrad' : (r.student_profile ? 'Student' : 'Alumni'),
     certName: finalCertName,
     certificateNames: r.certificates?.map(c => c.certification_type?.certificate_name).filter(Boolean) ?? [],
     isCertificate,
