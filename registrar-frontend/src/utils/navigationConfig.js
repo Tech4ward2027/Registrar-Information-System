@@ -16,6 +16,27 @@ import {
 import { MODULE_KEYS } from './policy';
 
 export const ROLE_CONFIG = {
+    undergrad: {
+    profileKey: 'undergrad_requestor_profile',
+    profileLabel: (user) => user?.undergrad_requestor_profile?.student_number || user?.email || 'Undergraduate',
+    sections: [
+      {
+        title: 'Overview',
+        items: [
+          { name: 'Dashboard', to: 'home', icon: Squares2X2Icon },
+          { name: 'Inbox', to: 'inbox', icon: InboxIcon },
+        ],
+      },
+      {
+        title: 'Undergrad Services',
+        items: [
+          { name: 'Document Lists', to: 'lists', icon: TableCellsIcon },
+          { name: 'Undergrad Requests', to: 'request', icon: ClipboardDocumentCheckIcon },
+          { name: 'FAQs & Support', to: 'faqs', icon: QuestionMarkCircleIcon },
+        ],
+      },
+    ],
+  },
   student: {
     profileKey: 'student_profile',
     profileLabel: (user) => user?.academic_record?.student_number || user?.email || 'Student',

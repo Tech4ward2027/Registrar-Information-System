@@ -65,9 +65,11 @@ export const formatName = (input, options = {}) => {
     input.student_profile ||
     input.alumni_profile ||
     input.admin_profile ||
+    input.undergrad_requestor_profile ||
     input.user?.student_profile ||
     input.user?.alumni_profile ||
     input.user?.admin_profile ||
+    input.user?.undergrad_requestor_profile ||
     input;
 
   const first = target.first_name || target.first_name_input || target.firstName || target.target_first_name || "";
@@ -92,6 +94,10 @@ export const formatName = (input, options = {}) => {
   const cleanSuffix = suffix.trim() ? toProperCase(suffix) : "";
 
   if (!cleanFirst && !cleanLast) {
+    const rawFullName = target.full_name || target.name || input.full_name || input.name || "";
+    if (rawFullName && rawFullName !== "N/A") {
+      return toProperCase(rawFullName);
+    }
     return "";
   }
 
