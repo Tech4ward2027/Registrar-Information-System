@@ -8,6 +8,7 @@ import {
   rejectUndergradRequestor,
 } from "../services/api";
 import { hasModuleAction, MODULE_KEYS } from "../utils/policy";
+import { formatName } from "../utils/formatters";
 import SuccessToast from "../components/SuccessToast.jsx";
 import ErrorToast from "../components/ErrorToast.jsx";
 import ConfirmationModal from "../components/ConfirmationModal";
@@ -174,7 +175,7 @@ const UndergradRequestorVerificationPage = () => {
     let list = [...queueData];
 
     if (filterClassification !== "All") {
-      list = list.filter((r) => (r.classification || "Student").toLowerCase() === filterClassification.toLowerCase());
+      list = list.filter((r) => (r.classification || "Undergrad").toLowerCase() === filterClassification.toLowerCase());
     }
 
     if (filterDocument !== "All") {
@@ -344,30 +345,6 @@ const UndergradRequestorVerificationPage = () => {
         {successMsg && <SuccessToast message={successMsg} onClose={() => setSuccessMsg("")} />}
         {errorMsg && <ErrorToast message={errorMsg} onClose={() => setErrorMsg("")} />}
 
-        {/* ---------------- 3 STAT CARDS (Pending / Approved / Rejected) ----------------
-            NOTE: GET /api/admin/undergrad-requestors returns rows for exactly ONE status
-            per request (the active tab). queueData therefore never contains rows for the
-            other two tabs, so their counts cannot be derived client-side without a second
-            request. Rather than silently showing a wrong "0" for tabs we have no data for,
-            we show the real fetched total for the active tab and an honest "—" placeholder
-            for the others. */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4">
-          <StatCard
-            title="Pending Verification"
-            count={activeTab === "pending" ? (meta?.total ?? queueData.length) : "—"}
-            color="amber"
-          />
-          <StatCard
-            title="Approved Submissions"
-            count={activeTab === "approved" ? (meta?.total ?? queueData.length) : "—"}
-            color="emerald"
-          />
-          <StatCard
-            title="Rejected Submissions"
-            count={activeTab === "rejected" ? (meta?.total ?? queueData.length) : "—"}
-            color="orange"
-          />
-        </div>
 
         {/* ---------------- TOOLBAR ---------------- */}
         <div
@@ -438,7 +415,7 @@ const UndergradRequestorVerificationPage = () => {
                     sections={[
                       {
                         title: "Filter by Classification",
-                        items: ["All", "Student", "Alumni"].map((option) => ({
+                        items: ["All", "Undergrad", "Student", "Alumni"].map((option) => ({
                           label: option,
                           isSelected: filterClassification === option,
                           onClick: () => setFilterClassification(option),
@@ -524,8 +501,9 @@ const UndergradRequestorVerificationPage = () => {
                   const rowId = row.user_id || row.id;
                   const isSelected = selectedIds.includes(rowId);
                   const { date, time } = formatDateAndTime(row.submitted_at || row.created_at);
-                  const nameStr = (row.full_name || row.name || `${row.first_name || "Juan"} ${row.last_name || "Dela Cruz"}`).trim();
+                  const nameStr = (formatName(row) || row.full_name || row.name || `${row.first_name || ""} ${row.last_name || ""}`).trim() || "N/A";
                   const nameParts = nameStr.split(/\s+/);
+                  const statusVal = (row.verification?.status || "pending").toLowerCase();
 
                   return (
                     <tr
@@ -561,7 +539,7 @@ const UndergradRequestorVerificationPage = () => {
                         </div>
                       </Td>
                       <Td center>
-                        <span className="font-semibold text-gray-700 dark:text-[#e4e6eb]">{row.classification || "Student"}</span>
+                        <span className="font-semibold text-gray-700 dark:text-[#e4e6eb]">{row.classification || "Undergrad"}</span>
                       </Td>
                       <Td center>
                         <span className="font-semibold text-gray-700 dark:text-[#e4e6eb]">
@@ -575,23 +553,23 @@ const UndergradRequestorVerificationPage = () => {
                         </div>
                       </Td>
                       <Td center>
-                        {activeTab === "pending" ? (
-                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-600">
-                            Pending Review
-                          </span>
-                        ) : activeTab === "approved" ? (
+                        {statusVal === "approved" ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-600">
                             Approved
                           </span>
-                        ) : (
+                        ) : statusVal === "rejected" ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-600">
                             Rejected
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-600">
+                            Pending Review
                           </span>
                         )}
                       </Td>
                       <Td center>
                         <div className="flex items-center justify-center gap-1.5">
-                          {canApprove && activeTab === "pending" && (
+                          {canApprove && (statusVal === "pending" || (!row.verification && activeTab !== "approved" && activeTab !== "rejected")) && (
                             <button
                               type="button"
                               onClick={() => {

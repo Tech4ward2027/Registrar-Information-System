@@ -12,6 +12,7 @@ import DropDown from './DropDown';
 import InputGroup from './InputGroup';
 import ErrorToast from './ErrorToast';
 import SuccessToast from './SuccessToast';
+import { getProcessingClassification, getItemProgressPercentage, extractSeparatedItems } from '../utils/bulkRequestUtils';
 
 /**
  * Item-level "next action" for a single request_document/request_certificate
@@ -139,8 +140,9 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
   }, [request]);
 
   const activeRequest = liveRequest ?? request?.rawRequest ?? request;
-  const isStudent = activeRequest?.student_profile != null || request?.userType === 'Student';
-  const isAlumni = activeRequest?.alumni_profile != null || request?.userType === 'Alumni'; 
+  const isUndergrad = activeRequest?.undergrad_requestor_profile != null || request?.userType === 'Undergrad' || activeRequest?.user?.role_id === 5;
+  const isStudent = !isUndergrad && (activeRequest?.student_profile != null || request?.userType === 'Student');
+  const isAlumni = !isUndergrad && !isStudent && (activeRequest?.alumni_profile != null || request?.userType === 'Alumni'); 
   const progress = activeRequest ? (PROGRESS_MAP[activeRequest.status_id ?? request?.statusId] ?? 0) : 0;
   const requestDocs = activeRequest?.documents ?? activeRequest?.rawRequest?.documents ?? request?.documents ?? request?.rawRequest?.documents ?? [];
   const requestCerts = activeRequest?.certificates ?? activeRequest?.rawRequest?.certificates ?? request?.certificates ?? request?.rawRequest?.certificates ?? [];
@@ -420,26 +422,18 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
         {/* Body */}
         <div className={`flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6 space-y-2 lg:space-y-6 print:p-0 print:mb-4 ${isDark ? 'text-[#e4e6eb]' : 'text-gray-900'}`}>
           
-          <Section title="Document Request Progress" isDark={isDark}>            
-            <div className="w-full">
-              <div className={`rounded-full h-2 sm:h-3 overflow-hidden ${isDark ? 'bg-[#3a3b3c]' : 'bg-gray-100'}`}>
-                <div
-                  className="bg-yellow-500 h-2 sm:h-3 rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${progress}%` }}
-                ></div>
-              </div>
-                
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 mt-2">
-                <p className={`font-bold text-sm sm:text-md wrap-break-word ${isDark ? 'text-white' : 'text-pup-maroon'}`}>
-                    {getProgressLabel(progress, isWithdrawn)}
-                </p>
-                <span className={`text-xs sm:text-sm font-semibold ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'}`}>
-                    {progress}%
-                </span>
-              </div>
-          </div>
-          </Section>
-
+          {/* Requested Documents */}
+          <Section title="Requested Documents" isDark={isDark}>
+            <div className="space-y-3">
+              {(() => {
+                const separatedItems = extractSeparatedItems(activeRequest, docTypeName, certName);
+                return separatedItems.map((item) => {
+                  const itemTicket = {
+                    id: item.itemKey,
+                    trackLabel: item.name,
+                    claimCode: item.claimCode,
+                    uuid: item.uuid,
+                  };
           {/* Claim Ticket(s) — QR Code Claiming Policy v1.0 §3.2 access point 2
               (dashboard). Shown for the entire lifetime a request is still
               claimable — AwaitingSubmission (10%), Processing (25%),
@@ -460,53 +454,67 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
               — each is scanned/claimed independently. The overwhelming
               majority of requests have zero release groups and fall
               through to the single request-level ticket exactly as
-              before. */}
-          {/* Claim Tickets Section (Student/Alumni view only) */}
-          {!isAdmin && progress !== 0 && progress !== 100 && (
-            <Section title="Claim Tickets" isDark={isDark}>
-              <div className="space-y-1">
-                {ticketsList.map((ticket, index) => {
-                  const isCtc = ticket.trackLabel.toLowerCase().includes('ctc');
+              before. */} 
                   return (
                     <div
-                      key={ticket.id || index}
-                      className={`flex items-center justify-between gap-3 py-3 border-b ${
-                        isDark ? 'border-[#3e4042]' : 'border-gray-200'
-                      } last:border-b-0 last:pb-0 first:pt-0`}
+                      key={item.itemKey}
+                      className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isDark ? 'bg-[#1f1f1f] border-[#3e4042]' : 'bg-gray-50 border-gray-200'
+                      }`}
                     >
-                      {/* Left: Icon & Title/Status */}
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                          isCtc
-                            ? (isDark ? 'bg-red-950/50 text-red-300' : 'bg-red-50 text-[#800000]')
-                            : (isDark ? 'bg-amber-950/40 text-amber-300' : 'bg-amber-50 text-[#800000]')
-                        }`}>
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                          </svg>
-                        </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className={`font-bold text-sm sm:text-base ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {item.name}
+                          <span className={`ml-2 text-xs font-semibold px-2 py-0.5 rounded-full ${isDark ? 'bg-yellow-900/40 text-yellow-300' : 'bg-yellow-200 text-yellow-900'}`}>
+                            {item.copies} {item.copies > 1 ? 'Copies' : 'Copy'}
+                          </span>
+                        </h4>
 
-                        <div className="flex flex-col min-w-0">
-                          <span className={`font-bold text-sm sm:text-base leading-tight truncate ${
-                            isDark ? 'text-white' : 'text-gray-900'
-                          }`}>
-                            {ticket.trackLabel}
-                          </span>
-                          <span className={`text-xs mt-0.5 truncate ${
-                            isDark ? 'text-gray-400' : 'text-gray-500'
-                          }`}>
-                            {ticket.statusLabel} &middot; code <strong className={isDark ? 'text-gray-200' : 'text-gray-700'}>{ticket.claimCode}</strong>
-                          </span>
+                        {/* Progress Bar per item */}
+                        <div className="mt-2 w-full max-w-md">
+                          <div className="flex justify-between items-center text-xs mb-1">
+                            <span className={`font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                              Stage: {item.statusName}
+                            </span>
+                            <span className="font-bold text-yellow-500">
+                              {item.progress}%
+                            </span>
+                          </div>
+                          <div className={`w-full h-2 rounded-full overflow-hidden ${isDark ? 'bg-[#3e4042]' : 'bg-gray-200'}`}>
+                            <div
+                              className="h-full bg-yellow-500 rounded-full transition-all duration-300"
+                              style={{
+                                width: `${item.progress}%`,
+                              }}
+                            />
+                          </div>
                         </div>
                       </div>
 
-                      {/* Right: Download Action Button */}
-                      <div className="shrink-0">
-                        <TicketDownloadButton ticket={ticket} isDark={isDark} />
+                      {/* Per-Document Download Ticket / QR Code Action */}
+                      <div className="shrink-0 self-start sm:self-center">
+                        <TicketDownloadButton ticket={itemTicket} isDark={isDark} />
                       </div>
                     </div>
                   );
-                })}
+                });
+              })()}
+            </div>
+          </Section>
+
+          {/* Undergrad Information */}
+          {isUndergrad && (
+            <Section title="Undergrad Information" isDark={isDark}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <p className="wrap-break-word">
+                  <strong>Full Name:</strong>{' '}
+                  {activeRequest.undergrad_requestor_profile
+                    ? `${activeRequest.undergrad_requestor_profile.first_name} ${activeRequest.undergrad_requestor_profile.middle_name ?? ''} ${activeRequest.undergrad_requestor_profile.last_name}`.trim()
+                    : 'N/A'}
+                </p>
+                <p className="wrap-break-word"><strong>Student Number:</strong> {activeRequest.undergrad_requestor_profile?.student_number ?? 'N/A'}</p>
+                <p className="wrap-break-word"><strong>Program:</strong> {activeRequest.undergrad_requestor_profile?.program ?? 'N/A'}</p>
+                <p className="wrap-break-word"><strong>Classification:</strong> Undergrad</p>
               </div>
             </Section>
           )}
@@ -546,226 +554,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
             </Section>
           )}
 
-            {(openNotice || canManageNotice || isWithdrawn || isClosedUnableToProcess) && (
-              <Section title="Request Resolution" isDark={isDark}>
-                <div className="space-y-3">
-                  {isWithdrawn && (
-                    <div className={`rounded-lg border p-3 ${isDark ? 'border-red-800 bg-red-950/30' : 'border-red-200 bg-red-50'}`}>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-bold text-red-700 dark:text-red-300">Withdrawn</span>
-                        {activeRequest.withdrawal_reason && (
-                          <span className="text-xs font-semibold uppercase tracking-wide opacity-75">
-                            {WITHDRAWAL_REASONS.find(([value]) => value === activeRequest.withdrawal_reason)?.[1] ?? activeRequest.withdrawal_reason}
-                          </span>
-                        )}
-                      </div>
-                      {activeRequest.withdrawal_detail && <p className="mt-1 wrap-break-word">{activeRequest.withdrawal_detail}</p>}
-                      {activeRequest.superseded_by_request_id && (
-                        <p className="mt-1 text-xs">Superseded by request #{activeRequest.superseded_by_request_id}</p>
-                      )}
-                    </div>
-                  )}
 
-                  {isClosedUnableToProcess && (
-                    <div className={`rounded-lg border p-3 ${isDark ? 'border-red-800 bg-red-950/30' : 'border-red-200 bg-red-50'}`}>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-bold text-red-700 dark:text-red-300">Closed - Unable to Process</span>
-                        {activeRequest.closure_reason && (
-                          <span className="text-xs font-semibold uppercase tracking-wide opacity-75">
-                            {CLOSURE_REASONS.find(([value]) => value === activeRequest.closure_reason)?.[1] ?? activeRequest.closure_reason}
-                          </span>
-                        )}
-                      </div>
-                      {activeRequest.closure_detail && <p className="mt-1 wrap-break-word">{activeRequest.closure_detail}</p>}
-                      {activeRequest.closure_proof_reference && <p className="mt-1 text-xs wrap-break-word">Proof: {activeRequest.closure_proof_reference}</p>}
-                    </div>
-                  )}
-
-                  {openNotice ? (
-                    <div className={`rounded-lg border p-3 ${noticeIsStale ? (isDark ? 'border-orange-700 bg-orange-950/30' : 'border-orange-300 bg-orange-50') : (isDark ? 'border-yellow-700 bg-yellow-950/30' : 'border-yellow-300 bg-yellow-50')}`}>
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <p className="font-bold">Deficiency Notice: {openNotice.item_label ?? openNotice.item_key}</p>
-                          {openNotice.detail && <p className="mt-1 wrap-break-word text-sm">{openNotice.detail}</p>}
-                        </div>
-                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${noticeIsEscalated ? 'border-red-400 text-red-700 dark:text-red-300' : noticeIsStale ? 'border-orange-400 text-orange-700 dark:text-orange-300' : 'border-yellow-400 text-yellow-700 dark:text-yellow-300'}`}>
-                          {noticeIsEscalated ? 'Escalated' : noticeIsStale ? 'Stale: 14+ days' : 'Open'}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-xs opacity-70">
-                        Issued {openNotice.issued_at ? new Date(openNotice.issued_at).toLocaleDateString() : 'recently'}
-                        {openNotice.issued_by_user?.name ? ` by ${openNotice.issued_by_user.name}` : ''}
-                      </p>
-
-                      {canManageNotice && (
-                        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
-                          <button type="button" disabled={actionLoading} onClick={handleClearNotice} className="rounded-lg bg-green-600 px-4 py-3 text-xs font-bold text-white transition hover:bg-green-700 disabled:opacity-50 shrink-0 cursor-pointer">
-                            Clear Notice
-                          </button>
-                          <form onSubmit={handleVoidNotice} className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-end">
-                            <div className="flex-1 min-w-0 w-full">
-                              <InputGroup
-                                label="Reason for Voiding"
-                                name="voidReason"
-                                value={voidReason}
-                                onChange={(event) => setVoidReason(event.target.value)}
-                                placeholder="Reason for voiding"
-                                required
-                                labelColor="text-gray-700"
-                                voiceEnabled={false}
-                              />
-                            </div>
-                            <button type="submit" disabled={actionLoading || !voidReason.trim()} className="rounded-lg border border-red-300 px-4 py-3 text-xs font-bold text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition disabled:opacity-50 shrink-0 cursor-pointer">
-                              Void Notice
-                            </button>
-                          </form>
-                        </div>
-                      )}
-                      {canWithdraw && (
-                        <button type="button" onClick={() => setShowWithdrawForm(true)} className="mt-3 text-xs font-bold text-pup-maroon underline dark:text-yellow-300 cursor-pointer">
-                          Withdraw this request
-                        </button>
-                      )}
-                    </div>
-                  ) : canManageNotice && !isTerminal && !showWithdrawForm ? (
-                    <form onSubmit={handleIssueNotice} className={`rounded-lg border p-3 ${isDark ? 'border-[#3e4042]' : 'border-gray-200'}`}>
-                      <p className="mb-2 font-bold">Issue Deficiency Notice</p>
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                        <div className="flex-1 min-w-50">
-                          <DropDown
-                            label="Deficiency Item"
-                            name="deficiencyItem"
-                            value={DEFICIENCY_ITEMS.find(([val]) => val === deficiencyItem)?.[1] || deficiencyItem}
-                            onChange={(e) => {
-                              const found = DEFICIENCY_ITEMS.find(([, label]) => label === e.target.value);
-                              setDeficiencyItem(found ? found[0] : e.target.value);
-                            }}
-                            options={DEFICIENCY_ITEMS.map(([, label]) => label)}
-                            required
-                            labelColor="text-gray-700"
-                          />
-                        </div>
-                        {deficiencyItem === 'other' && (
-                          <div className="flex-1 min-w-0">
-                            <InputGroup
-                              label="Missing Item Detail"
-                              name="deficiencyDetail"
-                              value={deficiencyDetail}
-                              onChange={(event) => setDeficiencyDetail(event.target.value)}
-                              placeholder="Specify missing item"
-                              required
-                              labelColor="text-gray-700"
-                              voiceEnabled={false}
-                            />
-                          </div>
-                        )}
-                        <button type="submit" disabled={actionLoading} className="rounded-lg bg-yellow-500 px-4 py-3 text-xs font-bold text-gray-900 transition hover:bg-yellow-400 disabled:opacity-50 shrink-0 cursor-pointer">
-                          Issue Notice
-                        </button>
-                      </div>
-                    </form>
-                  ) : null}
-
-                  {showWithdrawForm && canWithdraw && (
-                    <form onSubmit={handleWithdraw} className={`rounded-lg border p-3 ${isDark ? 'border-red-800' : 'border-red-200'}`}>
-                      <p className="mb-2 font-bold">Withdraw Request</p>
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <DropDown
-                          label="Withdrawal Reason"
-                          name="withdrawalReason"
-                          value={WITHDRAWAL_REASONS.find(([val]) => val === withdrawalReason)?.[1] || withdrawalReason}
-                          onChange={(e) => {
-                            const found = WITHDRAWAL_REASONS.find(([, label]) => label === e.target.value);
-                            setWithdrawalReason(found ? found[0] : e.target.value);
-                          }}
-                          options={WITHDRAWAL_REASONS.map(([, label]) => label)}
-                          required
-                          labelColor="text-gray-700"
-                        />
-                        <InputGroup
-                          label="Corrected Request ID (Optional)"
-                          name="supersededByRequestId"
-                          value={supersededByRequestId}
-                          onChange={(event) => setSupersededByRequestId(event.target.value.replace(/\D/g, ''))}
-                          placeholder="e.g. 12345"
-                          labelColor="text-gray-700"
-                          voiceEnabled={false}
-                        />
-                      </div>
-                      {withdrawalReason === 'other' && (
-                        <div className="mt-3">
-                          <InputGroup
-                            label="Withdrawal Reason Detail"
-                            name="withdrawalDetail"
-                            value={withdrawalDetail}
-                            onChange={(event) => setWithdrawalDetail(event.target.value)}
-                            placeholder="Reason for withdrawal"
-                            required
-                            labelColor="text-gray-700"
-                            voiceEnabled={false}
-                          />
-                        </div>
-                      )}
-                      <div className="mt-3 flex gap-2">
-                        <button type="submit" disabled={actionLoading} className="rounded-lg bg-red-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-red-700 disabled:opacity-50 cursor-pointer">
-                          Confirm Withdrawal
-                        </button>
-                        <button type="button" onClick={() => setShowWithdrawForm(false)} className={`rounded-lg border px-4 py-2.5 text-xs font-bold transition cursor-pointer ${isDark ? 'border-[#3e4042] text-[#e4e6eb] hover:bg-[#3a3b3c]' : 'border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
-                          Cancel
-                        </button>
-                      </div>
-                    </form>
-                  )}
-
-                  {canManageNotice && openNotice && !isClosedUnableToProcess && (
-                    <form onSubmit={handleCloseUnableToProcess} className={`rounded-lg border p-3 ${isDark ? 'border-red-800' : 'border-red-200'}`}>
-                      <p className="mb-2 font-bold">Close - Unable to Process</p>
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <DropDown
-                          label="Closure Reason"
-                          name="closureReason"
-                          value={CLOSURE_REASONS.find(([value]) => value === closureReason)?.[1] || closureReason}
-                          onChange={(event) => {
-                            const found = CLOSURE_REASONS.find(([, label]) => label === event.target.value);
-                            setClosureReason(found ? found[0] : event.target.value);
-                          }}
-                          options={CLOSURE_REASONS.map(([, label]) => label)}
-                          required
-                          labelColor="text-gray-700"
-                        />
-                        <InputGroup
-                          label="Proof Reference"
-                          name="closureProofReference"
-                          value={closureProofReference}
-                          onChange={(event) => setClosureProofReference(event.target.value)}
-                          placeholder="Describe the verified proof"
-                          required
-                          labelColor="text-gray-700"
-                          voiceEnabled={false}
-                        />
-                      </div>
-                      {closureReason === 'other' && (
-                        <div className="mt-3">
-                          <InputGroup
-                            label="Closure Detail"
-                            name="closureDetail"
-                            value={closureDetail}
-                            onChange={(event) => setClosureDetail(event.target.value)}
-                            placeholder="Explain why the request cannot be processed"
-                            required
-                            labelColor="text-gray-700"
-                            voiceEnabled={false}
-                          />
-                        </div>
-                      )}
-                      <button type="submit" disabled={actionLoading || !closureProofReference.trim() || (closureReason === 'other' && !closureDetail.trim())} className="mt-3 rounded-lg bg-red-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-red-700 disabled:opacity-50 cursor-pointer">
-                        Confirm Closure
-                      </button>
-                    </form>
-                  )}
-                </div>
-              </Section>
-            )}
 
           {/* Request Information */}
           <Section title="Request Information" isDark={isDark}>
@@ -777,36 +566,6 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
               <p className="wrap-break-word"><strong>Status:</strong> {displayStatus}</p>
               <p className="wrap-break-word"><strong>Purpose:</strong> {activeRequest.request_purpose?.purpose_name ?? purposeName(activeRequest.request_purpose_id) ?? 'N/A'}</p>
             </div>
-          </Section>
-
-          {/* Documents Requested */}
-          <Section title="Documents Requested" isDark={isDark}>
-            <ul className="list-disc ml-4 sm:ml-5 space-y-2">
-              {requestDocs.map((doc, index) => (
-                <li key={doc.request_document_id ?? index} className="wrap-break-word">
-                  <strong className="block sm:inline">{getDocName(doc)}</strong>
-                  <span className={`inline-flex mt-1 sm:mt-0 sm:ml-2 text-xs font-semibold px-2 py-0.5 rounded-full ${isDark ? 'bg-yellow-900/40 text-yellow-300' : 'bg-yellow-200'}`}>
-                    {doc.number_of_copies || 1} {(doc.number_of_copies || 1) > 1 ? 'Copies' : 'Copy'}
-                  </span>
-                </li>
-              ))}
-              {requestCerts.map((c, i) => {
-                const cName = c.certification_type?.certificate_name ?? certName(c.certificate_type_id) ?? 'Unknown Certification';
-                return (
-                  <li key={c.request_certificate_id ?? `cert-${i}`} className="wrap-break-word">
-                    <strong className="block sm:inline">{cName}</strong>
-                    <span className={`inline-flex mt-1 sm:mt-0 sm:ml-2 text-xs font-semibold px-2 py-0.5 rounded-full ${isDark ? 'bg-yellow-900/40 text-yellow-300' : 'bg-yellow-200'}`}>
-                      {c.number_of_copies || 1} {(c.number_of_copies || 1) > 1 ? 'Copies' : 'Copy'}
-                    </span>
-                  </li>
-                );
-              })}
-              {requestDocs.length === 0 && requestCerts.length === 0 && (request?.documentDetailsArray ?? activeRequest.documentDetailsArray)?.map((detail, index) => (
-                <li key={`detail-${index}`} className="wrap-break-word">
-                  <strong className="block sm:inline">{detail}</strong>
-                </li>
-              ))}
-            </ul>
           </Section>
 
           {/* Payment Details */}

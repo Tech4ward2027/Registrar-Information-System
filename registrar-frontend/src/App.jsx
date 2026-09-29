@@ -118,7 +118,7 @@ const App = () => {
                     <Route path="request" element={<RequestForm />} />
                     <Route path="lists" element={<DocumentLists />} />
                     <Route path="faqs" element={<FAQPage />} />
-                    <Route path="profile" element={<ProfilePage userType="student" />} />
+                    <Route path="profile" element={<ProfilePage userType="undergrad" />} />
                     <Route path="contact" element={<RegistrarContact />} />
                     <Route path="inbox" element={<InboxCenter />} />
                   </Route>
