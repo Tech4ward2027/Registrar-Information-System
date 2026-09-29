@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ClaimableItem;
 use Illuminate\Database\Eloquent\Model;
 
 class RequestDocument extends Model
 {
+    use ClaimableItem;
+
     protected $table      = 'request_document';
     protected $primaryKey = 'request_document_id';
     public    $timestamps = false;
@@ -24,6 +27,7 @@ class RequestDocument extends Model
         'number_of_copies' => 'integer',
         'status_id'        => 'integer',
         'request_release_group_id' => 'integer',
+        'completed_at'             => 'datetime',
     ];
 
     public function documentRequest()
