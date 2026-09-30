@@ -99,6 +99,8 @@ export const getItemProgressPercentage = (statusId) => {
  * @param {Function} [certNameFn] 
  * @returns {Array} List of extracted line item objects
  */
+import { getEffectiveStatus } from './staffDashboardUtils';
+
 export const extractSeparatedItems = (rawRequest, docTypeNameFn = () => null, certNameFn = () => null) => {
   if (!rawRequest) return [];
   const items = [];
@@ -112,8 +114,9 @@ export const extractSeparatedItems = (rawRequest, docTypeNameFn = () => null, ce
     const name = docType.document_name || docTypeNameFn(d.document_type_id) || `Document #${d.document_type_id}`;
     const period = docType.document_process_period;
     const classification = getProcessingClassification(period, name);
-    const itemStatusId = d.status_id ?? rawRequest.status_id;
-    const itemStatusName = d.status?.status_name ?? rawRequest.status?.status_name ?? 'Processing';
+    const effective = getEffectiveStatus(rawRequest, d);
+    const itemStatusId = effective.statusId;
+    const itemStatusName = effective.statusName;
 
     // Find release group matching this item's release group ID
     const relGroup = releaseGroups.find(g => g.request_release_group_id === d.request_release_group_id);
@@ -145,8 +148,9 @@ export const extractSeparatedItems = (rawRequest, docTypeNameFn = () => null, ce
     const name = certType.certificate_name || certNameFn(c.certificate_type_id) || `Certificate #${c.certificate_type_id}`;
     const period = certType.certificate_process_period;
     const classification = getProcessingClassification(period, name);
-    const itemStatusId = c.status_id ?? rawRequest.status_id;
-    const itemStatusName = c.status?.status_name ?? rawRequest.status?.status_name ?? 'Processing';
+    const effective = getEffectiveStatus(rawRequest, c);
+    const itemStatusId = effective.statusId;
+    const itemStatusName = effective.statusName;
 
     const relGroup = releaseGroups.find(g => g.request_release_group_id === c.request_release_group_id);
     const itemClaimCode = relGroup?.claim_code || rawRequest.claim_code || rawRequest.uuid || `CERT-${c.request_certificate_id}`;

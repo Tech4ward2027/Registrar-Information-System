@@ -47,9 +47,11 @@ test.describe('Staff Dashboard E2E Tests', () => {
       }
 
       // GET requests
-      const isArchived = url.includes('view=archived');
+      const parsedUrl = new URL(url);
+      const isArchived = parsedUrl.searchParams.get('view') === 'archived';
+      const searchParam = parsedUrl.searchParams.get('search')?.toLowerCase();
       
-      const mockRequests = isArchived
+      let mockRequests = isArchived
         ? [
             {
               request_id: 2001,
@@ -150,6 +152,14 @@ test.describe('Staff Dashboard E2E Tests', () => {
             }
           ];
 
+      if (searchParam) {
+        mockRequests = mockRequests.filter(r => {
+          const studentName = `${r.student_profile?.first_name || ''} ${r.student_profile?.last_name || ''}`.toLowerCase();
+          const alumniName = `${r.alumni_profile?.first_name || ''} ${r.alumni_profile?.last_name || ''}`.toLowerCase();
+          return studentName.includes(searchParam) || alumniName.includes(searchParam);
+        });
+      }
+
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -233,12 +243,21 @@ test.describe('Staff Dashboard E2E Tests', () => {
 
     // 2. Test Text Search functionality
     const searchInput = page.getByPlaceholder('Search', { exact: true });
+    const searchResponsePromise = page.waitForResponse(resp =>
+      resp.url().includes('/api/document-requests') && resp.url().includes('search=Juan')
+    );
     await searchInput.fill('Juan');
+    await searchResponsePromise;
+
     await expect(page.getByText('Maria Santos Reyes')).not.toBeVisible();
     await expect(page.getByText('Juan Dela Cruz')).toBeVisible();
 
     // Clear search
+    const clearResponsePromise = page.waitForResponse(resp =>
+      resp.url().includes('/api/document-requests') && !resp.url().includes('search=Juan')
+    );
     await searchInput.fill('');
+    await clearResponsePromise;
     await expect(page.getByText('Maria Santos Reyes')).toBeVisible();
 
     // 3. Test Details Modal triggers on clicking the View Details button
@@ -281,7 +300,7 @@ test.describe('Staff Dashboard E2E Tests', () => {
 
     // 4. Switch to Enter Claim Code tab
     await page.getByRole('button', { name: 'Enter Claim Code' }).click();
-    await expect(page.getByText('Enter the 6-digit code sent in your inbox.')).toBeVisible();
+    await expect(page.getByText('Enter the 6-character alphanumeric claim code.')).toBeVisible();
 
     // 5. Verify passcode input boxes render
     const inputs = page.locator('input[placeholder="0"]');

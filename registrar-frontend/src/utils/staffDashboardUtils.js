@@ -263,8 +263,11 @@ export const mapDocumentRequest = (r, resolvedStatusIds, docTypeName) => {
     studentNumber: r.academic_record?.student_number
       ?? r.alumni_academic_record?.student_number
       ?? r.undergrad_requestor_profile?.student_number
+      ?? r.undergradRequestorProfile?.student_number
+      ?? r.user?.undergrad_requestor_profile?.student_number
+      ?? r.user?.undergradRequestorProfile?.student_number
       ?? 'N/A',
-    userType: (r.undergrad_requestor_profile || r.user?.role_id === 5) ? 'Undergrad' : (r.student_profile ? 'Student' : 'Alumni'),
+    userType: (r.undergrad_requestor_profile || r.undergradRequestorProfile || r.user?.undergrad_requestor_profile || r.user?.undergradRequestorProfile || r.user?.role_id === 5) ? 'Undergrad' : ((r.student_profile || r.studentProfile) ? 'Student' : 'Alumni'),
     certName: finalCertName,
     certificateNames: r.certificates?.map(c => c.certification_type?.certificate_name).filter(Boolean) ?? [],
     isCertificate,
@@ -383,4 +386,62 @@ export const filterAndSortRequests = (requests, { filterStatus, filterClassifica
       }
       return 0;
     });
+};
+
+export const TERMINAL_STATUS_NAMES = [
+  'Completed',
+  'Forfeited',
+  'Withdrawn',
+  'Closed - Unable to Process',
+  'Cancelled',
+];
+
+/**
+ * Returns the effective status for an item.
+ * A terminal parent request status (Completed, Forfeited, Withdrawn, Closed, Cancelled)
+ * overrides any stale item status.
+ */
+const STATUS_NAME_MAP = {
+  1: 'Pending',
+  2: 'Processing',
+  3: 'Completed',
+  4: 'Forfeited',
+  5: 'Cancelled',
+  6: 'Awaiting Submission',
+  7: 'Ready to Claim',
+  8: 'Pending Signature',
+  13: 'Withdrawn',
+  14: 'Closed - Unable to Process',
+};
+
+export const getEffectiveStatus = (request, item) => {
+  const reqStatusName = request?.statusName || request?.status?.status_name || request?.rawRequest?.status?.status_name || '';
+  const reqStatusId = request?.statusId ?? request?.status_id ?? request?.rawRequest?.status_id;
+
+  const isTerminal = TERMINAL_STATUS_NAMES.some(
+    s => s.toLowerCase() === String(reqStatusName).trim().toLowerCase()
+  ) || [3, 4, 5, 13, 14].includes(Number(reqStatusId));
+
+  if (isTerminal) {
+    return {
+      statusId: Number(reqStatusId),
+      statusName: reqStatusName || (
+        Number(reqStatusId) === 3 ? 'Completed' :
+        Number(reqStatusId) === 4 ? 'Forfeited' :
+        Number(reqStatusId) === 13 ? 'Withdrawn' :
+        Number(reqStatusId) === 14 ? 'Closed - Unable to Process' :
+        'Completed'
+      ),
+      isTerminal: true,
+    };
+  }
+
+  const itemStatusId = item?.statusId ?? item?.status_id ?? item?.item?.status_id ?? reqStatusId;
+  const itemStatusName = item?.statusName ?? item?.status?.status_name ?? item?.item?.status?.status_name ?? STATUS_NAME_MAP[Number(itemStatusId)] ?? reqStatusName ?? 'Processing';
+
+  return {
+    statusId: Number(itemStatusId),
+    statusName: itemStatusName,
+    isTerminal: false,
+  };
 };

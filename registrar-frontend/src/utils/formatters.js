@@ -63,13 +63,21 @@ export const formatName = (input, options = {}) => {
   // Extract nested profile if request or user object is passed
   const target =
     input.student_profile ||
+    input.studentProfile ||
     input.alumni_profile ||
+    input.alumniProfile ||
     input.admin_profile ||
+    input.adminProfile ||
     input.undergrad_requestor_profile ||
+    input.undergradRequestorProfile ||
     input.user?.student_profile ||
+    input.user?.studentProfile ||
     input.user?.alumni_profile ||
+    input.user?.alumniProfile ||
     input.user?.admin_profile ||
+    input.user?.adminProfile ||
     input.user?.undergrad_requestor_profile ||
+    input.user?.undergradRequestorProfile ||
     input;
 
   const first = target.first_name || target.first_name_input || target.firstName || target.target_first_name || "";
