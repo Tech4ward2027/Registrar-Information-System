@@ -8,15 +8,14 @@ import { withdrawRequestItem, closeRequestItem } from '../services/api';
 
 const WITHDRAW_REASONS = [
   { key: 'wrong_item_paid', label: 'Wrong item paid / mistyped request' },
-  { key: 'unfulfilled_requirements', label: 'Unfulfilled document requirements' },
+  { key: 'duplicate_submission', label: 'Duplicate submission' },
   { key: 'student_no_longer_needs', label: 'Student no longer needs this item' },
   { key: 'other', label: 'Other (specify below)' },
 ];
 
 const CLOSE_REASONS = [
-  { key: 'unresolved_deficiency', label: 'Unresolved Deficiency / Non-compliance' },
   { key: 'requestor_deceased', label: 'Requestor Deceased' },
-  { key: 'fraudulent_submission', label: 'Fraudulent Submission / Identity mismatch' },
+  { key: 'requestor_incapacitated', label: 'Requestor Incapacitated (permanently unable to respond)' },
   { key: 'other', label: 'Other (specify below)' },
 ];
 
@@ -79,7 +78,8 @@ const ItemWithdrawCloseModal = ({ open, mode, reqId, subItem, onClose, onSuccess
           withdrawal_detail: isOther ? detail.trim() : undefined,
         };
 
-        const res = await withdrawRequestItem(reqId, subItem.type, realItemId, payload);
+        const itemType = subItem.type === 'cert' || subItem.type === 'certificate' ? 'certificate' : 'document';
+        const res = await withdrawRequestItem(reqId, itemType, realItemId, payload);
         onSuccess?.(res?.data ?? res, 'Item withdrawn successfully.');
       } else {
         if (isOther && !detail.trim()) {
@@ -100,7 +100,8 @@ const ItemWithdrawCloseModal = ({ open, mode, reqId, subItem, onClose, onSuccess
           closure_proof_reference: proofRef.trim(),
         };
 
-        const res = await closeRequestItem(reqId, subItem.type, realItemId, payload);
+        const itemType = subItem.type === 'cert' || subItem.type === 'certificate' ? 'certificate' : 'document';
+        const res = await closeRequestItem(reqId, itemType, realItemId, payload);
         onSuccess?.(res?.data ?? res, 'Item closed as unable to process.');
       }
       onClose();
