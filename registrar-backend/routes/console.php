@@ -263,3 +263,26 @@ Schedule::command('undergrad-requestors:purge-rejected-pii')
     ->withoutOverlapping()
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+
+/*
+|--------------------------------------------------------------------------
+| Scheduled Commands — Request Consistency Check
+|--------------------------------------------------------------------------
+|
+| 03:30  requests:check-consistency — read-only nightly check that flags
+|        a finished request with unfinished items, an unfinished request
+|        whose items are all finished, and an open item-level Deficiency
+|        Notice on a finished item or request. It never changes data. A
+|        non-zero exit is recorded in job_run_logs, so it shows up under
+|        "needs attention" in the SuperAdmin Scheduled Jobs Health panel.
+|
+| 03:30 sits after audit:verify (03:00) and clear of the 08:xx block.
+|--------------------------------------------------------------------------
+*/
+
+Schedule::command('requests:check-consistency')
+    ->dailyAt('03:30')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
