@@ -1,66 +1,1386 @@
-import React, { useState } from 'react';
-import StaffDashboard from '../layouts/StaffDashboard.jsx';
-import ClaimScannerModal from '../components/ClaimScannerModal.jsx';
+import React, { useRef, useState } from 'react';
+import {
+  CheckCircleIcon,
+  EyeIcon,
+  TrashIcon,
+  ArrowDownTrayIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ClockIcon,
+  PrinterIcon,
+} from '@heroicons/react/24/solid';
+import { CheckIcon, ArrowUpIcon, ArrowDownIcon, ArchiveBoxIcon, EllipsisVerticalIcon, QrCodeIcon, XCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
+import { updateRequestDocumentStatus, updateRequestCertificateStatus } from '../services/api';
+import RequestDetailsModal from '../components/RequestDetailModal';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
+import LoadingOverlay from '../components/LoadingOverlay.jsx';
+import LineLoading from '../components/LineLoading.jsx';
+import CertificateModal from '../components/CertificateModal.jsx';
+import ItemWithdrawCloseModal from '../components/ItemWithdrawCloseModal.jsx';
+import RequestActionModal from '../components/RequestActionModal.jsx';
+import VoiceSearchInput from '../components/VoiceSearchInput.jsx';
+import DashboardDropdown from '../components/DashboardDropdown.jsx';
 import { useTheme } from '../context/ThemeContext';
-import { QueueListIcon, ArchiveBoxIcon, QrCodeIcon } from '@heroicons/react/24/outline';
+import { useStaffDashboard } from '../hooks/useStaffDashboard';
+import { useAlertToast } from '../context/AlertToastContext';
+import { useAuth } from '../context/AuthProvider';
+import { hasModuleAction } from '../utils/policy';
+import {
+  StatCard,
+  Th,
+  Td,
+  StatusBadge,
+  Pagination,
+} from '../components/StaffDashboardComponents';
+import { getWorkflowStatusOptions, getEffectiveStatus } from '../utils/staffDashboardUtils';
 
-const StaffDashboardPage = () => {
-  const [activeTab, setActiveTab] = useState('active'); // 'active' | 'archived'
-  const [scannerOpen, setScannerOpen] = useState(false);
-  const { isDark } = useTheme();
+const ITEMS_PER_PAGE = 15;
+
+const isWithdrawnRequest = (request) => (
+  Number(request?.statusId ?? request?.status_id) === 13 ||
+  String(request?.statusName ?? request?.status?.status_name ?? '').toLowerCase() === 'withdrawn'
+);
+
+const isTerminalRequest = (request) => (
+  isWithdrawnRequest(request) || Number(request?.statusId ?? request?.status_id) === 14 ||
+  String(request?.statusName ?? request?.status?.status_name ?? '').toLowerCase() === 'closed - unable to process'
+);
+
+const SubItemActionsDropdown = ({
+  req,
+  subItem,
+  viewMode,
+  canProcess = true,
+  onViewDetails,
+  onIssueDeficiencyNotice,
+  onWithdrawItem,
+  onCloseItem,
+  isDark,
+}) => {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const dropdownRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const effectiveItem = getEffectiveStatus(req, subItem);
+  const statusId = Number(effectiveItem.statusId);
+  const statusName = (effectiveItem.statusName || '').toLowerCase();
+
+  const isItemFinished =
+    [3, 4, 13, 14].includes(statusId) ||
+    ['completed', 'forfeited', 'withdrawn', 'closed - unable to process'].includes(statusName) ||
+    isTerminalRequest(req);
+
+  const canActOnItem = canProcess && !isItemFinished && !req.isArchived && viewMode !== 'archived';
 
   return (
-    <div className="max-w-7xl mx-auto px-3 sm:px-5 mb-6">
-      <div className={`rounded-2xl p-4 sm:p-5 shadow-sm border ${
-        isDark ? 'bg-[#242526] border-[#3e4042] text-[#e4e6eb]' : 'bg-white border-gray-200 text-gray-900'
-      }`}>
-        {/* Tab Navigation */}
-        <div className={`flex justify-between items-center border-b mb-4 ${isDark ? 'border-[#3e4042]' : 'border-gray-200'}`}>
-          <div className="flex">
+    <div className="relative inline-block text-left" ref={dropdownRef}>
+      <button
+        type="button"
+        title="Item Actions"
+        onClick={() => setIsOpen(!isOpen)}
+        className={`p-1.5 rounded-lg transition-colors flex items-center justify-center focus:outline-none ${
+          isOpen
+            ? isDark
+              ? 'bg-[#2a2a2f] text-[#ffc72c] border border-[#ffc72c]/30'
+              : 'bg-gray-100 text-[#800000] border border-gray-200'
+            : isDark
+            ? 'text-[#b0b3b8] hover:text-[#e4e6eb] hover:bg-[#3a3b3c] border border-transparent'
+            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 border border-transparent'
+        }`}
+      >
+        <EllipsisVerticalIcon className="w-4 h-4" />
+      </button>
+
+      {isOpen && (
+        <div
+          className={`absolute right-0 mt-1.5 w-56 rounded-xl shadow-lg border z-50 overflow-hidden text-left ${
+            isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042]' : 'bg-white text-gray-700 border-gray-200'
+          }`}
+          style={{
+            boxShadow: '0 8px 32px -4px rgba(0,0,0,0.18), 0 2px 8px -2px rgba(0,0,0,0.10)',
+          }}
+        >
+          <div className="py-1 flex flex-col gap-0.5">
+            {/* View Details */}
             <button
-              onClick={() => setActiveTab('active')}
-              className={`px-4 py-2 font-semibold text-xs sm:text-sm transition-all relative border-b-2 -mb-0.5 focus:outline-none flex items-center gap-1.5 ${
-                activeTab === 'active'
-                  ? isDark
-                    ? 'text-white border-white font-bold'
-                    : 'text-gray-950 border-gray-955 font-bold'
-                  : isDark
-                  ? 'text-[#b0b3b8] border-transparent hover:text-white'
-                  : 'text-gray-500 border-transparent hover:text-gray-900'
+              type="button"
+              onClick={() => {
+                onViewDetails();
+                setIsOpen(false);
+              }}
+              className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold transition-colors ${
+                isDark ? 'hover:bg-[#2a2a2f] text-[#e4e6eb]' : 'hover:bg-gray-50 text-gray-700'
               }`}
             >
-              <QueueListIcon className="w-4 h-4" />
-              <span>Active requests</span>
+              <EyeIcon className="w-4 h-4 text-gray-400 dark:text-[#808080]" />
+              View Details
             </button>
-            <button
-              onClick={() => setActiveTab('archived')}
-              className={`px-4 py-2 font-semibold text-xs sm:text-sm transition-all relative border-b-2 -mb-0.5 focus:outline-none flex items-center gap-1.5 ${
-                activeTab === 'archived'
-                  ? isDark
-                    ? 'text-white border-white font-bold'
-                    : 'text-gray-950 border-gray-955 font-bold'
-                  : isDark
-                  ? 'text-[#b0b3b8] border-transparent hover:text-white'
-                  : 'text-gray-500 border-transparent hover:text-gray-900'
-              }`}
-            >
-              <ArchiveBoxIcon className="w-4 h-4" />
-              <span>Archived records</span>
-            </button>
+
+            {canActOnItem && (
+              <>
+                <div className={`border-t my-0.5 ${isDark ? 'border-[#3e4042]' : 'border-gray-100'}`} />
+
+                {/* Issue Deficiency Notice */}
+                {onIssueDeficiencyNotice && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onIssueDeficiencyNotice(req, subItem);
+                      setIsOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-yellow-600 dark:text-yellow-400 transition-colors ${
+                      isDark ? 'hover:bg-[#2a2a2f]' : 'hover:bg-yellow-50'
+                    }`}
+                  >
+                    <ExclamationCircleIcon className="w-4 h-4 text-yellow-500 shrink-0" />
+                    Issue Deficiency Notice
+                  </button>
+                )}
+
+                {/* Withdraw Item */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onWithdrawItem(req.id, subItem);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-amber-600 dark:text-amber-400 transition-colors ${
+                    isDark ? 'hover:bg-[#2a2a2f]' : 'hover:bg-amber-50'
+                  }`}
+                >
+                  <ArchiveBoxIcon className="w-4 h-4 text-amber-500 shrink-0" />
+                  Withdraw Item
+                </button>
+
+                {/* Close Item */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCloseItem(req.id, subItem);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-red-600 dark:text-red-400 transition-colors ${
+                    isDark ? 'hover:bg-[#2a2a2f]' : 'hover:bg-red-50'
+                  }`}
+                >
+                  <XCircleIcon className="w-4 h-4 text-red-500 shrink-0" />
+                  Close Item (Unable to Process)
+                </button>
+              </>
+            )}
           </div>
+
+          {/* Gold bottom accent */}
+          <div className="h-1 w-full bg-linear-to-r from-[#FFD700] via-[#FFC72C] to-[#FFD700]" />
         </div>
-
-        {/* Dashboard View */}
-        <StaffDashboard 
-          viewMode={activeTab} 
-          isEmbedded={true} 
-          onScanToClaim={() => setScannerOpen(true)} 
-        />
-      </div>
-
-      <ClaimScannerModal open={scannerOpen} onClose={() => setScannerOpen(false)} />
+      )}
     </div>
   );
 };
 
-export default StaffDashboardPage;
+const RowActionsDropdown = ({
+  req,
+  viewMode,
+  resolvedStatusIds,
+  canProcess = true,
+  onViewDetails,
+  onGenerateCert,
+  onArchive,
+  onRestore,
+  onIssueDeficiencyNotice,
+  onWithdrawItem,
+  onCloseItem,
+  singleSubItem,
+  updatingId,
+  isDark,
+}) => {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const dropdownRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  // Enable Generate Certificate in 3-dots dropdown menu when not in archived view
+  // and only for requests that actually include certificate items
+  const hasCertificates = Boolean(
+    req?.hasCertificates ||
+    (Array.isArray(req?.certificates) && req.certificates.length > 0) ||
+    (Array.isArray(req?.certificateNames) && req.certificateNames.length > 0) ||
+    (Array.isArray(req?.rawRequest?.certificates) && req.rawRequest.certificates.length > 0)
+  );
+  const showGenerateCert = Boolean(onGenerateCert && viewMode !== 'archived' && hasCertificates);
+  const isUpdating = updatingId === req.id;
+
+  // Single-item request actions: check if singleSubItem is actable
+  let canActOnSingleItem = false;
+  if (singleSubItem && canProcess && viewMode !== 'archived' && !req.isArchived) {
+    const effectiveItem = getEffectiveStatus(req, singleSubItem);
+    const statusId = Number(effectiveItem.statusId);
+    const statusName = (effectiveItem.statusName || '').toLowerCase();
+    const isItemFinished =
+      [3, 4, 13, 14].includes(statusId) ||
+      ['completed', 'forfeited', 'withdrawn', 'closed - unable to process'].includes(statusName) ||
+      isTerminalRequest(req);
+    canActOnSingleItem = !isItemFinished;
+  }
+
+  return (
+    <div className="relative inline-block text-left" ref={dropdownRef}>
+      <button
+        type="button"
+        title="More Actions"
+        onClick={() => setIsOpen(!isOpen)}
+        className={`p-2 rounded-lg transition-colors flex items-center justify-center focus:outline-none ${
+          isOpen
+            ? isDark
+              ? 'bg-[#2a2a2f] text-[#ffc72c] border border-[#ffc72c]/30'
+              : 'bg-gray-100 text-[#800000] border border-gray-200'
+            : isDark
+            ? 'text-[#b0b3b8] hover:text-[#e4e6eb] hover:bg-[#3a3b3c] border border-transparent'
+            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 border border-transparent'
+        }`}
+      >
+        <EllipsisVerticalIcon className="w-5 h-5" />
+      </button>
+
+      {isOpen && (
+        <div
+          className={`absolute right-0 mt-1.5 w-56 rounded-xl shadow-lg border z-50 overflow-hidden text-left ${
+            isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042]' : 'bg-white text-gray-700 border-gray-200'
+          }`}
+          style={{
+            boxShadow: '0 8px 32px -4px rgba(0,0,0,0.18), 0 2px 8px -2px rgba(0,0,0,0.10)',
+          }}
+        >
+          <div className="py-1 flex flex-col gap-0.5">
+            {/* View Details */}
+            <button
+              type="button"
+              onClick={() => {
+                onViewDetails();
+                setIsOpen(false);
+              }}
+              className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                isDark ? 'hover:bg-[#2a2a2f] text-[#e4e6eb]' : 'hover:bg-gray-50 text-gray-700'
+              }`}
+            >
+              <EyeIcon className="w-4 h-4 text-gray-400 dark:text-[#808080]" />
+              View Details
+            </button>
+
+            {/* Generate Certificate */}
+            {showGenerateCert && (
+              <button
+                type="button"
+                onClick={() => {
+                  onGenerateCert();
+                  setIsOpen(false);
+                }}
+                className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                  isDark ? 'hover:bg-[#2a2a2f] text-[#e4e6eb]' : 'hover:bg-gray-50 text-gray-700'
+                }`}
+              >
+                <PrinterIcon className="w-4 h-4 text-gray-400 dark:text-[#808080]" />
+                Generate Certificate
+              </button>
+            )}
+
+            {canActOnSingleItem && (
+              <>
+                <div className={`border-t my-0.5 ${isDark ? 'border-[#3e4042]' : 'border-gray-100'}`} />
+
+                {/* Issue Deficiency Notice */}
+                {onIssueDeficiencyNotice && (
+                  <button
+                    type="button"
+                    disabled={isUpdating}
+                    onClick={() => {
+                      onIssueDeficiencyNotice(req, singleSubItem);
+                      setIsOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-yellow-600 dark:text-yellow-400 transition-colors disabled:opacity-50 ${
+                      isDark ? 'hover:bg-[#2a2a2f]' : 'hover:bg-yellow-50'
+                    }`}
+                  >
+                    <ExclamationCircleIcon className="w-4 h-4 text-yellow-500 shrink-0" />
+                    Issue Deficiency Notice
+                  </button>
+                )}
+
+                {/* Withdraw Item */}
+                <button
+                  type="button"
+                  disabled={isUpdating}
+                  onClick={() => {
+                    onWithdrawItem(req.id, singleSubItem);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-amber-600 dark:text-amber-400 transition-colors disabled:opacity-50 ${
+                    isDark ? 'hover:bg-[#2a2a2f]' : 'hover:bg-amber-50'
+                  }`}
+                >
+                  <ArchiveBoxIcon className="w-4 h-4 text-amber-500 shrink-0" />
+                  Withdraw Item
+                </button>
+
+                {/* Close Item */}
+                <button
+                  type="button"
+                  disabled={isUpdating}
+                  onClick={() => {
+                    onCloseItem(req.id, singleSubItem);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-red-600 dark:text-red-400 transition-colors disabled:opacity-50 ${
+                    isDark ? 'hover:bg-[#2a2a2f]' : 'hover:bg-red-50'
+                  }`}
+                >
+                  <XCircleIcon className="w-4 h-4 text-red-500 shrink-0" />
+                  Close Item (Unable to Process)
+                </button>
+              </>
+            )}
+
+            <div className={`border-t my-0.5 ${isDark ? 'border-[#3e4042]' : 'border-gray-100'}`} />
+
+            {/* Archive / Restore */}
+            {viewMode === 'archived' ? (
+              <button
+                type="button"
+                disabled={isUpdating}
+                onClick={() => {
+                  onRestore();
+                  setIsOpen(false);
+                }}
+                className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                  isDark ? 'hover:bg-[#2a2a2f] text-[#e4e6eb]' : 'hover:bg-gray-50 text-gray-750'
+                }`}
+              >
+                <CheckIcon className="w-4 h-4 text-gray-400 dark:text-[#808080]" />
+                Restore
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={isUpdating}
+                onClick={() => {
+                  onArchive();
+                  setIsOpen(false);
+                }}
+                className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                  isDark ? 'hover:bg-[#2a2a2f] text-[#e4e6eb]' : 'hover:bg-gray-50 text-gray-750'
+                }`}
+              >
+                <ArchiveBoxIcon className="w-4 h-4 text-gray-400 dark:text-[#808080]" />
+                Archive
+              </button>
+            )}
+          </div>
+
+          {/* Gold bottom accent */}
+          <div className="h-1 w-full bg-linear-to-r from-[#FFD700] via-[#FFC72C] to-[#FFD700]" />
+        </div>
+      )}
+    </div>
+  );
+};
+
+const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim }) => {
+  const { isDark } = useTheme();
+  const { showError, showSuccess } = useAlertToast();
+  const { user } = useAuth();
+
+  // Work Item #1 — Granular Per-Action Permissions: UX layer only —
+  // the backend's coarse route gate + DocumentRequestService::
+  // updateRequest()'s fine-grained, target-status-dependent check are
+  // the real security boundary (see that file's authorizeStatusChange).
+  // This only ever hides a button a Student Staff account's policy
+  // wouldn't actually be allowed to use, so a direct API call is
+  // rejected server-side even though the UI never showed the option.
+  const canProcess = hasModuleAction(user, 'dashboard', 'Process');
+  const canComplete = hasModuleAction(user, 'dashboard', 'Complete');
+
+  const {
+    requests,
+    filteredData,
+    meta,
+    statusCounts,
+    loading,
+    actionLoading,
+    filterStatus,
+    setFilterStatus,
+    searchTerm,
+    setSearchTerm,
+    updatingId,
+    selectedRequest,
+    setSelectedRequest,
+    currentPage,
+    setCurrentPage,
+    sortOrder,
+    setSortOrder,
+    selectedIds,
+    setSelectedIds,
+    showDeleteConfirm,
+    setShowDeleteConfirm,
+    certRequest,
+    setCertRequest,
+    sortDropdownOpen,
+    setSortDropdownOpen,
+    statusDropdownOpen,
+    setStatusDropdownOpen,
+    filterClassification,
+    setFilterClassification,
+    classificationDropdownOpen,
+    setClassificationDropdownOpen,
+    filterDocument,
+    setFilterDocument,
+    documentDropdownOpen,
+    setDocumentDropdownOpen,
+    documentOptions,
+    resolvedStatusIds,
+    requestStatuses,
+    handleStatusUpdate,
+    handleSelectOne,
+    handleDeleteSelected,
+    confirmDeleteSelected,
+    handleArchiveSelected,
+    handleRestoreSelected,
+    handleArchiveOne,
+    handleRestoreOne,
+    handleBulkReady,
+    handleBulkDone,
+    handleCertificatePrinted,
+    queryClient,
+    setUpdatingId,
+  } = useStaffDashboard(viewMode);
+
+  const [expandedRowIds, setExpandedRowIds] = useState(new Set());
+  const [itemModalState, setItemModalState] = useState({
+    open: false,
+    mode: 'withdraw',
+    reqId: null,
+    subItem: null,
+  });
+
+  const [actionModalState, setActionModalState] = useState({
+    open: false,
+    modalType: 'deficiency',
+    req: null,
+    subItem: null,
+  });
+
+  const handleOpenDeficiencyNotice = (req, subItem = null) => {
+    setActionModalState({
+      open: true,
+      modalType: 'deficiency',
+      req,
+      subItem,
+    });
+  };
+
+  const handleOpenWithdrawItem = (reqId, subItem) => {
+    setItemModalState({
+      open: true,
+      mode: 'withdraw',
+      reqId,
+      subItem,
+    });
+  };
+
+  const handleOpenCloseItem = (reqId, subItem) => {
+    setItemModalState({
+      open: true,
+      mode: 'close',
+      reqId,
+      subItem,
+    });
+  };
+
+  const toggleRowExpand = (id) => {
+    setExpandedRowIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleItemStatusUpdate = async (reqId, item, targetStatusId) => {
+    setUpdatingId(reqId);
+    try {
+      if (item.type === 'doc') {
+        await updateRequestDocumentStatus(reqId, item.id, targetStatusId);
+      } else if (item.type === 'cert') {
+        await updateRequestCertificateStatus(reqId, item.id, targetStatusId);
+      }
+      queryClient.invalidateQueries({ queryKey: ['documentRequests'] });
+    } catch (err) {
+      showError(err.response?.data?.message || 'Failed to update item status.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const getSubItems = (req) => {
+    const raw = req.rawRequest || req;
+    const items = [];
+    if (raw.documents && raw.documents.length > 0) {
+      raw.documents.forEach((d) => {
+        const name = d.document_type?.document_name || d.document_name || 'Document';
+        const qty = Number(d.number_of_copies) || 1;
+        items.push({
+          type: 'doc',
+          id: d.request_document_id ?? d.id,
+          name,
+          qty,
+          statusId: d.status_id,
+          statusName: d.status?.status_name || d.status_name,
+          status: d.status,
+          item: d,
+        });
+      });
+    }
+    if (raw.certificates && raw.certificates.length > 0) {
+      raw.certificates.forEach((c) => {
+        const certName = c.certification_type?.certificate_name;
+        const name = certName || 'Certificate';
+        const qty = Number(c.number_of_copies) || 1;
+        items.push({
+          type: 'cert',
+          id: c.request_certificate_id ?? c.id,
+          name,
+          qty,
+          statusId: c.status_id,
+          statusName: c.status?.status_name || c.status_name,
+          status: c.status,
+          generatedAt: c.generated_at,
+          item: c,
+        });
+      });
+    }
+    if (items.length === 0 && req.documentDetailsArray) {
+      req.documentDetailsArray.forEach((title, idx) => {
+        items.push({
+          type: 'doc',
+          id: `fallback-${idx}`,
+          name: title,
+          qty: 1,
+          statusId: req.statusId,
+        });
+      });
+    }
+    return items;
+  };
+
+  const getSummaryStatusPill = (req) => {
+    if (isTerminalRequest(req)) {
+      return <StatusBadge status={Number(req.statusId ?? req.status_id) === 14 ? 'Closed - Unable to Process' : 'Withdrawn'} />;
+    }
+
+    const items = getSubItems(req);
+
+    if (items.length === 0) {
+      return <StatusBadge status={req.statusName} />;
+    }
+
+    if (items.length === 1) {
+      const singleItem = items[0];
+      const effective = getEffectiveStatus(req, singleItem);
+      const itemStatusName = effective.statusName;
+      return <StatusBadge status={itemStatusName} />;
+    }
+
+    // Categorize items by status
+    const completedCount = items.filter(i => Number(i.statusId) === resolvedStatusIds.COMPLETED || String(i.statusName).toLowerCase() === 'completed').length;
+    const readyCount = items.filter(i => Number(i.statusId) === resolvedStatusIds.READY || String(i.statusName).toLowerCase() === 'ready to claim').length;
+    const pendingSigCount = items.filter(i => Number(i.statusId) === resolvedStatusIds.PENDING_SIGNATURE || String(i.statusName).toLowerCase() === 'pending signature').length;
+    const withdrawnCount = items.filter(i => Number(i.statusId) === 13 || String(i.statusName).toLowerCase() === 'withdrawn').length;
+    const closedCount = items.filter(i => Number(i.statusId) === 14 || String(i.statusName).toLowerCase() === 'closed - unable to process').length;
+    const forfeitedCount = items.filter(i => Number(i.statusId) === 4 || String(i.statusName).toLowerCase() === 'forfeited').length;
+
+    const totalCount = items.length;
+    const terminalCount = completedCount + withdrawnCount + closedCount + forfeitedCount;
+    const activeTotal = totalCount - (withdrawnCount + closedCount + forfeitedCount);
+
+    // 1. ALL items in the request are terminal -> Request is Completed/Finished
+    if (terminalCount === totalCount) {
+      if (withdrawnCount === totalCount) return <StatusBadge status="Withdrawn" />;
+      if (closedCount === totalCount) return <StatusBadge status="Closed - Unable to Process" />;
+      if (forfeitedCount === totalCount) return <StatusBadge status="Forfeited" />;
+      return <StatusBadge status="Completed" />;
+    }
+
+    // 2. All remaining active items are Ready -> "Ready to Claim"
+    if (activeTotal > 0 && (completedCount + readyCount === activeTotal)) {
+      return <StatusBadge status="Ready to Claim" />;
+    }
+
+    // 3. All remaining active items pending signature -> "Pending Signature"
+    if (pendingSigCount > 0 && (pendingSigCount + readyCount + completedCount === activeTotal)) {
+      return <StatusBadge status="Pending Signature" />;
+    }
+
+    // 4. Processing in progress
+    const doneCount = completedCount + readyCount;
+    const denominator = activeTotal > 0 ? activeTotal : totalCount;
+    return (
+      <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap ${isDark ? 'bg-yellow-900/20 text-yellow-400 border-yellow-600' : 'bg-yellow-100 text-yellow-700 border-yellow-200'
+        }`}>
+        {doneCount > 0 ? `${doneCount} of ${denominator} Processing` : `Processing (${denominator} docs)`}
+      </span>
+    );
+  };
+
+  const handleBulkReadyClick = () => {
+    if (selectedIds.length === 0) return;
+
+    handleBulkReady(selectedIds, {
+      onSuccess: (res) => {
+        const data = res?.data || res;
+        const requestsStatusChangedCount = data?.requests_status_changed?.length || 0;
+        const itemsUpdatedCount = data?.items_updated?.length || 0;
+        const requestsProcessedCount = data?.requests_processed?.length || 0;
+        const itemsSkippedCount = data?.items_skipped?.length || 0;
+        const requestsSkippedCount = data?.requests_skipped?.length || 0;
+
+        if (requestsStatusChangedCount > 0) {
+          showSuccess(
+            `Successfully marked ${requestsStatusChangedCount} request(s) as Ready to Claim` +
+            `${requestsSkippedCount > 0 ? ` (${requestsSkippedCount} skipped)` : ''}.`
+          );
+        } else if (itemsUpdatedCount > 0) {
+          showSuccess(
+            `Successfully updated ${itemsUpdatedCount} item(s) across ${requestsProcessedCount} request(s) to Ready to Claim.`
+          );
+        } else {
+          showError(
+            `No items were updated` +
+            `${itemsSkippedCount > 0 || requestsSkippedCount > 0 ? ' (selected items are ineligible or already ready)' : '.'}`
+          );
+        }
+      },
+      onError: (err) => {
+        showError('Error updating status: ' + (err?.response?.data?.message || err.message));
+      },
+    });
+  };
+
+  const handleBulkDoneClick = () => {
+    if (selectedIds.length === 0) return;
+
+    handleBulkDone(selectedIds, {
+      onSuccess: (res) => {
+        const data = res?.data || res;
+        const requestsStatusChangedCount = data?.requests_status_changed?.length || 0;
+        const itemsUpdatedCount = data?.items_updated?.length || 0;
+        const requestsProcessedCount = data?.requests_processed?.length || 0;
+        const itemsSkippedCount = data?.items_skipped?.length || 0;
+        const requestsSkippedCount = data?.requests_skipped?.length || 0;
+
+        if (requestsStatusChangedCount > 0) {
+          showSuccess(
+            `Successfully marked ${requestsStatusChangedCount} request(s) as Completed` +
+            `${requestsSkippedCount > 0 ? ` (${requestsSkippedCount} skipped)` : ''}.`
+          );
+        } else if (itemsUpdatedCount > 0) {
+          showSuccess(
+            `Successfully updated ${itemsUpdatedCount} item(s) across ${requestsProcessedCount} request(s) to Completed.`
+          );
+        } else {
+          showError(
+            `No items were updated` +
+            `${itemsSkippedCount > 0 || requestsSkippedCount > 0 ? ' (selected items are not ready to be completed)' : '.'}`
+          );
+        }
+      },
+      onError: (err) => {
+        showError('Error updating status: ' + (err?.response?.data?.message || err.message));
+      },
+    });
+  };
+
+  const sortDropdownRef = useRef(null);
+  const statusDropdownRef = useRef(null);
+  const classificationDropdownRef = useRef(null);
+  const documentDropdownRef = useRef(null);
+
+  const handleSort = (field) => {
+    if (field === 'Date & Time') {
+      setSortOrder(prev => prev === 'Recent Requests' ? 'Old Requests' : 'Recent Requests');
+    } else if (field === 'Classification') {
+      setSortOrder(prev => prev === 'Classification Asc' ? 'Classification Desc' : 'Classification Asc');
+    } else if (field === 'Status') {
+      setSortOrder(prev => prev === 'Status Asc' ? 'Status Desc' : 'Status Asc');
+    }
+  };
+
+  const handleSelectAll = (e) => {
+    const pageIds = currentItems.map(item => item.id);
+    if (e.target.checked) {
+      setSelectedIds(prev => [...new Set([...prev, ...pageIds])]);
+    } else {
+      setSelectedIds(prev => prev.filter(id => !pageIds.includes(id)));
+    }
+  };
+  
+  // Only real, reachable request-workflow statuses are offered here —
+  // see getWorkflowStatusOptions for why the raw reference-data rows
+  // (which include unrelated/orphaned entries like "On Hold", "Rejected",
+  // "Returned", "Draft", "Archived") are not used directly.
+  const statusFilterOptions = ['All', ...getWorkflowStatusOptions(requestStatuses)];
+
+  const currentItems = requests;
+  const totalPages = meta?.lastPage ?? 1;
+  const indexOfFirstItem = meta?.from ? meta.from - 1 : (currentPage - 1) * 20;
+
+  const handleNextPage = () => currentPage < totalPages && setCurrentPage(prev => prev + 1);
+  const handlePrevPage = () => currentPage > 1 && setCurrentPage(prev => prev - 1);
+
+  const dashboardContent = (
+    <>
+      <LoadingOverlay isVisible={loading} message="Fetching Request Records..." />
+      <LineLoading isVisible={actionLoading} />
+
+      {/* ---------------- CARDS ---------------- */}
+      {viewMode === 'archived' ? (
+        <div className="grid grid-cols-1 gap-3 sm:gap-4 mb-4">
+          <StatCard 
+            title="Archived Requests" 
+            count={statusCounts['Archived'] ?? 0} 
+            color="blue" 
+          />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-4">
+          <StatCard title="New Requests" count={statusCounts['Pending'] ?? statusCounts['Pending Review'] ?? 0} color="yellow" />
+          <StatCard title="Awaiting Submission" count={statusCounts['Awaiting Submission'] ?? 0} color="emerald" />
+          <StatCard title="Processing" count={statusCounts['Processing'] ?? 0} color="blue" />
+          <StatCard title="Awaiting Signature" count={statusCounts['Pending Signature'] ?? 0} color="amber" />
+          <StatCard title="Ready for Pickup" count={statusCounts['Ready to Claim'] ?? 0} color="green" />
+        </div>
+      )}
+
+      {/* ---------------- TOOLBAR ---------------- */}
+      <div className={isEmbedded ? "mb-4 flex flex-col md:flex-row gap-2.5 justify-between items-center w-full" : `p-2.5 sm:p-3 rounded-xl shadow-sm mb-4 flex flex-col md:flex-row gap-2.5 justify-between items-center ${isDark ? 'bg-[#242526] border border-[#3e4042]' : 'bg-white border border-gray-100'}`}>
+        {selectedIds.length > 0 ? (
+          <div className={`flex flex-wrap items-center gap-3 p-2 rounded-lg border w-full md:w-auto ${isDark ? 'bg-[#1f1f1f] border-[#3e4042]' : 'bg-blue-50/30 border-blue-100'}`}>
+            <span className={`font-bold text-sm ml-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{selectedIds.length} Selected</span>
+            {viewMode !== 'archived' && (
+              <>
+                {canProcess && (
+                  <button 
+                    onClick={handleBulkReadyClick}
+                    className="flex items-center justify-center gap-1.5 w-32 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
+                  >
+                    <CheckCircleIcon className="w-4 h-4" /> Mark Ready
+                  </button>
+                )}
+                {canComplete && (
+                  <button 
+                    onClick={handleBulkDoneClick}
+                    className="flex items-center justify-center gap-1.5 w-32 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
+                  >
+                    <CheckCircleIcon className="w-4 h-4" /> Mark Done
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center gap-3 w-full md:max-w-xl">
+            <div className="flex-1">
+              <VoiceSearchInput
+                value={searchTerm}
+                onChange={setSearchTerm}
+                placeholder="Search"
+                language="en-US"
+              />
+            </div>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+          {(filterStatus !== 'All' || filterClassification !== 'All' || filterDocument !== 'All' || sortOrder !== 'Recent Requests' || searchTerm.trim() !== '') && (
+            <button
+              type="button"
+              onClick={() => {
+                setFilterStatus('All');
+                setFilterClassification('All');
+                setFilterDocument('All');
+                setSortOrder('Recent Requests');
+                setSearchTerm('');
+                setSelectedIds([]);
+                setSortDropdownOpen(false);
+                setStatusDropdownOpen(false);
+                setClassificationDropdownOpen(false);
+                setDocumentDropdownOpen(false);
+              }}
+              className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-colors border shadow-xs flex items-center justify-center shrink-0 whitespace-nowrap cursor-pointer
+              ${isDark
+                  ? 'bg-[#1f1f1f] text-[#b0b3b8] border-[#3e4042] hover:bg-[#2a2a2f] hover:text-[#e4e6eb]'
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+            >
+              Clear Filters
+            </button>
+          )}
+
+          {viewMode === 'archived' ? (
+            <button
+              type="button"
+              disabled={selectedIds.length === 0}
+              onClick={handleRestoreSelected}
+              title={selectedIds.length > 0 ? `Restore ${selectedIds.length} selected request(s)` : 'Select requests to restore'}
+              className={`p-2 rounded-lg transition-all border flex items-center justify-center shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+                isDark
+                  ? 'bg-[#1f1f1f] text-[#b0b3b8] hover:text-[#e4e6eb] hover:bg-[#2a2a2f] border-[#3e4042]'
+                  : 'bg-white text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-gray-200 shadow-xs'
+              }`}
+            >
+              <CheckIcon className="w-5 h-5" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={selectedIds.length === 0}
+              onClick={handleArchiveSelected}
+              title={selectedIds.length > 0 ? `Archive ${selectedIds.length} selected request(s)` : 'Select requests to archive'}
+              className={`p-2 rounded-lg transition-all border flex items-center justify-center shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+                isDark
+                  ? 'bg-[#1f1f1f] text-[#b0b3b8] hover:text-[#e4e6eb] hover:bg-[#2a2a2f] border-[#3e4042]'
+                  : 'bg-white text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-gray-200 shadow-xs'
+              }`}
+            >
+              <ArchiveBoxIcon className="w-5 h-5" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            disabled={selectedIds.length === 0}
+            onClick={handleDeleteSelected}
+            title={selectedIds.length > 0 ? `Delete ${selectedIds.length} selected request(s)` : 'Select requests to delete'}
+            className={`p-2 rounded-lg transition-all border flex items-center justify-center shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+              isDark
+                ? 'bg-[#1f1f1f] text-[#b0b3b8] hover:text-[#e4e6eb] hover:bg-[#2a2a2f] border-[#3e4042]'
+                : 'bg-white text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-gray-200 shadow-xs'
+            }`}
+          >
+            <TrashIcon className="w-5 h-5" />
+          </button>
+
+          {viewMode === 'active' && onScanToClaim && (
+            <button
+              type="button"
+              onClick={onScanToClaim}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-pup-maroon text-white text-sm font-bold hover:bg-pup-dark-maroon transition-all active:scale-95 shadow-sm shrink-0 cursor-pointer"
+            >
+              <QrCodeIcon className="w-5 h-5" />
+              <span>Scan to Claim</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ---------------- TABLE ---------------- */}
+      <div className={isEmbedded ? "overflow-x-auto w-full" : `rounded-xl shadow overflow-x-auto border ${isDark ? 'bg-[#242526] border-[#3e4042]' : 'bg-white border-gray-100'}`}>
+        <table className={`min-w-full divide-y ${isDark ? 'divide-[#3e4042]' : 'divide-gray-100'}`}>
+          <thead className={isDark ? 'bg-[#18191a]/80' : 'bg-gray-50'}>
+            <tr>
+              <th className="px-3 py-2.5 w-8 text-center">
+                <input
+                  type="checkbox"
+                  className={`w-3.5 h-3.5 rounded cursor-pointer ${isDark ? 'border-[#4e4f50] text-blue-400 focus:ring-blue-400 bg-[#242526]' : 'border-gray-300 text-blue-600 focus:ring-blue-500'}`}
+                  onChange={handleSelectAll}
+                  checked={currentItems.length > 0 && selectedIds.length === currentItems.length}
+                />
+              </th>
+              <Th center>#</Th>
+              <Th center>Name</Th>
+              <Th center>
+                <DashboardDropdown
+                  isOpen={classificationDropdownOpen}
+                  setIsOpen={setClassificationDropdownOpen}
+                  dropdownRef={classificationDropdownRef}
+                  align="center"
+                  trigger={<span>Classification</span>}
+                  sections={[
+                    {
+                      title: 'Filter by Classification',
+                      items: ['All', 'Student', 'Alumni'].map(option => ({
+                        label: option,
+                        isSelected: filterClassification === option,
+                        onClick: () => setFilterClassification(option)
+                      }))
+                    }
+                  ]}
+                />
+              </Th>
+              <Th center>
+                <DashboardDropdown
+                  isOpen={documentDropdownOpen}
+                  setIsOpen={setDocumentDropdownOpen}
+                  dropdownRef={documentDropdownRef}
+                  width="w-64"
+                  trigger={<span>Document</span>}
+                  sections={[
+                    {
+                      title: 'Filter by Document',
+                      items: documentOptions.map(option => ({
+                        label: option,
+                        isSelected: filterDocument === option,
+                        onClick: () => setFilterDocument(option)
+                      }))
+                    }
+                  ]}
+                />
+              </Th>
+              <Th center>
+                <button
+                  type="button"
+                  onClick={() => handleSort('Date & Time')}
+                  className="flex items-center justify-center gap-1 mx-auto text-xs uppercase font-bold hover:text-[#800000] dark:hover:text-[#FFC72C] transition-colors focus:outline-none"
+                >
+                  <span>Date & Time</span>
+                  {sortOrder === 'Recent Requests' || sortOrder === 'Old Requests' ? (
+                    sortOrder === 'Old Requests' ? <ChevronUpIcon className="w-3.5 h-3.5 text-blue-500" /> : <ChevronDownIcon className="w-3.5 h-3.5 text-blue-500" />
+                  ) : (
+                    <ChevronDownIcon className="w-3.5 h-3.5 text-gray-400 opacity-50" />
+                  )}
+                </button>
+              </Th>
+              <Th center>
+                <DashboardDropdown
+                  isOpen={statusDropdownOpen}
+                  setIsOpen={setStatusDropdownOpen}
+                  dropdownRef={statusDropdownRef}
+                  align="center"
+                  trigger={<span>Status</span>}
+                  sections={[
+                    {
+                      title: 'Filter by Status',
+                      items: statusFilterOptions.map(option => ({
+                        label: option,
+                        isSelected: filterStatus === option,
+                        onClick: () => setFilterStatus(option)
+                      }))
+                    }
+                  ]}
+                />
+              </Th>
+              <th className={`px-3 py-2.5 text-[11px] uppercase font-bold tracking-wider ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'} text-center w-62.5 min-w-62.5`}>Actions</th>
+            </tr>
+          </thead>
+          <tbody className={isDark ? 'divide-y divide-[#3e4042]' : 'divide-y divide-gray-100'}>
+            {currentItems.length === 0 ? (
+              <tr>
+                <td colSpan="8" className="px-6 py-16 text-center">
+                  <div className="flex flex-col items-center justify-center gap-3">
+                    <svg
+                      className={`w-12 h-12 ${isDark ? 'text-gray-600' : 'text-gray-300'}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"
+                      />
+                    </svg>
+                    <div>
+                      <div className={`text-base font-semibold ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                        No requests found
+                      </div>
+                      <div className={`text-xs mt-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                        Try adjusting your search terms or active filters.
+                      </div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              currentItems.map((req, idx) => {
+                const isExpanded = expandedRowIds.has(req.id);
+                const subItems = getSubItems(req);
+                const isMultiItem = subItems.length > 1;
+                const requestIsWithdrawn = isTerminalRequest(req);
+
+                return (
+                  <React.Fragment key={req.id}>
+                    <tr className={`transition-colors ${isDark ? 'hover:bg-[#3a3b3c]' : 'hover:bg-gray-50'} ${selectedIds.includes(req.id) ? (isDark ? 'bg-blue-900/15' : 'bg-blue-50') : ''}`}>
+                      <td className="px-3 py-2 text-center">
+                        <input
+                          type="checkbox"
+                          className={`w-3.5 h-3.5 rounded cursor-pointer ${isDark ? 'border-[#4e4f50] bg-[#242526]' : 'border-gray-300'}`}
+                          checked={selectedIds.includes(req.id)}
+                          onChange={() => handleSelectOne(req.id)}
+                        />
+                      </td>
+                      <Td center>
+                        <span className="font-semibold text-xs text-gray-600 dark:text-gray-300">
+                          {indexOfFirstItem + idx + 1}
+                        </span>
+                      </Td>
+                      <Td center>
+                        <span className="font-bold">{req.studentName}</span>
+                      </Td>
+                      <Td center>
+                        <span className="text-xs tracking-wide font-semibold">
+                          {req.userType || 'Unknown'}
+                        </span>
+                      </Td>
+                      <Td center>
+                        {req.documentDetailsArray.length > 1 ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleRowExpand(req.id)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all cursor-pointer active:scale-95 ${isExpanded
+                                ? (isDark
+                                  ? 'bg-[#3a3b3c] text-white border-[#5a5b5c]'
+                                  : 'bg-gray-200 text-gray-900 border-gray-300')
+                                : (isDark
+                                  ? 'bg-[#1f1f1f] text-[#e4e6eb] hover:bg-[#2a2a2f] border-[#3e4042]'
+                                  : 'bg-white text-gray-700 hover:bg-gray-100 border-gray-200 shadow-xs')
+                              }`}
+                            title={req.documentDetailsArray.join(', ')}
+                          >
+                            <span>{req.documentDetailsArray.length} Requests</span>
+                            <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-gray-900 dark:text-white' : 'text-gray-400'}`} />
+                          </button>
+                        ) : (
+                          <span className="font-semibold text-xs sm:text-sm" title={req.documentDetailsArray[0]}>
+                            {req.documentDetailsArray[0] || 'Unknown Document'}
+                          </span>
+                        )}
+                      </Td>
+                      <Td center>
+                        <div className={isDark ? 'text-xs text-[#b0b3b8]' : 'text-xs text-gray-400'}>{req.date}</div>
+                        <div className={isDark ? 'text-xs text-[#b0b3b8]' : 'text-xs text-gray-400'}>{req.time}</div>
+                      </Td>
+                      <Td center>
+                        {getSummaryStatusPill(req)}
+                      </Td>
+                      <td className={`px-3 py-2 text-xs ${isDark ? 'text-[#e4e6eb]' : 'text-inherit'} w-62.5 min-w-62.5`}>
+                        <div className="flex items-center justify-end gap-1.5 w-full">
+                          {/* For single-item requests ONLY, render direct parent row action button */}
+                          {(() => {
+                            const singleSubItem = subItems[0];
+                            const effectiveItem = singleSubItem ? getEffectiveStatus(req, singleSubItem) : { statusId: req.statusId, statusName: req.statusName };
+                            const effectiveStatusId = Number(effectiveItem.statusId);
+                            const statusName = (effectiveItem.statusName || '').toLowerCase();
+                            const isItemFinished =
+                              [3, 4, 13, 14].includes(effectiveStatusId) ||
+                              ['completed', 'forfeited', 'withdrawn', 'closed - unable to process'].includes(statusName) ||
+                              isTerminalRequest(req);
+                            const canActOnParentRow = !requestIsWithdrawn && !isMultiItem && canProcess && !req.isArchived && !isItemFinished;
+
+                            return (
+                              <>
+                                {canActOnParentRow && effectiveStatusId === resolvedStatusIds.AWAITING_SUBMISSION && (
+                                  <button
+                                    disabled={updatingId === req.id}
+                                    onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.PENDING) : handleStatusUpdate(req.id, resolvedStatusIds.PENDING)}
+                                    className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-emerald-900/20 hover:bg-emerald-900/30 text-emerald-400 border border-emerald-600' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700 border border-emerald-200'}`}
+                                    title="Confirm source document received."
+                                  >
+                                    <span className={`flex items-center justify-center w-3.5 h-3.5 rounded-full shrink-0 ${isDark ? 'bg-emerald-900/40 text-emerald-400' : 'bg-white text-emerald-700'
+                                      }`}>
+                                      <CheckIcon className="w-2.5 h-2.5" strokeWidth={4} />
+                                    </span>
+                                    <span>Confirm Received</span>
+                                  </button>
+                                )}
+                                {canActOnParentRow && effectiveStatusId === resolvedStatusIds.PENDING && (
+                                  <button
+                                    disabled={updatingId === req.id}
+                                    onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.PENDING_SIGNATURE) : handleStatusUpdate(req.id, resolvedStatusIds.PENDING_SIGNATURE)}
+                                    className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-amber-900/20 hover:bg-amber-900/30 text-amber-400 border border-amber-600' : 'bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-200'
+                                      }`}
+                                  >
+                                    <span className={`flex items-center justify-center w-3.5 h-3.5 rounded-full shrink-0 ${isDark ? 'bg-amber-900/40 text-amber-400' : 'bg-white text-amber-700'
+                                      }`}>
+                                      <CheckIcon className="w-2.5 h-2.5" strokeWidth={4} />
+                                    </span>
+                                    <span>Pending Signature</span>
+                                  </button>
+                                )}
+                                {canActOnParentRow && (effectiveStatusId === resolvedStatusIds.PENDING || effectiveStatusId === resolvedStatusIds.PENDING_SIGNATURE) && (
+                                  <button
+                                    disabled={updatingId === req.id}
+                                    onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.READY) : handleStatusUpdate(req.id, resolvedStatusIds.READY)}
+                                    className={`flex items-center justify-center gap-1 w-18 px-2.5 py-1 text-white text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-blue-900/20 hover:bg-blue-900/30 text-blue-400 border border-blue-600' : 'bg-blue-500 hover:bg-blue-700'
+                                      }`}
+                                  >
+                                    <CheckCircleIcon className="w-3.5 h-3.5" /> Ready
+                                  </button>
+                                )}
+                                {canActOnParentRow && canComplete && effectiveStatusId === resolvedStatusIds.READY && (
+                                  <button
+                                    disabled={updatingId === req.id}
+                                    onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.COMPLETED) : handleStatusUpdate(req.id, resolvedStatusIds.COMPLETED)}
+                                    className={`flex items-center justify-center gap-1 w-18 px-2.5 py-1 text-white text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap ${isDark ? 'bg-green-900/20 hover:bg-green-900/30 text-green-400 border border-green-600' : 'bg-green-500 hover:bg-green-700'}`}
+                                  >
+                                    <CheckCircleIcon className="w-3.5 h-3.5" /> Done
+                                  </button>
+                                )}
+                              </>
+                            );
+                          })()}
+
+                          {/* Kebab Menu (RowActionsDropdown) rendered on all parent summary rows */}
+                          <RowActionsDropdown
+                            req={req}
+                            viewMode={viewMode}
+                            resolvedStatusIds={resolvedStatusIds}
+                            canProcess={canProcess}
+                            onViewDetails={() => setSelectedRequest(req.rawRequest)}
+                            onGenerateCert={() => setCertRequest(req)}
+                            onArchive={() => handleArchiveOne(req.id)}
+                            onRestore={() => handleRestoreOne(req.id)}
+                            onIssueDeficiencyNotice={handleOpenDeficiencyNotice}
+                            onWithdrawItem={handleOpenWithdrawItem}
+                            onCloseItem={handleOpenCloseItem}
+                            singleSubItem={subItems.length === 1 ? subItems[0] : null}
+                            updatingId={updatingId}
+                            isDark={isDark}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Accordion Sub-Rows for Multi-Item Requests */}
+                    {isExpanded && isMultiItem && !requestIsWithdrawn && subItems.map((subItem) => {
+                      const effectiveItem = getEffectiveStatus(req, subItem);
+                      const effectiveStatusId = Number(effectiveItem.statusId);
+                      const isItemAwaiting = effectiveStatusId === resolvedStatusIds.AWAITING_SUBMISSION;
+                      const isItemReady = effectiveStatusId === resolvedStatusIds.READY;
+                      const isItemDone = effectiveStatusId === resolvedStatusIds.COMPLETED;
+                      const isItemPendingSig = effectiveStatusId === resolvedStatusIds.PENDING_SIGNATURE;
+                      const itemStatusName = (effectiveItem.statusName || '').toLowerCase();
+                      const isItemFinished =
+                        [3, 4, 13, 14].includes(effectiveStatusId) ||
+                        ['completed', 'forfeited', 'withdrawn', 'closed - unable to process'].includes(itemStatusName) ||
+                        isTerminalRequest(req);
+                      const canActOnSubItem = canProcess && !isItemFinished && !req.isArchived && viewMode !== 'archived';
+
+                      return (
+                        <tr key={`sub-${subItem.id}`} className={`transition-colors border-t border-gray-100 dark:border-zinc-800/60 ${isDark ? 'bg-[#18191a]/40 hover:bg-[#18191a]/80' : 'bg-gray-50/50 hover:bg-gray-50'}`}>
+                          {/* Col 1: Checkbox */}
+                          <td className="px-3 py-2 text-center"></td>
+
+                          {/* Col 2: Tree connector line */}
+                          <td className="px-2 py-2 text-center">
+                            <div className="flex items-center justify-center pl-2">
+                              <div className="w-3.5 h-4 border-l-2 border-b-2 border-gray-300 dark:border-zinc-600 rounded-bl-xs shrink-0 -mt-2" />
+                            </div>
+                          </td>
+
+                          {/* Col 3: Student Name */}
+                          <td className="px-3 py-2"></td>
+
+                          {/* Col 4: Classification */}
+                          <td className="px-3 py-2"></td>
+
+                          {/* Col 5: DOCUMENT Name */}
+                          <td className="px-3 py-2">
+                            <span className={`font-semibold text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                              {subItem.name}
+                            </span>
+                          </td>
+
+                          {/* Col 6: DATE & TIME */}
+                          <td className="px-3 py-2"></td>
+
+                          {/* Col 8: STATUS Badge */}
+                          <Td center>
+                            <StatusBadge status={effectiveItem.statusName} />
+                          </Td>
+
+                          {/* Col 9: ACTIONS — Per-item Action Button */}
+                          <td className={`px-3 py-2 text-xs ${isDark ? 'text-[#e4e6eb]' : 'text-inherit'} w-62.5 min-w-62.5`}>
+                            <div className="flex items-center justify-end gap-1.5 w-full">
+                              {canActOnSubItem && isItemAwaiting && (
+                                <button
+                                  type="button"
+                                  disabled={updatingId === req.id}
+                                  onClick={() => handleItemStatusUpdate(req.id, subItem, resolvedStatusIds.PENDING)}
+                                  className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-emerald-900/20 hover:bg-emerald-900/30 text-emerald-400 border border-emerald-600' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700 border border-emerald-200'
+                                    }`}
+                                  title="Confirm source document received."
+                                >
+                                  <span className={`flex items-center justify-center w-3.5 h-3.5 rounded-full shrink-0 ${isDark ? 'bg-emerald-900/40 text-emerald-400' : 'bg-white text-emerald-700'
+                                    }`}>
+                                    <CheckIcon className="w-2.5 h-2.5" strokeWidth={4} />
+                                  </span>
+                                  <span>Confirm Received</span>
+                                </button>
+                              )}
+
+                              {canActOnSubItem && !isItemAwaiting && !isItemReady && !isItemDone && !isItemPendingSig && (
+                                <button
+                                  type="button"
+                                  disabled={updatingId === req.id}
+                                  onClick={() => handleItemStatusUpdate(req.id, subItem, resolvedStatusIds.PENDING_SIGNATURE)}
+                                  className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-amber-900/20 hover:bg-amber-900/30 text-amber-400 border border-amber-600' : 'bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-200'
+                                    }`}
+                                >
+                                  <span className={`flex items-center justify-center w-3.5 h-3.5 rounded-full shrink-0 ${isDark ? 'bg-amber-900/40 text-amber-400' : 'bg-white text-amber-700'
+                                    }`}>
+                                    <CheckIcon className="w-2.5 h-2.5" strokeWidth={4} />
+                                  </span>
+                                  <span>Pending Signature</span>
+                                </button>
+                              )}
+
+                              {canActOnSubItem && !isItemAwaiting && !isItemReady && !isItemDone && (
+                                <button
+                                  type="button"
+                                  disabled={updatingId === req.id}
+                                  onClick={() => handleItemStatusUpdate(req.id, subItem, resolvedStatusIds.READY)}
+                                  className={`flex items-center justify-center gap-1 w-18 px-2.5 py-1 text-white text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-blue-900/20 hover:bg-blue-900/30 text-blue-400 border border-blue-600' : 'bg-blue-500 hover:bg-blue-700'
+                                    }`}
+                                >
+                                  <CheckCircleIcon className="w-3.5 h-3.5" />
+                                  <span>Ready</span>
+                                </button>
+                              )}
+
+                              {canActOnSubItem && isItemReady && (
+                                <button
+                                  type="button"
+                                  disabled={updatingId === req.id}
+                                  onClick={() => handleItemStatusUpdate(req.id, subItem, resolvedStatusIds.COMPLETED)}
+                                  className={`flex items-center justify-center gap-1 w-18 px-2.5 py-1 text-white text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap ${isDark ? 'bg-green-900/20 hover:bg-green-900/30 text-green-400 border border-green-600' : 'bg-green-500 hover:bg-green-700'
+                                    }`}
+                                >
+                                  <CheckCircleIcon className="w-3.5 h-3.5 text-white" />
+                                  <span>Done</span>
+                                </button>
+                              )}
+
+                              <SubItemActionsDropdown
+                                req={req}
+                                subItem={subItem}
+                                viewMode={viewMode}
+                                canProcess={canProcess}
+                                onViewDetails={() => setSelectedRequest(req.rawRequest)}
+                                onIssueDeficiencyNotice={handleOpenDeficiencyNotice}
+                                onWithdrawItem={handleOpenWithdrawItem}
+                                onCloseItem={handleOpenCloseItem}
+                                isDark={isDark}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+
+        {/* ---------------- PAGINATION ---------------- */}
+        <Pagination
+          filteredCount={meta?.total ?? 0}
+          indexOfFirstItem={meta?.from ? meta.from - 1 : 0}
+          indexOfLastItem={meta?.to ?? 0}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          handlePrevPage={handlePrevPage}
+          handleNextPage={handleNextPage}
+        />
+      </div>
+      <RequestDetailsModal
+        request={selectedRequest}
+        onClose={() => setSelectedRequest(null)}
+        user={user}
+        onGenerateCert={(req) => setCertRequest(req)}
+        onRequestUpdated={() => queryClient.invalidateQueries({ queryKey: ['documentRequests', viewMode] })}
+      />
+      <DeleteConfirmModal
+        open={showDeleteConfirm}
+        count={selectedIds.length}
+        loading={loading}
+        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={confirmDeleteSelected}
+      />
+
+      {certRequest && (
+        <CertificateModal
+          request={certRequest}
+          onCertificatePrinted={handleCertificatePrinted}
+          onClose={() => setCertRequest(null)}
+        />
+      )}
+
+      <ItemWithdrawCloseModal
+        open={itemModalState.open}
+        mode={itemModalState.mode}
+        reqId={itemModalState.reqId}
+        subItem={itemModalState.subItem}
+        onClose={() => setItemModalState(prev => ({ ...prev, open: false }))}
+        onSuccess={(res, message) => {
+          showSuccess(message);
+          queryClient.invalidateQueries({ queryKey: ['documentRequests'] });
+          queryClient.invalidateQueries({ queryKey: ['documentRequestsCounts'] });
+        }}
+      />
+
+      <RequestActionModal
+        isOpen={actionModalState.open}
+        onClose={() => setActionModalState(prev => ({ ...prev, open: false }))}
+        modalType={actionModalState.modalType}
+        req={actionModalState.req}
+        subItem={actionModalState.subItem}
+        isDark={isDark}
+        onRefresh={() => {
+          queryClient.invalidateQueries({ queryKey: ['documentRequests'] });
+          queryClient.invalidateQueries({ queryKey: ['documentRequestsCounts'] });
+        }}
+      />
+    </>
+  );
+
+  if (isEmbedded) {
+    return dashboardContent;
+  }
+
+  return (
+    <div className={`relative ${isDark ? 'bg-[#18191a] text-[#e4e6eb]' : 'bg-[#F5F5F5] text-gray-900'}`}>
+      <main className={`max-w-7xl mx-auto px-4 sm:px-6 ${isDark ? 'text-[#e4e6eb]' : 'text-gray-900'}`}>
+        {dashboardContent}
+      </main>
+    </div>
+  );
+};
+
+export default StaffDashboard;
