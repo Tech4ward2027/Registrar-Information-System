@@ -56,6 +56,8 @@ function dlsUndergradRequest(string $first, string $last, string $number, array 
 {
     $profile = UndergradRequestorProfile::factory()->create([
         'first_name'                => $first,
+        'middle_name'               => null,   // the factory invents one; keep display_name predictable
+        'suffix'                    => null,
         'last_name'                 => $last,
         'student_number'            => $number,
         'phone'                     => '09171234567',

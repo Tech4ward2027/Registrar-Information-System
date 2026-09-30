@@ -271,7 +271,7 @@ class DocumentRequestService implements DocumentRequestServiceInterface
         // a transaction that later rolls back).
         $statusChanged = false;
 
-        $documentRequest = DB::transaction(function () use ($documentRequest, $validated, &$statusChanged) {
+        $documentRequest = DB::transaction(function () use ($documentRequest, $validated, $withinTransaction, &$statusChanged) {
             // Re-fetch with a row-level lock so concurrent admin updates
             // cannot race: the second request will block here until the
             // first transaction commits, then re-read the committed state.
