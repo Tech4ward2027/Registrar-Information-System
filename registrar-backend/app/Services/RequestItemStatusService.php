@@ -56,29 +56,6 @@ class RequestItemStatusService
 {
     use FlushesAnalyticsCache;
 
-    /**
-     * Relative progress rank used to pick the aggregate status out of a
-     * set of item statuses — lower rank = earlier stage. Terminal
-     * statuses (Completed/Forfeited) intentionally share the highest
-     * rank: see recomputeAggregateStatus() for how a mixed terminal set
-     * is resolved (an edge case that cannot occur yet under today's
-     * single-ticket claiming, since Forfeited is only ever written at
-     * the request level by the automated shredder — flagged here rather
-     * than silently guessed at).
-     *
-     * Cancelled is deliberately absent — it is unreachable going
-     * forward (see RequestStatusEnum::Cancelled's @deprecated note) and
-     * is never a value a live item status column should hold.
-     */
-    private const STAGE_RANK = [
-        RequestStatusEnum::AwaitingSubmission->value => 0,
-        RequestStatusEnum::Processing->value         => 1,
-        RequestStatusEnum::PendingSignature->value   => 2,
-        RequestStatusEnum::ReadyToClaim->value       => 3,
-        RequestStatusEnum::Completed->value          => 4,
-        RequestStatusEnum::Forfeited->value          => 4,
-    ];
-
     public function __construct(
         private NotificationServiceInterface $notificationService,
         private BusinessCalendarService      $businessCalendarService,
@@ -105,6 +82,7 @@ class RequestItemStatusService
             $this->guardArchived($documentRequest);
             $this->guardNotTerminal($documentRequest);
 
+            $this->guardNotExitStatus($targetStatusId);
             $targetStatus = $this->validateTransition($item->status_id, $targetStatusId);
             $this->authorizeItemStatusChange($targetStatus);
 
@@ -145,6 +123,7 @@ class RequestItemStatusService
             $this->guardArchived($documentRequest);
             $this->guardNotTerminal($documentRequest);
 
+            $this->guardNotExitStatus($targetStatusId);
             $targetStatus = $this->validateTransition($item->status_id, $targetStatusId);
             $this->guardCertificateGenerated($item, $targetStatus);
             $this->authorizeItemStatusChange($targetStatus);
@@ -449,6 +428,19 @@ class RequestItemStatusService
     // Internal helpers
     // -------------------------------------------------------------------------
 
+    /**
+     * Withdrawn and Closed need a reason (and, for Closed, proof), so they
+     * are only reachable through RequestItemTerminationService. Refusing
+     * them here stops the plain status endpoint from withdrawing an item
+     * with no reason recorded.
+     */
+    private function guardNotExitStatus(int $targetStatusId): void
+    {
+        if (RequestAggregateStatus::hasLeftRequest($targetStatusId)) {
+            abort(422, 'Use the withdraw or close action for this item; it needs a reason.');
+        }
+    }
+
     private function guardArchived(DocumentRequest $documentRequest): void
     {
         // Same rule as DocumentRequestService::updateRequest() — archived
@@ -599,7 +591,7 @@ class RequestItemStatusService
      * rather than the whole request's, so an item's SLA segment timing
      * reflects only its own prior transitions.
      */
-    private function recordItemHistory(
+    public function recordItemHistory(
         DocumentRequest $documentRequest,
         ?int $oldStatusId,
         int $newStatusId,
@@ -675,11 +667,11 @@ class RequestItemStatusService
             return;
         }
 
-        $leastAdvancedStatusId = $itemStatusIds
-            ->sortBy(fn (int $statusId) => self::STAGE_RANK[$statusId] ?? PHP_INT_MAX)
-            ->first();
+        // Withdrawn / Closed items have left the request and are ignored
+        // while any other item remains - see RequestAggregateStatus.
+        $leastAdvancedStatusId = RequestAggregateStatus::resolve($itemStatusIds);
 
-        if ((int) $leastAdvancedStatusId === (int) $documentRequest->status_id) {
+        if ($leastAdvancedStatusId === null || $leastAdvancedStatusId === (int) $documentRequest->status_id) {
             return;
         }
 
@@ -688,7 +680,14 @@ class RequestItemStatusService
         $documentRequest->update(['status_id' => $leastAdvancedStatusId]);
 
         $this->recordItemHistory($documentRequest, $oldStatusId, $leastAdvancedStatusId);
-        $this->notifyOwnerOfStatusChange($documentRequest);
+
+        // A request whose last item just left (Withdrawn / Closed) is
+        // announced by RequestItemTerminationService after its commit, with
+        // the reason attached. The generic status message has no reason and
+        // would be a second, contradicting notification.
+        if (!RequestAggregateStatus::hasLeftRequest($leastAdvancedStatusId)) {
+            $this->notifyOwnerOfStatusChange($documentRequest);
+        }
     }
 
     /**
@@ -742,11 +741,9 @@ class RequestItemStatusService
             return;
         }
 
-        $leastAdvancedStatusId = $memberStatusIds
-            ->sortBy(fn (int $statusId) => self::STAGE_RANK[$statusId] ?? PHP_INT_MAX)
-            ->first();
+        $leastAdvancedStatusId = RequestAggregateStatus::resolve($memberStatusIds);
 
-        if ((int) $leastAdvancedStatusId === (int) $group->status_id) {
+        if ($leastAdvancedStatusId === null || $leastAdvancedStatusId === (int) $group->status_id) {
             return;
         }
 

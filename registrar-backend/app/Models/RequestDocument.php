@@ -53,4 +53,13 @@ class RequestDocument extends Model
     {
         return $this->belongsTo(RequestReleaseGroup::class, 'request_release_group_id');
     }
+
+    /**
+     * Why this item left the request (withdrawn / closed), if it did.
+     * Written only by RequestItemTerminationService.
+     */
+    public function termination()
+    {
+        return $this->hasOne(RequestItemTermination::class, 'request_document_id', 'request_document_id');
+    }
 }

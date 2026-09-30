@@ -725,6 +725,54 @@ export const confirmItemClaim = (credential, itemUuids = undefined) =>
   });
 
 // -------------------------------------------------------
+// PER-ITEM WITHDRAW / CLOSE (Phase 4) — staff/admin only, same
+// 'Process' permission as the whole-request withdraw/close above.
+//
+// itemType is 'document' or 'certificate'; itemId is that row's own id
+// (request_document_id / request_certificate_id).
+//
+// withdrawRequestItem(requestId, 'document', 12, {
+//   withdrawal_reason,        // required, same values as withdrawDocumentRequest
+//   withdrawal_detail,        // required when withdrawal_reason === 'other'
+// })
+// closeRequestItem(requestId, 'certificate', 7, {
+//   closure_reason,           // required, same values as closeUnableToProcess
+//   closure_detail,           // required when closure_reason === 'other'
+//   closure_proof_reference,  // required (max 500 chars)
+// })
+//
+// Both return 200 with:
+//   {
+//     item: { ..., status_id, status, termination: { kind, reason, detail, acted_by, acted_at, cascaded } },
+//     request: { request_id, status_id },   // recomputed parent status
+//     request_left: boolean,                // true when this was the LAST item and the request itself
+//                                           // became Withdrawn / Closed - Unable to Process
+//     auto_voided_deficiency_notice_id: number | null,
+//   }
+// termination.proof_reference is never returned.
+//
+// 422 (show the server message): item already Ready / Completed / withdrawn / closed,
+// request archived or already final, or (close only) no open Deficiency Notice.
+// 404: the item does not belong to that request.
+//
+// After success refetch the request or the items list: the parent status is
+// recomputed on the server. Completed and withdrawn/closed items no longer
+// count as "waiting"; items_total stays the number of items on the request.
+//
+// Whole-request withdrawDocumentRequest() / closeUnableToProcess() now also
+// move every open item. They return 422 while any item is Ready to Claim or
+// already released: withdraw or close the remaining items individually.
+// -------------------------------------------------------
+const itemSegment = (itemType, itemId) =>
+  `${itemType === 'certificate' ? 'certificates' : 'documents'}/${itemId}`;
+
+export const withdrawRequestItem = (requestId, itemType, itemId, data) =>
+  api.post(`/document-requests/${requestId}/${itemSegment(itemType, itemId)}/withdraw`, data);
+
+export const closeRequestItem = (requestId, itemType, itemId, data) =>
+  api.post(`/document-requests/${requestId}/${itemSegment(itemType, itemId)}/close-unable-to-process`, data);
+
+// -------------------------------------------------------
 // ITEM-LEVEL STATUS (Phase 2) — staff/admin only.
 // Advances ONE request_document/request_certificate row independently
 // of the rest of the request — see backend RequestItemStatusService.

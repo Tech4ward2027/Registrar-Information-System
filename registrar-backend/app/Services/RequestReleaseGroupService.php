@@ -289,11 +289,9 @@ class RequestReleaseGroupService
             return;
         }
 
-        $leastAdvancedStatusId = $itemStatusIds
-            ->sortBy(fn (int $statusId) => self::STAGE_RANK[$statusId] ?? PHP_INT_MAX)
-            ->first();
+        $leastAdvancedStatusId = RequestAggregateStatus::resolve($itemStatusIds);
 
-        if ((int) $leastAdvancedStatusId === (int) $documentRequest->status_id) {
+        if ($leastAdvancedStatusId === null || $leastAdvancedStatusId === (int) $documentRequest->status_id) {
             return;
         }
 
@@ -301,7 +299,12 @@ class RequestReleaseGroupService
         $documentRequest->update(['status_id' => $leastAdvancedStatusId]);
 
         $this->recordHistory($documentRequest, $oldStatusId, $leastAdvancedStatusId);
-        $this->notifyOwnerOfStatusChange($documentRequest);
+
+        // See RequestItemStatusService::recomputeAggregateStatus(): a
+        // Withdrawn / Closed parent is announced with its reason elsewhere.
+        if (!RequestAggregateStatus::hasLeftRequest($leastAdvancedStatusId)) {
+            $this->notifyOwnerOfStatusChange($documentRequest);
+        }
     }
 
     private function notifyOwnerOfStatusChange(DocumentRequest $documentRequest): void

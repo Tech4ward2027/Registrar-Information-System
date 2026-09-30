@@ -9,6 +9,7 @@ use App\Http\Controllers\DocumentTypeController;
 use App\Http\Controllers\CertificationTypeController;
 use App\Http\Controllers\DocumentRequestController;
 use App\Http\Controllers\ItemClaimController;
+use App\Http\Controllers\ItemTerminationController;
 use App\Http\Controllers\RequestItemListController;
 use App\Http\Controllers\DeficiencyNoticeController;
 use App\Http\Controllers\RequestDocumentController;
@@ -318,6 +319,21 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::put('{documentRequest}/certificates/{requestCertificate}',
             [DocumentRequestController::class, 'updateCertificateItemStatus'])
             ->middleware(['role:3', 'module:dashboard,Process|Complete']);
+        // Per-item Withdraw / Close (Phase 4). Same coarse gate as the
+        // whole-request withdraw and close-unable-to-process above (always
+        // 'Process'); the policy check runs in the FormRequests.
+        Route::post('{documentRequest}/documents/{requestDocument}/withdraw',
+            [ItemTerminationController::class, 'withdrawDocument'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
+        Route::post('{documentRequest}/documents/{requestDocument}/close-unable-to-process',
+            [ItemTerminationController::class, 'closeDocument'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
+        Route::post('{documentRequest}/certificates/{requestCertificate}/withdraw',
+            [ItemTerminationController::class, 'withdrawCertificate'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
+        Route::post('{documentRequest}/certificates/{requestCertificate}/close-unable-to-process',
+            [ItemTerminationController::class, 'closeCertificate'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
         // Real print/generation signal — see DocumentRequestService::
         // markCertificatesGenerated() and migration
         // 2026_08_29_000010_add_generated_at_to_request_certificate. Gated

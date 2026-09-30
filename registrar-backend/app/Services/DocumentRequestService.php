@@ -34,6 +34,7 @@ class DocumentRequestService implements DocumentRequestServiceInterface
         private BusinessCalendarService $businessCalendarService,
         private RequestReleaseGroupService $releaseGroupService,
         private RequestStatusCascade $statusCascade,
+        private RequestItemTerminationService $itemTermination,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -837,6 +838,20 @@ class DocumentRequestService implements DocumentRequestServiceInterface
                 'superseded_by_request_id' => $data['superseded_by_request_id'] ?? null,
             ]);
 
+            // Items follow the request. Refuses (rolling this whole
+            // transaction back) if an item is already Ready to Claim or
+            // released - those are withdrawn/closed item by item instead.
+            $this->itemTermination->cascadeFromRequest(
+                $documentRequest,
+                RequestStatusEnum::Withdrawn,
+                [
+                    'reason' => $data['withdrawal_reason'],
+                    'detail' => $data['withdrawal_detail'] ?? null,
+                    'proof'  => null,
+                ],
+                Auth::id(),
+            );
+
             $this->recordStatusHistory($documentRequest, $oldStatusId);
             $statusChanged = true;
 
@@ -1053,6 +1068,18 @@ class DocumentRequestService implements DocumentRequestServiceInterface
                 'closed_by'               => Auth::id(),
                 'closed_at'               => now(),
             ]);
+
+            // Same item cascade as withdraw() - see that method.
+            $this->itemTermination->cascadeFromRequest(
+                $documentRequest,
+                RequestStatusEnum::ClosedUnableToProcess,
+                [
+                    'reason' => $data['closure_reason'],
+                    'detail' => $data['closure_detail'] ?? null,
+                    'proof'  => $data['closure_proof_reference'],
+                ],
+                Auth::id(),
+            );
 
             $this->recordStatusHistory($documentRequest, $oldStatusId);
             $statusChanged = true;
