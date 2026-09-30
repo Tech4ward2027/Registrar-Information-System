@@ -78,6 +78,9 @@ class ItemClaimService
 
         $request = $this->loadForSummary($resolved['request']);
 
+        // Phase 5: one query for every open item-level notice on the request.
+        $holds = ItemDeficiencyHold::forRequest((int) $request->request_id);
+
         $items = match ($resolved['matched']) {
             'item'          => collect([$resolved['item']]),
             'release_group' => $this->itemsOf($request)->filter(
@@ -89,7 +92,7 @@ class ItemClaimService
         return [
             'matched' => $resolved['matched'],
             'request' => (new DocumentRequestListResource($request))->summary(),
-            'items'   => $items->map(fn (Model $item) => $this->presentItem($item, $request))->values()->all(),
+            'items'   => $items->map(fn (Model $item) => $this->presentItem($item, $request, $holds))->values()->all(),
         ];
     }
 
@@ -169,8 +172,20 @@ class ItemClaimService
             $completed = [];
             $skipped   = [];
 
+            // Phase 5: an item with its own open Deficiency Notice is held -
+            // reported as skipped (with the reason), never released. Read
+            // after the item locks are taken, so an issue() racing this
+            // confirm has either committed first (and is seen here) or waits
+            // for us and then sees the item already Completed.
+            $holds = ItemDeficiencyHold::forRequest($requestId);
+
             foreach ($items as $item) {
                 $current = RequestStatusEnum::tryFrom((int) $item->status_id);
+
+                if (isset($holds[ItemDeficiencyHold::key($item)])) {
+                    $skipped[] = ['item' => $item, 'reason' => ItemDeficiencyHold::reason($holds[ItemDeficiencyHold::key($item)])];
+                    continue;
+                }
 
                 if ($current !== RequestStatusEnum::ReadyToClaim) {
                     $skipped[] = ['item' => $item, 'reason' => $this->notClaimableReason($current)];
@@ -209,12 +224,13 @@ class ItemClaimService
         });
 
         $request = $this->loadForSummary($result['request']);
+        $holds   = ItemDeficiencyHold::forRequest((int) $request->request_id);
 
         return [
             'request'   => (new DocumentRequestListResource($request))->summary(),
-            'completed' => array_map(fn (Model $i) => $this->presentItem($i->refresh(), $request), $result['completed']),
+            'completed' => array_map(fn (Model $i) => $this->presentItem($i->refresh(), $request, $holds), $result['completed']),
             'skipped'   => array_map(
-                fn (array $s) => $this->presentItem($s['item'], $request) + ['skipped_reason' => $s['reason']],
+                fn (array $s) => $this->presentItem($s['item'], $request, $holds) + ['skipped_reason' => $s['reason']],
                 $result['skipped']
             ),
         ];
@@ -293,14 +309,16 @@ class ItemClaimService
         return $request->documents->concat($request->certificates);
     }
 
-    private function presentItem(Model $item, DocumentRequest $request): array
+    /** @param array<string, \App\Models\RequestRemark> $holds open item-level notices keyed by ItemDeficiencyHold::key() */
+    private function presentItem(Model $item, DocumentRequest $request, array $holds = []): array
     {
         $isDocument = $item instanceof RequestDocument;
 
         $item->loadMissing($isDocument ? ['documentType', 'status'] : ['certificationType', 'status']);
 
         $status  = RequestStatusEnum::tryFrom((int) $item->status_id);
-        $blocked = $this->blockedReason($request, $status);
+        $hold    = $holds[ItemDeficiencyHold::key($item)] ?? null;
+        $blocked = $this->blockedReason($request, $status, $hold);
 
         return [
             'type'             => $isDocument ? 'document' : 'certificate',
@@ -313,11 +331,19 @@ class ItemClaimService
             'completed_at'     => $item->completed_at,
             'claimable'        => $blocked === null,
             'reason'           => $blocked,
+            // Phase 5: null unless this item has its own open notice.
+            'on_hold'          => $hold !== null,
+            'deficiency_notice' => $hold === null ? null : [
+                'remark_id'  => $hold->remark_id,
+                'item_key'   => $hold->item_key,
+                'item_label' => $hold->item_label,
+                'issued_at'  => $hold->issued_at,
+            ],
         ];
     }
 
     /** Null when claimable. */
-    private function blockedReason(DocumentRequest $request, ?RequestStatusEnum $itemStatus): ?string
+    private function blockedReason(DocumentRequest $request, ?RequestStatusEnum $itemStatus, ?\App\Models\RequestRemark $hold = null): ?string
     {
         $requestStatus = RequestStatusEnum::tryFrom((int) $request->status_id);
 
@@ -325,7 +351,11 @@ class ItemClaimService
             return 'This request is already ' . $this->label($requestStatus) . '.';
         }
 
-        return $itemStatus === RequestStatusEnum::ReadyToClaim ? null : ucfirst($this->notClaimableReason($itemStatus)) . '.';
+        if ($itemStatus === RequestStatusEnum::ReadyToClaim) {
+            return $hold === null ? null : ucfirst(ItemDeficiencyHold::reason($hold)) . '.';
+        }
+
+        return ucfirst($this->notClaimableReason($itemStatus)) . '.';
     }
 
     private function notClaimableReason(?RequestStatusEnum $status): string

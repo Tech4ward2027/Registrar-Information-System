@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Enums\DeficiencyItemEnum;
 use App\Enums\RequestStatusEnum;
 use App\Models\DocumentRequest;
+use App\Models\RequestCertificate;
+use App\Models\RequestDocument;
 use App\Models\RequestRemark;
 use App\Models\SystemUser;
 use App\Contracts\NotificationServiceInterface;
@@ -65,15 +67,41 @@ class DeficiencyNoticeService
     /**
      * Issue a new Deficiency Notice against $documentRequest.
      *
+     * Phase 5 - a notice has a SCOPE:
+     *   - request-level: neither request_document_id nor
+     *     request_certificate_id in $data (behaviour unchanged);
+     *   - item-level: exactly one of them, naming a document/certificate
+     *     that belongs to $documentRequest.
+     * At most one OPEN notice per scope: one per item plus one request-level.
+     * A request-level notice and item-level notices may coexist.
+     *
+     * LOCK ORDER - item first, then request. That is the order the item
+     * claim (ItemClaimService) and the item Withdraw/Close
+     * (RequestItemTerminationService) already use, so an issue racing a claim
+     * of the same item serializes instead of deadlocking, and re-reads the
+     * item's committed status once it gets the lock.
+     *
      * @throws \Illuminate\Http\Exceptions\HttpResponseException on an
-     *         archived or Withdrawn parent, or an already-open notice
-     *         on the same request.
+     *         archived or finished parent, an item that is not on this
+     *         request or already finished, or an already-open notice in the
+     *         same scope.
      */
     public function issue(DocumentRequest $documentRequest, array $data): RequestRemark
     {
-        $remark = DB::transaction(function () use ($documentRequest, $data) {
+        $documentId    = isset($data['request_document_id']) ? (int) $data['request_document_id'] : null;
+        $certificateId = isset($data['request_certificate_id']) ? (int) $data['request_certificate_id'] : null;
+
+        if ($documentId !== null && $certificateId !== null) {
+            abort(422, 'A Deficiency Notice can target one document or one certificate, not both.');
+        }
+
+        $itemName = null;
+
+        $remark = DB::transaction(function () use ($documentRequest, $data, $documentId, $certificateId, &$itemName) {
+            $item = $this->lockItem((int) $documentRequest->request_id, $documentId, $certificateId);
+
             // Row-locking the parent is what actually makes the
-            // "one open notice at a time" guard below race-free — see
+            // "one open notice per scope" guard below race-free - see
             // this class's docblock and the create_request_remarks_
             // table migration's docblock for the full reasoning.
             $documentRequest = DocumentRequest::lockForUpdate()
@@ -81,25 +109,38 @@ class DeficiencyNoticeService
 
             $this->guardArchived($documentRequest);
             $this->guardWithdrawn($documentRequest);
-            $this->guardNoOpenNotice($documentRequest);
+
+            if ($item !== null) {
+                $this->guardRequestNotFinished($documentRequest);
+                $this->guardItemCanBeHeld($item);
+                $this->guardNoOpenItemNotice($item);
+                $itemName = $this->itemName($item);
+            } else {
+                $this->guardNoOpenNotice($documentRequest);
+            }
 
             $itemKey = DeficiencyItemEnum::from($data['item_key']);
 
             return RequestRemark::create([
-                'request_id'  => $documentRequest->request_id,
-                'remark_type' => 'deficiency',
-                'item_key'    => $itemKey->value,
-                'item_label'  => $itemKey->label(),
-                'detail'      => $data['detail'] ?? null,
-                'status'      => RequestRemark::STATUS_OPEN,
-                'issued_by'   => Auth::id(),
-                'issued_at'   => now(),
+                'request_id'             => $documentRequest->request_id,
+                'request_document_id'    => $documentId,
+                'request_certificate_id' => $certificateId,
+                'remark_type'            => 'deficiency',
+                'item_key'               => $itemKey->value,
+                'item_label'             => $itemKey->label(),
+                'detail'                 => $data['detail'] ?? null,
+                'status'                 => RequestRemark::STATUS_OPEN,
+                'issued_by'              => Auth::id(),
+                'issued_at'              => now(),
             ]);
         });
 
-        $this->notifyOwner($remark, 'deficiency_notice_issued', [
+        $this->notifyOwner($remark, 'deficiency_notice_issued', array_filter([
             'item_label' => $this->resolveItemLabelForNotification($remark),
-        ]);
+            // Extra placeholder for item-level notices; templates that do
+            // not use it simply ignore it.
+            'item_name'  => $itemName,
+        ], fn ($v) => $v !== null));
 
         return $remark->refresh();
     }
@@ -204,15 +245,92 @@ class DeficiencyNoticeService
         }
     }
 
+    /** Request-level scope only: item-level notices do not count here. */
     private function guardNoOpenNotice(DocumentRequest $documentRequest): void
     {
         $hasOpenNotice = RequestRemark::where('request_id', $documentRequest->request_id)
-            ->where('status', RequestRemark::STATUS_OPEN)
+            ->open()
+            ->requestLevel()
             ->exists();
 
         if ($hasOpenNotice) {
             abort(422, 'An open Deficiency Notice already exists for this request. Clear or void it first.');
         }
+    }
+
+    private function guardNoOpenItemNotice(RequestDocument|RequestCertificate $item): void
+    {
+        $column = $item instanceof RequestDocument ? 'request_document_id' : 'request_certificate_id';
+
+        $hasOpenNotice = RequestRemark::where($column, $item->getKey())->open()->exists();
+
+        if ($hasOpenNotice) {
+            abort(422, 'An open Deficiency Notice already exists for this item. Clear or void it first.');
+        }
+    }
+
+    /**
+     * Item-level notices only make sense while the request can still move.
+     * (A request-level notice keeps the older, Withdrawn-only rule above.)
+     */
+    private function guardRequestNotFinished(DocumentRequest $documentRequest): void
+    {
+        $status = RequestStatusEnum::tryFrom((int) $documentRequest->status_id);
+
+        if ($status !== null && $status->isTerminal()) {
+            abort(422, 'This request is already finished and cannot receive a new Deficiency Notice.');
+        }
+    }
+
+    /**
+     * A finished item (claimed, forfeited, withdrawn, closed) has nothing left
+     * to hold. Ready to Claim IS holdable: that is the case where the counter
+     * finds a problem just before release.
+     */
+    private function guardItemCanBeHeld(RequestDocument|RequestCertificate $item): void
+    {
+        $status = RequestStatusEnum::tryFrom((int) ($item->status_id ?? RequestStatusEnum::Processing->value));
+
+        $holdable = [
+            RequestStatusEnum::AwaitingSubmission,
+            RequestStatusEnum::Processing,
+            RequestStatusEnum::PendingSignature,
+            RequestStatusEnum::ReadyToClaim,
+        ];
+
+        if ($status === null || !in_array($status, $holdable, true)) {
+            abort(422, 'This item is already finished and cannot receive a new Deficiency Notice.');
+        }
+    }
+
+    /**
+     * Locks the targeted item (or returns null for a request-level notice)
+     * and proves it belongs to the request named in the URL - the client
+     * supplies the item id, so this is the authorization boundary that stops
+     * a notice being attached to another request's item.
+     */
+    private function lockItem(int $requestId, ?int $documentId, ?int $certificateId): RequestDocument|RequestCertificate|null
+    {
+        if ($documentId === null && $certificateId === null) {
+            return null;
+        }
+
+        $item = $documentId !== null
+            ? RequestDocument::lockForUpdate()->find($documentId)
+            : RequestCertificate::lockForUpdate()->find($certificateId);
+
+        if (!$item || (int) $item->request_id !== $requestId) {
+            abort(422, 'The selected document does not belong to this request.');
+        }
+
+        return $item;
+    }
+
+    private function itemName(RequestDocument|RequestCertificate $item): ?string
+    {
+        return $item instanceof RequestDocument
+            ? $item->documentType?->document_name
+            : $item->certificationType?->certificate_name;
     }
 
     private function guardOpen(RequestRemark $remark): void

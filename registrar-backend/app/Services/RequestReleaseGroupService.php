@@ -195,6 +195,16 @@ class RequestReleaseGroupService
 
             $groupDocuments = RequestDocument::where('request_release_group_id', $group->request_release_group_id)->get();
 
+            // Phase 5: a legacy group ticket releases all its items at once,
+            // so any item in it with its own open Deficiency Notice blocks it.
+            $holds = ItemDeficiencyHold::forRequest((int) $documentRequest->request_id, lock: true);
+
+            foreach ($groupDocuments->concat($groupCertificates) as $held) {
+                if (isset($holds[ItemDeficiencyHold::key($held)])) {
+                    abort(422, "This ticket includes an item that is on hold (open Deficiency Notice), so it cannot be claimed. Clear or void the notice first.");
+                }
+            }
+
             foreach ($groupDocuments as $item) {
                 $oldStatusId = $item->status_id;
                 $item->update(['status_id' => $targetStatus->value]);

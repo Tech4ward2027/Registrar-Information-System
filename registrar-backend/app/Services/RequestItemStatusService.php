@@ -83,6 +83,12 @@ class RequestItemStatusService
             $this->guardNotTerminal($documentRequest);
 
             $this->guardNotExitStatus($targetStatusId);
+
+            // Phase 5: an item with its own open Deficiency Notice cannot be
+            // released (marked Completed) until the notice is cleared/voided.
+            if ($targetStatusId === RequestStatusEnum::Completed->value) {
+                ItemDeficiencyHold::assertNotHeld($item);
+            }
             $targetStatus = $this->validateTransition($item->status_id, $targetStatusId);
             $this->authorizeItemStatusChange($targetStatus);
 
@@ -124,6 +130,12 @@ class RequestItemStatusService
             $this->guardNotTerminal($documentRequest);
 
             $this->guardNotExitStatus($targetStatusId);
+
+            // Phase 5: an item with its own open Deficiency Notice cannot be
+            // released (marked Completed) until the notice is cleared/voided.
+            if ($targetStatusId === RequestStatusEnum::Completed->value) {
+                ItemDeficiencyHold::assertNotHeld($item);
+            }
             $targetStatus = $this->validateTransition($item->status_id, $targetStatusId);
             $this->guardCertificateGenerated($item, $targetStatus);
             $this->authorizeItemStatusChange($targetStatus);
@@ -269,6 +281,12 @@ class RequestItemStatusService
                 ->lockForUpdate()
                 ->get();
 
+            // Phase 5: one query for every open item-level notice in the
+            // batch; only relevant when the batch is releasing items.
+            $holds = $targetStatus === RequestStatusEnum::Completed
+                ? ItemDeficiencyHold::forRequest($processableRequestIds)
+                : [];
+
             $touchedRequestIds      = [];
             $touchedReleaseGroupIds = [];
 
@@ -279,6 +297,7 @@ class RequestItemStatusService
                     itemType:        'document',
                     itemId:          $item->request_document_id,
                     targetStatus:    $targetStatus,
+                    holds:           $holds,
                 );
 
                 if ($outcome['action'] === 'skipped') {
@@ -311,6 +330,7 @@ class RequestItemStatusService
                     itemType:        'certificate',
                     itemId:          $item->request_certificate_id,
                     targetStatus:    $targetStatus,
+                    holds:           $holds,
                 );
 
                 if ($outcome['action'] === 'skipped') {
@@ -380,6 +400,7 @@ class RequestItemStatusService
         string $itemType,
         int $itemId,
         RequestStatusEnum $targetStatus,
+        array $holds = [],
     ): array {
         // Defensive default mirrors validateTransition()'s single-item
         // handling — a NULL item status "shouldn't be reachable in
@@ -397,6 +418,18 @@ class RequestItemStatusService
                     'request_id'     => (int) $item->request_id,
                     'reason'         => 'invalid_transition',
                     'current_status' => $currentStatus->name,
+                ],
+            ];
+        }
+
+        if (isset($holds[ItemDeficiencyHold::key($item)])) {
+            return [
+                'action' => 'skipped',
+                'entry'  => [
+                    'type'       => $itemType,
+                    'id'         => $itemId,
+                    'request_id' => (int) $item->request_id,
+                    'reason'     => 'item_on_hold',
                 ],
             ];
         }

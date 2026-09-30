@@ -630,7 +630,25 @@ class DocumentRequest extends Model
      */
     public function openDeficiencyNotice()
     {
+        // Phase 5: request-level notices only. Item-level notices are
+        // exposed separately (openItemDeficiencyNotices) so the existing
+        // request banner keeps meaning "the whole request is on hold".
         return $this->hasOne(RequestRemark::class, 'request_id', 'request_id')
-            ->where('status', RequestRemark::STATUS_OPEN);
+            ->where('status', RequestRemark::STATUS_OPEN)
+            ->whereNull('request_document_id')
+            ->whereNull('request_certificate_id');
+    }
+
+    /**
+     * Phase 5 - every open notice attached to a single document/certificate.
+     * Zero or more rows; each holds only its own item.
+     */
+    public function openItemDeficiencyNotices()
+    {
+        return $this->hasMany(RequestRemark::class, 'request_id', 'request_id')
+            ->where('status', RequestRemark::STATUS_OPEN)
+            ->where(function ($q) {
+                $q->whereNotNull('request_document_id')->orWhereNotNull('request_certificate_id');
+            });
     }
 }

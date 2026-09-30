@@ -113,10 +113,10 @@ class ItemTerminationController extends Controller
 
         // A notice voided because the request just ended gets its own entry,
         // as the whole-request withdraw does, so notice history stays complete.
-        if ($result['auto_voided_deficiency_notice_id']) {
+        foreach ($result['auto_voided_deficiency_notice_ids'] ?? [] as $voidedId) {
             $this->auditLogger->log($http, $actor, AuditLog::ACTION_DEFICIENCY_NOTICE_VOIDED, [
                 'request_id'  => $req->request_id,
-                'remark_id'   => $result['auto_voided_deficiency_notice_id'],
+                'remark_id'   => $voidedId,
                 'auto_voided' => true,
             ]);
         }
@@ -129,6 +129,7 @@ class ItemTerminationController extends Controller
             ],
             'request_left'                     => $result['request_left'],
             'auto_voided_deficiency_notice_id' => $result['auto_voided_deficiency_notice_id'],
+            'auto_voided_deficiency_notice_ids' => $result['auto_voided_deficiency_notice_ids'] ?? [],
         ], 200);
     }
 }

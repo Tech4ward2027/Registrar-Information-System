@@ -93,6 +93,10 @@ class DocumentRequestController extends Controller
         // round trip — see DocumentRequest::openDeficiencyNotice()'s
         // docblock and this feature's Phase 3 exit criteria.
         'openDeficiencyNotice.issuedByUser',
+        // Phase 5: open notices attached to single documents/certificates.
+        // Each row carries request_document_id / request_certificate_id so
+        // the UI can flag the matching item row.
+        'openItemDeficiencyNotices.issuedByUser',
     ];
 
     /**
@@ -767,10 +771,10 @@ class DocumentRequestController extends Controller
         // DeficiencyNoticeController::void() directly instead of it
         // happening automatically. Keeps both audit trails (the
         // request's and the notice's) independently complete.
-        if ($autoVoidedRemarkId) {
+        foreach ($documentRequest->getAttribute('auto_voided_deficiency_notice_ids') ?? [] as $voidedId) {
             $this->auditLogger->log($request, $actor, AuditLog::ACTION_DEFICIENCY_NOTICE_VOIDED, [
                 'request_id'  => $documentRequest->request_id,
-                'remark_id'   => $autoVoidedRemarkId,
+                'remark_id'   => $voidedId,
                 'auto_voided' => true,
             ]);
         }
@@ -806,10 +810,10 @@ class DocumentRequestController extends Controller
             'voided_deficiency_notice_id' => $voidedRemarkId,
         ]);
 
-        if ($voidedRemarkId) {
+        foreach ($documentRequest->getAttribute('closed_deficiency_notice_ids') ?? [] as $voidedId) {
             $this->auditLogger->log($request, $actor, AuditLog::ACTION_DEFICIENCY_NOTICE_VOIDED, [
                 'request_id'  => $documentRequest->request_id,
-                'remark_id'   => $voidedRemarkId,
+                'remark_id'   => $voidedId,
                 'auto_voided' => true,
             ]);
         }

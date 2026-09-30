@@ -149,6 +149,10 @@ class RequestItemTerminationService
                 requestCertificateId: $isDocument ? null : (int) $locked->getKey(),
             );
 
+            // Phase 5: this item is leaving the request, so its own open
+            // Deficiency Notice (if any) can no longer stay open.
+            $voidedIds = $this->voidItemNotices($locked, $target);
+
             $oldParentId = (int) $request->status_id;
 
             $this->itemStatus->recomputeAggregateStatus($request);
@@ -161,18 +165,17 @@ class RequestItemTerminationService
             $requestLeft = $newParent->value !== $oldParentId
                 && in_array($newParent, [RequestStatusEnum::Withdrawn, RequestStatusEnum::ClosedUnableToProcess], true);
 
-            $voidedNoticeId = null;
-
             if ($requestLeft) {
                 $this->syncParentTermination($request, $newParent);
-                $voidedNoticeId = $this->voidOpenNotice($request, $newParent);
+                $voidedIds = array_merge($voidedIds, $this->voidOpenNotices($request, $newParent));
             }
 
             return [
                 'item'         => $locked,
                 'request'      => $request,
                 'request_left' => $requestLeft,
-                'voided'       => $voidedNoticeId,
+                'voided'       => $voidedIds[0] ?? null,
+                'voided_ids'   => $voidedIds,
             ];
         });
 
@@ -184,6 +187,7 @@ class RequestItemTerminationService
             'request'                           => $outcome['request']->refresh(),
             'request_left'                      => $outcome['request_left'],
             'auto_voided_deficiency_notice_id'  => $outcome['voided'],
+            'auto_voided_deficiency_notice_ids' => $outcome['voided_ids'],
         ];
     }
 
@@ -323,20 +327,57 @@ class RequestItemTerminationService
     }
 
     /**
-     * Closing one item follows the request-level rule (an OPEN Deficiency
-     * Notice must exist). Phase 5 replaces this body with a check for an
-     * open notice on THIS item, when notices become per item.
+     * Closing one item needs an OPEN Deficiency Notice that covers it: either
+     * a notice on this very item, or a request-level notice (the pre-Phase-5
+     * rule, kept so whole-request notices still unlock item closure).
+     * A notice on a DIFFERENT item does not count.
      */
     private function assertCloseAllowed(DocumentRequest $request, RequestDocument|RequestCertificate $item): void
     {
-        $hasOpenNotice = RequestRemark::where('request_id', $request->request_id)
-            ->where('status', RequestRemark::STATUS_OPEN)
+        $column = $item instanceof RequestDocument ? 'request_document_id' : 'request_certificate_id';
+
+        $covered = RequestRemark::where('request_id', $request->request_id)
+            ->open()
+            ->where(function ($q) use ($column, $item) {
+                $q->where($column, $item->getKey())
+                  ->orWhere(function ($q2) {
+                      $q2->whereNull('request_document_id')->whereNull('request_certificate_id');
+                  });
+            })
             ->lockForUpdate()
             ->exists();
 
-        if (!$hasOpenNotice) {
-            abort(422, 'This request has no open Deficiency Notice. Closed - Unable to Process only applies to a request whose open notice cannot be resolved.');
+        if (!$covered) {
+            abort(422, 'This request has no open Deficiency Notice covering this item. Closed - Unable to Process only applies to an item whose open notice cannot be resolved.');
         }
+    }
+
+    /**
+     * Voids the open notice(s) attached to THIS item as it leaves the
+     * request. Notification-free and inlined, like voidOpenNotices().
+     *
+     * @return int[] ids of the notices voided
+     */
+    private function voidItemNotices(RequestDocument|RequestCertificate $item, RequestStatusEnum $target): array
+    {
+        $column = $item instanceof RequestDocument ? 'request_document_id' : 'request_certificate_id';
+
+        $ids = [];
+
+        foreach (RequestRemark::where($column, $item->getKey())->open()->lockForUpdate()->get() as $remark) {
+            $remark->update([
+                'status'      => RequestRemark::STATUS_VOIDED,
+                'voided_by'   => Auth::id(),
+                'voided_at'   => now(),
+                'void_reason' => $target === RequestStatusEnum::Withdrawn
+                    ? 'Automatically voided - the item was withdrawn.'
+                    : 'Automatically voided - the item was closed as unable to process.',
+            ]);
+
+            $ids[] = (int) $remark->remark_id;
+        }
+
+        return $ids;
     }
 
     /**
@@ -382,29 +423,34 @@ class RequestItemTerminationService
      * request itself is finished, its open notice can no longer stay open.
      * Inlined, and notification-free, for the reason documented in
      * DocumentRequestService::withdraw() (no message from inside a
-     * transaction that could still roll back).
+     * transaction that could still roll back). Phase 5: voids EVERY open
+     * notice on the request (request-level and item-level), and returns their ids.
+     *
+     * @return int[]
      */
-    private function voidOpenNotice(DocumentRequest $request, RequestStatusEnum $parent): ?int
+    private function voidOpenNotices(DocumentRequest $request, RequestStatusEnum $parent): array
     {
-        $remark = RequestRemark::where('request_id', $request->request_id)
-            ->where('status', RequestRemark::STATUS_OPEN)
-            ->lockForUpdate()
-            ->first();
+        $ids = [];
 
-        if (!$remark) {
-            return null;
+        $remarks = RequestRemark::where('request_id', $request->request_id)
+            ->open()
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($remarks as $remark) {
+            $remark->update([
+                'status'      => RequestRemark::STATUS_VOIDED,
+                'voided_by'   => Auth::id(),
+                'voided_at'   => now(),
+                'void_reason' => $parent === RequestStatusEnum::Withdrawn
+                    ? 'Automatically voided - every item on the request was withdrawn.'
+                    : 'Request closed - Unable to Process: every item on the request left the request.',
+            ]);
+
+            $ids[] = (int) $remark->remark_id;
         }
 
-        $remark->update([
-            'status'      => RequestRemark::STATUS_VOIDED,
-            'voided_by'   => Auth::id(),
-            'voided_at'   => now(),
-            'void_reason' => $parent === RequestStatusEnum::Withdrawn
-                ? 'Automatically voided - every item on the request was withdrawn.'
-                : 'Request closed - Unable to Process: every item on the request left the request.',
-        ]);
-
-        return (int) $remark->remark_id;
+        return $ids;
     }
 
     /**

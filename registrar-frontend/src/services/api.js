@@ -581,6 +581,63 @@ export const withdrawDocumentRequest = (id, data) =>
 // -------------------------------------------------------
 export const issueDeficiencyNotice = (requestId, data) =>
   api.post(`/document-requests/${requestId}/deficiency-notices`, data);
+
+// -------------------------------------------------------
+// PER-ITEM DEFICIENCY NOTICES (Phase 5) — same endpoints as above.
+//
+// A notice now has a SCOPE:
+//   - request-level: send neither request_document_id nor
+//     request_certificate_id (exactly the original behaviour; it stays a
+//     banner and does NOT block claiming);
+//   - item-level:    send exactly ONE of request_document_id /
+//     request_certificate_id. That single document/certificate is put ON
+//     HOLD: it cannot be claimed (scan confirm) or marked Done until the
+//     notice is cleared or voided. Sibling items are unaffected.
+// At most one OPEN notice per item, plus at most one open request-level
+// notice; both kinds can exist at once. Sending both ids, an id that
+// belongs to another request, or an already-finished item -> 422.
+//
+// issueItemDeficiencyNotice(requestId, 'document' | 'certificate', itemId,
+//   { item_key, detail? })  -> 201, the new notice (with request_document_id
+//   or request_certificate_id set).
+//
+// Where the UI reads holds:
+//   - getDocumentRequest(id): `open_deficiency_notice` is still ONLY the
+//     request-level notice (banner unchanged). NEW
+//     `open_item_deficiency_notices` is an array; match each entry to an
+//     item row via request_document_id / request_certificate_id.
+//   - claim lookup/confirm items: each item now has `on_hold` (boolean) and
+//     `deficiency_notice` ({remark_id,item_key,item_label,issued_at} | null).
+//     A held item has claimable:false and a `reason` starting "On hold".
+//     confirmItemClaim() reports a held item under `skipped` (its
+//     skipped_reason says on hold) instead of failing the whole call.
+//   - bulk-done: a held item appears in `items_skipped` with
+//     reason: 'item_on_hold'.
+// Other 422s to surface with err.response.data.message: manual Done on a held
+// item; whole-request claim or Done while ANY item is held.
+//
+// clearDeficiencyNotice / voidDeficiencyNotice work unchanged on item-level
+// notices (use the notice's own remark_id).
+//
+// Cascades (all inside the same server transaction):
+//   - withdrawing/closing an ITEM voids that item's own open notice;
+//   - the request leaving (last item withdrawn/closed, or whole-request
+//     withdraw/close) voids EVERY open notice on it. Responses now include
+//     `auto_voided_deficiency_notice_ids` (array; whole-request close uses
+//     `closed_deficiency_notice_ids`). The older single
+//     `auto_voided_deficiency_notice_id` / `closed_deficiency_notice_id` is
+//     still returned (the first id) for compatibility.
+//   - closing an ITEM (closeRequestItem) needs an open notice on THAT item
+//     or an open request-level notice; a notice on a different item does
+//     not count. Whole-request close needs any open notice.
+// -------------------------------------------------------
+export const issueItemDeficiencyNotice = (requestId, itemType, itemId, data) =>
+  issueDeficiencyNotice(requestId, {
+    ...data,
+    ...(itemType === 'certificate'
+      ? { request_certificate_id: itemId }
+      : { request_document_id: itemId }),
+  });
 export const clearDeficiencyNotice = (noticeId) =>
   api.post(`/deficiency-notices/${noticeId}/clear`);
 export const voidDeficiencyNotice = (noticeId, voidReason) =>

@@ -29,6 +29,18 @@ class RequestRemarkFactory extends Factory
         ];
     }
 
+    /** Phase 5 - a notice on one document. */
+    public function forDocument(int $requestDocumentId): static
+    {
+        return $this->state(fn () => ['request_document_id' => $requestDocumentId]);
+    }
+
+    /** Phase 5 - a notice on one certificate. */
+    public function forCertificate(int $requestCertificateId): static
+    {
+        return $this->state(fn () => ['request_certificate_id' => $requestCertificateId]);
+    }
+
     public function cleared(): static
     {
         return $this->state(fn () => [
