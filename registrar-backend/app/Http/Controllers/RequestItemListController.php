@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\DocumentRequest\IndexRequestItemsRequest;
 use App\Http\Resources\DocumentRequestListResource;
 use App\Models\DocumentRequest;
+use App\Services\ItemDeficiencyHold;
 use App\Services\RequestItemListQuery;
 
 /**
@@ -15,6 +16,8 @@ use App\Services\RequestItemListQuery;
  * summary of its request (who, student number, requester type, progress
  * "items_completed of items_total"). Filtering, searching, ordering and
  * pagination happen in the database (see RequestItemListQuery).
+ *
+ * Each row also carries on_hold / hold (Phase 5 item-level notices).
  *
  * Privacy: only the plaintext identity columns of an undergrad profile are
  * loaded (same list as DocumentRequestController::UNDERGRAD_LIST_RELATION),
@@ -47,8 +50,13 @@ class RequestItemListController extends Controller
             ->get()
             ->keyBy('request_id');
 
-        $page->through(function ($row) use ($requests) {
+        // One query for every open item-level Deficiency Notice on this page's
+        // requests, indexed "d:<id>" / "c:<id>" (not one query per row).
+        $holds = ItemDeficiencyHold::forRequest($requests->keys()->all());
+
+        $page->through(function ($row) use ($requests, $holds) {
             $documentRequest = $requests->get($row->request_id);
+            $hold            = $holds[($row->item_type === 'document' ? 'd:' : 'c:') . $row->item_id] ?? null;
 
             return [
                 'type'             => $row->item_type,
@@ -59,6 +67,16 @@ class RequestItemListController extends Controller
                 'status_id'        => $row->status_id !== null ? (int) $row->status_id : null,
                 'status'           => $row->status_name,
                 'completed_at'     => $row->completed_at,
+                // Phase 6: an open item-level Deficiency Notice holds exactly
+                // this item. Only non-sensitive fields are exposed here (the
+                // free-text detail stays on show()).
+                'on_hold'          => $hold !== null,
+                'hold'             => $hold ? [
+                    'remark_id' => $hold->remark_id,
+                    'label'     => $hold->item_label,
+                    'issued_at' => $hold->issued_at,
+                    'is_stale'  => $hold->is_stale,
+                ] : null,
                 'request'          => $documentRequest
                     ? (new DocumentRequestListResource($documentRequest))->summary()
                     : null,
