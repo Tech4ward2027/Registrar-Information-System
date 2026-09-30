@@ -7,43 +7,19 @@ import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
-import { claimDocumentRequest } from '../services/api';
+import { lookupItemClaim, confirmItemClaim } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 import { formatName } from '../utils/formatters';
 
 /**
- * ClaimScannerModal — the staff-facing counterpart to ClaimTicket.
+ * ClaimScannerModal — Phase 3 Per-Document Claiming implementation.
  *
- * Implements QR Code Claiming Policy v1.0 §3.4-3.7:
- *   §3.4  Only a request that's actually ReadyToClaim can be completed by
- *         a scan — enforced server-side (DocumentRequestService::
- *         claimRequest() -> updateRequest()'s allowedTransitions() guard),
- *         not by anything in this component. A scan on a Processing or
- *         already-Completed request is rejected by the API and shown here
- *         as an error, same as any other failed claim attempt.
- *   §3.5  "Do not scan if requirements are incomplete" is a physical,
- *         in-person judgment call staff make before they even open this
- *         modal — confirmed earlier as having no UI gate, so there is
- *         deliberately no confirm-before-scanning checkbox here.
- *   §3.7  Single-use is enforced by the same transition guard: Completed
- *         has no allowedTransitions(), so a second scan of an
- *         already-claimed request fails naturally — no separate
- *         "already used" check needed on either end.
- *
- * Two ways in, exactly one used per submission (mirrors
- * ClaimDocumentRequestRequest's uuid XOR claim_code validation):
- *   1. Camera scan — decodes the uuid encoded in the student's QR.
- *   2. Manual claim_code entry — the fallback for a camera that won't
- *      focus/isn't available, a cracked screen, or a student with no
- *      phone. Always visible alongside the scanner, never a separate
- *      screen, per the "scan fails sometimes" reasoning discussed for
- *      this feature.
- *
- * Camera lifecycle: getUserMedia is requested only while this modal is
- * mounted and only while in 'scanning' state, and every exit path (close,
- * unmount, success, error) stops every track on the stream. Leaving a
- * camera stream running after the modal closes would be both a privacy
- * problem and a battery/perf leak on the staff workstation.
+ * Implements Per-Document Claiming (lookup -> checklist review -> confirm):
+ *   1. Lookup: Reads code (QR or manual claim_code) via lookupItemClaim().
+ *   2. Review Checklist: Displays all items under the request/ticket.
+ *      Ready items are checked by default; already-claimed or processing items
+ *      are visible but disabled with their status/reason.
+ *   3. Confirm: Staff confirms selected ready items via confirmItemClaim().
  */
 
 const CLAIM_CODE_LENGTH = 6;
@@ -53,10 +29,13 @@ const ClaimScannerModal = ({ open, onClose }) => {
   const { isDark } = useTheme();
   const queryClient = useQueryClient();
 
-  // 'scanning' | 'submitting' | 'success'
+  // 'scanning' | 'looking_up' | 'review' | 'confirming' | 'success'
   const [phase, setPhase] = useState('scanning');
   const [mode, setMode] = useState('scan'); // 'scan' | 'manual'
-  const [claimedRequest, setClaimedRequest] = useState(null);
+  const [currentCredential, setCurrentCredential] = useState(null);
+  const [lookupData, setLookupData] = useState(null);
+  const [selectedItemUuids, setSelectedItemUuids] = useState([]);
+  const [claimSummary, setClaimSummary] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [manualCode, setManualCode] = useState(Array(CLAIM_CODE_LENGTH).fill(''));
   const [cameraError, setCameraError] = useState('');
@@ -65,9 +44,8 @@ const ClaimScannerModal = ({ open, onClose }) => {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const scanTimerRef = useRef(null);
-  // Guards against the scan loop firing a second submit while the first
-  // is still in flight (a static QR sits in frame across many polls).
   const submittingRef = useRef(false);
+  const lastScannedRef = useRef(null);
   const inputRefs = useRef([]);
   const manualCodeString = manualCode.join('').trim().toUpperCase();
 
@@ -82,45 +60,12 @@ const ClaimScannerModal = ({ open, onClose }) => {
     }
   }, []);
 
-  const submitCredential = useCallback(async (credential) => {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
-    stopCamera();
-    setPhase('submitting');
-    setErrorMessage('');
-
-    try {
-      const { data } = await claimDocumentRequest(credential);
-      setClaimedRequest(data);
-      setPhase('success');
-      // Same invalidation the rest of the dashboard's mutations rely on
-      // (see useStaffDashboard's invalidateRequests) — a broad prefix
-      // match so both the 'active' and 'archived' query caches, whichever
-      // is mounted, pick up the now-Completed request on next render.
-      queryClient.invalidateQueries({ queryKey: ['documentRequests'] });
-    } catch (err) {
-      const status = err?.response?.status;
-      let finalMsg = 'Failed to process claim. Please check your internet connection or try again later.';
-
-      if (status === 404) {
-        finalMsg = "No matching request found for that code. Please double-check and try again.";
-      } else if (status === 422) {
-        finalMsg = "This request cannot be claimed at this time. It may have already been claimed or is not yet ready.";
-      } else if (status === 403) {
-        finalMsg = "Access denied. You do not have permission to claim this request.";
-      } else if (status === 400) {
-        finalMsg = "Invalid claim request format. Please scan a valid QR code or check your claim code.";
-      }
-
-      setErrorMessage(finalMsg);
-      setPhase('scanning');
-    } finally {
-      submittingRef.current = false;
-    }
-  }, [stopCamera, queryClient]);
-
   const resetToScanning = useCallback(() => {
-    setClaimedRequest(null);
+    lastScannedRef.current = null;
+    setCurrentCredential(null);
+    setLookupData(null);
+    setSelectedItemUuids([]);
+    setClaimSummary(null);
     setErrorMessage('');
     setManualCode(Array(CLAIM_CODE_LENGTH).fill(''));
     setCameraError('');
@@ -128,7 +73,81 @@ const ClaimScannerModal = ({ open, onClose }) => {
     setMode('scan');
   }, []);
 
-  // Scan loop: only runs while phase === 'scanning', mode === 'scan' and the modal is open.
+  const submitCredential = useCallback(async (credential) => {
+    if (submittingRef.current) return;
+
+    const credKey = credential.uuid || credential.claim_code;
+    if (credKey && lastScannedRef.current === credKey) return;
+    if (credKey) lastScannedRef.current = credKey;
+
+    submittingRef.current = true;
+    stopCamera();
+    setPhase('looking_up');
+    setErrorMessage('');
+
+    try {
+      const res = await lookupItemClaim(credential);
+      const data = res.data ?? res;
+      setLookupData(data);
+      setCurrentCredential(credential);
+
+      // Default checklist: pre-select all claimable / ready items
+      const claimable = (data.items || [])
+        .filter((item) => item.claimable !== false)
+        .map((item) => item.uuid);
+      setSelectedItemUuids(claimable);
+
+      setPhase('review');
+    } catch (err) {
+      const status = err?.response?.status;
+      const serverMsg = err?.response?.data?.message;
+      let finalMsg = serverMsg || 'Failed to look up claim code. Please try again.';
+
+      if (!serverMsg) {
+        if (status === 404) {
+          finalMsg = 'No matching request or item found for that code. Please double-check.';
+        } else if (status === 422) {
+          finalMsg = 'This request cannot be claimed at this time.';
+        } else if (status === 403) {
+          finalMsg = 'Access denied. You do not have permission to claim requests.';
+        }
+      }
+
+      setErrorMessage(finalMsg);
+      setPhase('scanning');
+    } finally {
+      submittingRef.current = false;
+    }
+  }, [stopCamera]);
+
+  const handleConfirmClaim = async () => {
+    if (!currentCredential || selectedItemUuids.length === 0 || phase === 'confirming') return;
+
+    setPhase('confirming');
+    setErrorMessage('');
+
+    try {
+      const res = await confirmItemClaim(currentCredential, selectedItemUuids);
+      const data = res.data ?? res;
+      setClaimSummary(data);
+      setPhase('success');
+
+      queryClient.invalidateQueries({ queryKey: ['documentRequests'] });
+      queryClient.invalidateQueries({ queryKey: ['documentRequestsCounts'] });
+    } catch (err) {
+      const serverMsg = err?.response?.data?.message || 'Failed to complete claim confirmation.';
+      setErrorMessage(serverMsg);
+      setPhase('review');
+    }
+  };
+
+  const toggleItemCheck = (uuid) => {
+    setSelectedItemUuids((prev) =>
+      prev.includes(uuid) ? prev.filter((id) => id !== uuid) : [...prev, uuid]
+    );
+  };
+
+  // Scan loop: runs only while phase === 'scanning' & mode === 'scan'
   useEffect(() => {
     if (!open || phase !== 'scanning' || mode !== 'scan') return;
 
@@ -262,7 +281,7 @@ const ClaimScannerModal = ({ open, onClose }) => {
 
   const handleManualSubmit = (e) => {
     e.preventDefault();
-    if (manualCodeString.length !== CLAIM_CODE_LENGTH || phase === 'submitting') return;
+    if (manualCodeString.length !== CLAIM_CODE_LENGTH || phase === 'looking_up' || phase === 'confirming') return;
     submitCredential({ claim_code: manualCodeString });
   };
 
@@ -274,7 +293,8 @@ const ClaimScannerModal = ({ open, onClose }) => {
 
   if (!open) return null;
 
-  const ownerName = claimedRequest ? formatName(claimedRequest) || 'Unknown requester' : '';
+  const reqObj = lookupData?.request || claimSummary?.request;
+  const ownerName = reqObj ? formatName(reqObj) || reqObj.display_name || 'Unknown requester' : '';
 
   return createPortal(
     <div className="fixed inset-0 z-99999 flex items-center justify-center p-4">
@@ -290,7 +310,9 @@ const ClaimScannerModal = ({ open, onClose }) => {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-white">
               <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M4 16v2a2 2 0 0 0 2 2h2M16 20h2a2 2 0 0 0 2-2v-2M4 12h16" />
             </svg>
-            <h3 className="text-base font-bold text-white">Scan QR code</h3>
+            <h3 className="text-base font-bold text-white">
+              {phase === 'review' ? 'Review Claim Checklist' : phase === 'success' ? 'Claim Completed' : 'Scan QR code'}
+            </h3>
           </div>
           <button
             type="button"
@@ -302,7 +324,7 @@ const ClaimScannerModal = ({ open, onClose }) => {
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
           <style>{`
             @keyframes scanLine {
               0%, 100% { top: 6%; }
@@ -313,13 +335,55 @@ const ClaimScannerModal = ({ open, onClose }) => {
             }
           `}</style>
 
+          {/* Alert Error Banner */}
+          {errorMessage && (
+            <div className={`p-3 rounded-xl flex items-start gap-2.5 text-xs font-semibold border ${
+              isDark
+                ? 'bg-red-950/40 border-red-800/50 text-red-300'
+                : 'bg-red-50 border-red-200 text-red-700'
+            }`}>
+              <ExclamationTriangleIcon className="w-5 h-5 shrink-0 text-red-500 mt-0.5" />
+              <div className="flex-1 leading-snug">{errorMessage}</div>
+              <button
+                type="button"
+                onClick={() => setErrorMessage('')}
+                className="text-gray-400 hover:text-gray-600 font-bold ml-1 cursor-pointer text-base leading-none"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          {/* ---------------- PHASE: SUCCESS ---------------- */}
           {phase === 'success' ? (
             <div className="flex flex-col items-center gap-3 py-4 text-center">
               <CheckCircleIcon className="w-14 h-14 text-green-500" />
-              <p className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Claim Completed</p>
+              <p className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Claim Processed</p>
               <p className={`text-sm ${isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}`}>
-                Request #{claimedRequest?.request_id} — {ownerName}
+                Request #{reqObj?.request_id} — {ownerName}
               </p>
+              <div className={`w-full text-xs p-3 rounded-xl text-left space-y-1 ${isDark ? 'bg-[#18191a] text-gray-300' : 'bg-gray-50 text-gray-700'}`}>
+                <p className="font-semibold text-green-600 dark:text-green-400">
+                  Completed items ({claimSummary?.completed?.length ?? 0}):
+                </p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  {(claimSummary?.completed || []).map((item) => (
+                    <li key={item.id}>{item.name || item.item_name} (x{item.number_of_copies || 1})</li>
+                  ))}
+                </ul>
+                {(claimSummary?.skipped || []).length > 0 && (
+                  <>
+                    <p className="font-semibold text-amber-600 dark:text-amber-400 mt-2">
+                      Skipped / Not Ready ({claimSummary.skipped.length}):
+                    </p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      {claimSummary.skipped.map((item) => (
+                        <li key={item.id}>{item.name || item.item_name} — {item.reason || item.skipped_reason || 'Skipped'}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
               <div className="flex gap-3 mt-2 w-full">
                 <button
                   type="button"
@@ -331,16 +395,122 @@ const ClaimScannerModal = ({ open, onClose }) => {
                 <button
                   type="button"
                   onClick={handleClose}
-                  className={`flex-1 px-4 py-2 rounded-lg text-sm font-bold transition-colors cursor-pointer ${isDark ? 'bg-[#3a3b3c] text-white hover:bg-[#4e4f50]' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'}`}
+                  className={`flex-1 px-4 py-2 rounded-lg text-sm font-bold transition-colors cursor-pointer ${
+                    isDark ? 'bg-[#3a3b3c] text-white hover:bg-[#4e4f50]' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                  }`}
                 >
                   Done
                 </button>
               </div>
             </div>
+          ) : phase === 'review' ? (
+            /* ---------------- PHASE: REVIEW CHECKLIST ---------------- */
+            <div className="space-y-4">
+              <div className={`p-3 rounded-xl border text-xs space-y-1 ${isDark ? 'bg-[#18191a] border-zinc-800' : 'bg-blue-50/50 border-blue-100'}`}>
+                <p className={`font-bold text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  Request #{lookupData?.request?.request_id}
+                </p>
+                <p className={isDark ? 'text-zinc-300' : 'text-gray-700'}>
+                  Requester: <span className="font-semibold">{ownerName}</span>
+                </p>
+                {lookupData?.request?.student_number && (
+                  <p className={isDark ? 'text-zinc-400' : 'text-gray-600'}>
+                    Student #: {lookupData.request.student_number}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
+                  Select items to hand over:
+                </p>
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {(lookupData?.items || []).map((item) => {
+                    const isClaimable = item.claimable !== false;
+                    const isChecked = selectedItemUuids.includes(item.uuid);
+
+                    return (
+                      <label
+                        key={item.uuid || item.id}
+                        className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
+                          !isClaimable
+                            ? isDark
+                              ? 'bg-zinc-900/50 border-zinc-800 opacity-60 cursor-not-allowed'
+                              : 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed'
+                            : isChecked
+                            ? isDark
+                              ? 'bg-pup-yellow/10 border-pup-yellow/40'
+                              : 'bg-amber-50 border-amber-200'
+                            : isDark
+                            ? 'bg-[#18191a] border-zinc-800'
+                            : 'bg-white border-gray-200'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          disabled={!isClaimable}
+                          checked={isChecked}
+                          onChange={() => toggleItemCheck(item.uuid)}
+                          className="mt-0.5 w-4 h-4 rounded text-pup-maroon focus:ring-pup-maroon cursor-pointer disabled:cursor-not-allowed"
+                        />
+                        <div className="flex-1 text-xs space-y-0.5">
+                          <div className="flex justify-between items-center">
+                            <span className={`font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                              {item.name || item.document_name}
+                            </span>
+                            <span className={`font-semibold text-[11px] px-2 py-0.5 rounded-md ${
+                              isClaimable
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                : 'bg-gray-200 text-gray-600 dark:bg-zinc-800 dark:text-zinc-400'
+                            }`}>
+                              {item.number_of_copies ? `x${item.number_of_copies}` : '1 copy'}
+                            </span>
+                          </div>
+                          {!isClaimable && item.reason && (
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                              {item.reason}
+                            </p>
+                          )}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center pt-2">
+                <button
+                  type="button"
+                  onClick={resetToScanning}
+                  className={`px-4 py-2 rounded-xl font-semibold text-sm transition-all duration-200 cursor-pointer ${
+                    isDark
+                      ? 'bg-[#242526] text-white hover:bg-zinc-800 border border-zinc-800'
+                      : 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-300'
+                  }`}
+                >
+                  Back to Scan
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmClaim}
+                  disabled={selectedItemUuids.length === 0 || phase === 'confirming'}
+                  className={`px-4 py-2 rounded-xl font-semibold text-sm transition-all duration-200 ${
+                    selectedItemUuids.length > 0 && phase !== 'confirming'
+                      ? 'bg-pup-maroon text-white hover:bg-pup-dark-maroon cursor-pointer'
+                      : 'bg-pup-maroon/50 text-white/50 cursor-not-allowed'
+                  }`}
+                >
+                  {phase === 'confirming'
+                    ? 'Completing...'
+                    : `Confirm Claim (${selectedItemUuids.length})`}
+                </button>
+              </div>
+            </div>
           ) : (
+            /* ---------------- PHASE: SCANNING / MANUAL ---------------- */
             <div className="flex flex-col h-full">
-              {/* Tabs selector */}
-              {phase !== 'submitting' && (
+              {phase !== 'looking_up' && (
                 <div className={`flex border-b mb-4 ${isDark ? 'border-zinc-800' : 'border-gray-200'}`}>
                   <button
                     type="button"
@@ -371,50 +541,25 @@ const ClaimScannerModal = ({ open, onClose }) => {
                 </div>
               )}
 
-              {/* In-Modal Error Alert Banner below tabs */}
-              {errorMessage && (
-                <div className={`p-3 rounded-xl mb-4 flex items-start gap-2.5 text-xs font-semibold border ${
-                  isDark
-                    ? 'bg-red-950/40 border-red-800/50 text-red-300'
-                    : 'bg-red-50 border-red-200 text-red-700'
-                }`}>
-                  <ExclamationTriangleIcon className="w-5 h-5 shrink-0 text-red-500 mt-0.5" />
-                  <div className="flex-1 leading-snug">{errorMessage}</div>
-                  <button
-                    type="button"
-                    onClick={() => setErrorMessage('')}
-                    className="text-gray-400 hover:text-gray-600 font-bold ml-1 cursor-pointer text-base leading-none"
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-
               {mode === 'scan' ? (
                 <>
-                  {/* Camera preview */}
                   <div className={`relative rounded-2xl overflow-hidden aspect-square flex items-center justify-center border transition-all duration-300 ${
                     isDark ? 'bg-[#18191a] border-[#3e4042]' : 'bg-gray-900 border-gray-200'
                   }`}>
                     {phase === 'scanning' && !cameraError && (
                       <>
-                        {/* Camera Feed */}
                         <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
-
-                        {/* Glowing Scan Laser Line */}
                         <div className={`absolute left-[6%] right-[6%] h-[2.5px] animate-scan-line pointer-events-none z-10 ${
                           isDark ? 'bg-pup-yellow shadow-[0_0_8px_rgba(248,191,30,0.8)]' : 'bg-pup-maroon shadow-[0_0_8px_rgba(139,0,0,0.8)]'
                         }`} />
-
-                        {/* Corner Brackets */}
                         <div className="absolute top-4 left-4 w-6 h-6 border-t-4 border-l-4 border-white/80 rounded-tl-lg pointer-events-none z-10" />
                         <div className="absolute top-4 right-4 w-6 h-6 border-t-4 border-r-4 border-white/80 rounded-tr-lg pointer-events-none z-10" />
                         <div className="absolute bottom-4 left-4 w-6 h-6 border-b-4 border-l-4 border-white/80 rounded-bl-lg pointer-events-none z-10" />
                         <div className="absolute bottom-4 right-4 w-6 h-6 border-b-4 border-r-4 border-white/80 rounded-br-lg pointer-events-none z-10" />
                       </>
                     )}
-                    {phase === 'submitting' && (
-                      <div className="text-white text-sm font-semibold animate-pulse z-10">Completing claim…</div>
+                    {phase === 'looking_up' && (
+                      <div className="text-white text-sm font-semibold animate-pulse z-10">Looking up claim details…</div>
                     )}
                     {phase === 'scanning' && cameraError && (
                       <div className="text-center px-6 z-10">
@@ -425,12 +570,10 @@ const ClaimScannerModal = ({ open, onClose }) => {
                     <canvas ref={canvasRef} className="hidden" />
                   </div>
 
-                  {/* Guide text under camera preview */}
                   <p className={`text-xs text-center mt-3 mb-4 ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
                     Point your QR code at the camera. If the camera isn't working, switch to the "Enter Claim Code" tab.
                   </p>
 
-                  {/* Cancel Button */}
                   <div className="flex justify-start">
                     <button
                       type="button"
@@ -461,11 +604,10 @@ const ClaimScannerModal = ({ open, onClose }) => {
                       </span>
                     </div>
                     <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                      Enter the 6-digit code sent in your inbox.
+                      Enter the 6-character alphanumeric claim code.
                     </p>
                   </div>
-                  
-                  {/* 6-Digit input boxes */}
+
                   <div className="flex justify-between gap-2 sm:gap-3">
                     {manualCode.map((digit, idx) => (
                       <input
@@ -480,7 +622,7 @@ const ClaimScannerModal = ({ open, onClose }) => {
                         onFocus={() => handleFocus(idx)}
                         onPaste={handlePaste}
                         placeholder="0"
-                        disabled={phase === 'submitting'}
+                        disabled={phase === 'looking_up'}
                         className={`w-10 h-10 sm:w-14 sm:h-14 text-center text-base sm:text-xl font-bold rounded-lg sm:rounded-xl border transition-all duration-200 focus:outline-none ${
                           isDark
                             ? 'bg-[#1a1a1a] border-[#27272a] text-white placeholder-zinc-700 focus:border-pup-yellow focus:ring-1 focus:ring-pup-yellow'
@@ -490,7 +632,6 @@ const ClaimScannerModal = ({ open, onClose }) => {
                     ))}
                   </div>
 
-                  {/* Cancel and Verify buttons */}
                   <div className="flex justify-between items-center pt-2">
                     <button
                       type="button"
@@ -503,17 +644,17 @@ const ClaimScannerModal = ({ open, onClose }) => {
                     >
                       Cancel
                     </button>
-                    
+
                     <button
                       type="submit"
-                      disabled={manualCodeString.length !== CLAIM_CODE_LENGTH || phase === 'submitting'}
+                      disabled={manualCodeString.length !== CLAIM_CODE_LENGTH || phase === 'looking_up'}
                       className={`px-4 py-2 rounded-xl font-semibold text-sm transition-all duration-200 ${
-                        manualCodeString.length === CLAIM_CODE_LENGTH && phase !== 'submitting'
+                        manualCodeString.length === CLAIM_CODE_LENGTH && phase !== 'looking_up'
                           ? 'bg-pup-maroon text-white hover:bg-pup-dark-maroon cursor-pointer'
                           : 'bg-pup-maroon/50 text-white/50 cursor-not-allowed'
                       }`}
                     >
-                      Verify
+                      {phase === 'looking_up' ? 'Looking up...' : 'Verify'}
                     </button>
                   </div>
                 </form>

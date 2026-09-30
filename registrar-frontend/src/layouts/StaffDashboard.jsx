@@ -9,13 +9,15 @@ import {
   ClockIcon,
   PrinterIcon,
 } from '@heroicons/react/24/solid';
-import { CheckIcon, ArrowUpIcon, ArrowDownIcon, ArchiveBoxIcon, EllipsisVerticalIcon, QrCodeIcon } from '@heroicons/react/24/outline';
+import { CheckIcon, ArrowUpIcon, ArrowDownIcon, ArchiveBoxIcon, EllipsisVerticalIcon, QrCodeIcon, XCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
 import { updateRequestDocumentStatus, updateRequestCertificateStatus } from '../services/api';
 import RequestDetailsModal from '../components/RequestDetailModal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import LoadingOverlay from '../components/LoadingOverlay.jsx';
 import LineLoading from '../components/LineLoading.jsx';
 import CertificateModal from '../components/CertificateModal.jsx';
+import ItemWithdrawCloseModal from '../components/ItemWithdrawCloseModal.jsx';
+import RequestActionModal from '../components/RequestActionModal.jsx';
 import VoiceSearchInput from '../components/VoiceSearchInput.jsx';
 import DashboardDropdown from '../components/DashboardDropdown.jsx';
 import { useTheme } from '../context/ThemeContext';
@@ -30,7 +32,7 @@ import {
   StatusBadge,
   Pagination,
 } from '../components/StaffDashboardComponents';
-import { getWorkflowStatusOptions } from '../utils/staffDashboardUtils';
+import { getWorkflowStatusOptions, getEffectiveStatus } from '../utils/staffDashboardUtils';
 
 const ITEMS_PER_PAGE = 15;
 
@@ -44,6 +46,152 @@ const isTerminalRequest = (request) => (
   String(request?.statusName ?? request?.status?.status_name ?? '').toLowerCase() === 'closed - unable to process'
 );
 
+const SubItemActionsDropdown = ({
+  req,
+  subItem,
+  viewMode,
+  canProcess = true,
+  onViewDetails,
+  onIssueDeficiencyNotice,
+  onWithdrawItem,
+  onCloseItem,
+  isDark,
+}) => {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const dropdownRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const effectiveItem = getEffectiveStatus(req, subItem);
+  const statusId = Number(effectiveItem.statusId);
+  const statusName = (effectiveItem.statusName || '').toLowerCase();
+
+  const isItemFinished =
+    [3, 4, 13, 14].includes(statusId) ||
+    ['completed', 'forfeited', 'withdrawn', 'closed - unable to process'].includes(statusName) ||
+    isTerminalRequest(req);
+
+  const canActOnItem = canProcess && !isItemFinished && !req.isArchived && viewMode !== 'archived';
+
+  return (
+    <div className="relative inline-block text-left" ref={dropdownRef}>
+      <button
+        type="button"
+        title="Item Actions"
+        onClick={() => setIsOpen(!isOpen)}
+        className={`p-1.5 rounded-lg transition-colors flex items-center justify-center focus:outline-none ${
+          isOpen
+            ? isDark
+              ? 'bg-[#2a2a2f] text-[#ffc72c] border border-[#ffc72c]/30'
+              : 'bg-gray-100 text-[#800000] border border-gray-200'
+            : isDark
+            ? 'text-[#b0b3b8] hover:text-[#e4e6eb] hover:bg-[#3a3b3c] border border-transparent'
+            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 border border-transparent'
+        }`}
+      >
+        <EllipsisVerticalIcon className="w-4 h-4" />
+      </button>
+
+      {isOpen && (
+        <div
+          className={`absolute right-0 mt-1.5 w-56 rounded-xl shadow-lg border z-50 overflow-hidden text-left ${
+            isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042]' : 'bg-white text-gray-700 border-gray-200'
+          }`}
+          style={{
+            boxShadow: '0 8px 32px -4px rgba(0,0,0,0.18), 0 2px 8px -2px rgba(0,0,0,0.10)',
+          }}
+        >
+          <div className="py-1 flex flex-col gap-0.5">
+            {/* View Details */}
+            <button
+              type="button"
+              onClick={() => {
+                onViewDetails();
+                setIsOpen(false);
+              }}
+              className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold transition-colors ${
+                isDark ? 'hover:bg-[#2a2a2f] text-[#e4e6eb]' : 'hover:bg-gray-50 text-gray-700'
+              }`}
+            >
+              <EyeIcon className="w-4 h-4 text-gray-400 dark:text-[#808080]" />
+              View Details
+            </button>
+
+            {canActOnItem && (
+              <>
+                <div className={`border-t my-0.5 ${isDark ? 'border-[#3e4042]' : 'border-gray-100'}`} />
+
+                {/* Issue Deficiency Notice */}
+                {onIssueDeficiencyNotice && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onIssueDeficiencyNotice(req, subItem);
+                      setIsOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-yellow-600 dark:text-yellow-400 transition-colors ${
+                      isDark ? 'hover:bg-[#2a2a2f]' : 'hover:bg-yellow-50'
+                    }`}
+                  >
+                    <ExclamationCircleIcon className="w-4 h-4 text-yellow-500 shrink-0" />
+                    Issue Deficiency Notice
+                  </button>
+                )}
+
+                {/* Withdraw Item */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onWithdrawItem(req.id, subItem);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-amber-600 dark:text-amber-400 transition-colors ${
+                    isDark ? 'hover:bg-[#2a2a2f]' : 'hover:bg-amber-50'
+                  }`}
+                >
+                  <ArchiveBoxIcon className="w-4 h-4 text-amber-500 shrink-0" />
+                  Withdraw Item
+                </button>
+
+                {/* Close Item */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCloseItem(req.id, subItem);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-red-600 dark:text-red-400 transition-colors ${
+                    isDark ? 'hover:bg-[#2a2a2f]' : 'hover:bg-red-50'
+                  }`}
+                >
+                  <XCircleIcon className="w-4 h-4 text-red-500 shrink-0" />
+                  Close Item (Unable to Process)
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Gold bottom accent */}
+          <div className="h-1 w-full bg-linear-to-r from-[#FFD700] via-[#FFC72C] to-[#FFD700]" />
+        </div>
+      )}
+    </div>
+  );
+};
+
 const RowActionsDropdown = ({
   req,
   viewMode,
@@ -53,6 +201,10 @@ const RowActionsDropdown = ({
   onGenerateCert,
   onArchive,
   onRestore,
+  onIssueDeficiencyNotice,
+  onWithdrawItem,
+  onCloseItem,
+  singleSubItem,
   updatingId,
   isDark,
 }) => {
@@ -85,6 +237,19 @@ const RowActionsDropdown = ({
   const showGenerateCert = Boolean(onGenerateCert && viewMode !== 'archived' && hasCertificates);
   const isUpdating = updatingId === req.id;
 
+  // Single-item request actions: check if singleSubItem is actable
+  let canActOnSingleItem = false;
+  if (singleSubItem && canProcess && viewMode !== 'archived' && !req.isArchived) {
+    const effectiveItem = getEffectiveStatus(req, singleSubItem);
+    const statusId = Number(effectiveItem.statusId);
+    const statusName = (effectiveItem.statusName || '').toLowerCase();
+    const isItemFinished =
+      [3, 4, 13, 14].includes(statusId) ||
+      ['completed', 'forfeited', 'withdrawn', 'closed - unable to process'].includes(statusName) ||
+      isTerminalRequest(req);
+    canActOnSingleItem = !isItemFinished;
+  }
+
   return (
     <div className="relative inline-block text-left" ref={dropdownRef}>
       <button
@@ -106,7 +271,7 @@ const RowActionsDropdown = ({
 
       {isOpen && (
         <div
-          className={`absolute right-0 mt-1.5 w-48 rounded-xl shadow-lg border z-50 overflow-hidden text-left ${
+          className={`absolute right-0 mt-1.5 w-56 rounded-xl shadow-lg border z-50 overflow-hidden text-left ${
             isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042]' : 'bg-white text-gray-700 border-gray-200'
           }`}
           style={{
@@ -144,6 +309,62 @@ const RowActionsDropdown = ({
                 <PrinterIcon className="w-4 h-4 text-gray-400 dark:text-[#808080]" />
                 Generate Certificate
               </button>
+            )}
+
+            {canActOnSingleItem && (
+              <>
+                <div className={`border-t my-0.5 ${isDark ? 'border-[#3e4042]' : 'border-gray-100'}`} />
+
+                {/* Issue Deficiency Notice */}
+                {onIssueDeficiencyNotice && (
+                  <button
+                    type="button"
+                    disabled={isUpdating}
+                    onClick={() => {
+                      onIssueDeficiencyNotice(req, singleSubItem);
+                      setIsOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-yellow-600 dark:text-yellow-400 transition-colors disabled:opacity-50 ${
+                      isDark ? 'hover:bg-[#2a2a2f]' : 'hover:bg-yellow-50'
+                    }`}
+                  >
+                    <ExclamationCircleIcon className="w-4 h-4 text-yellow-500 shrink-0" />
+                    Issue Deficiency Notice
+                  </button>
+                )}
+
+                {/* Withdraw Item */}
+                <button
+                  type="button"
+                  disabled={isUpdating}
+                  onClick={() => {
+                    onWithdrawItem(req.id, singleSubItem);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-amber-600 dark:text-amber-400 transition-colors disabled:opacity-50 ${
+                    isDark ? 'hover:bg-[#2a2a2f]' : 'hover:bg-amber-50'
+                  }`}
+                >
+                  <ArchiveBoxIcon className="w-4 h-4 text-amber-500 shrink-0" />
+                  Withdraw Item
+                </button>
+
+                {/* Close Item */}
+                <button
+                  type="button"
+                  disabled={isUpdating}
+                  onClick={() => {
+                    onCloseItem(req.id, singleSubItem);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-red-600 dark:text-red-400 transition-colors disabled:opacity-50 ${
+                    isDark ? 'hover:bg-[#2a2a2f]' : 'hover:bg-red-50'
+                  }`}
+                >
+                  <XCircleIcon className="w-4 h-4 text-red-500 shrink-0" />
+                  Close Item (Unable to Process)
+                </button>
+              </>
             )}
 
             <div className={`border-t my-0.5 ${isDark ? 'border-[#3e4042]' : 'border-gray-100'}`} />
@@ -208,6 +429,8 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
   const {
     requests,
     filteredData,
+    meta,
+    statusCounts,
     loading,
     actionLoading,
     filterStatus,
@@ -258,6 +481,46 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
   } = useStaffDashboard(viewMode);
 
   const [expandedRowIds, setExpandedRowIds] = useState(new Set());
+  const [itemModalState, setItemModalState] = useState({
+    open: false,
+    mode: 'withdraw',
+    reqId: null,
+    subItem: null,
+  });
+
+  const [actionModalState, setActionModalState] = useState({
+    open: false,
+    modalType: 'deficiency',
+    req: null,
+    subItem: null,
+  });
+
+  const handleOpenDeficiencyNotice = (req, subItem = null) => {
+    setActionModalState({
+      open: true,
+      modalType: 'deficiency',
+      req,
+      subItem,
+    });
+  };
+
+  const handleOpenWithdrawItem = (reqId, subItem) => {
+    setItemModalState({
+      open: true,
+      mode: 'withdraw',
+      reqId,
+      subItem,
+    });
+  };
+
+  const handleOpenCloseItem = (reqId, subItem) => {
+    setItemModalState({
+      open: true,
+      mode: 'close',
+      reqId,
+      subItem,
+    });
+  };
 
   const toggleRowExpand = (id) => {
     setExpandedRowIds(prev => {
@@ -293,10 +556,12 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
         const qty = Number(d.number_of_copies) || 1;
         items.push({
           type: 'doc',
-          id: d.request_document_id,
+          id: d.request_document_id ?? d.id,
           name,
           qty,
           statusId: d.status_id,
+          statusName: d.status?.status_name || d.status_name,
+          status: d.status,
           item: d,
         });
       });
@@ -308,10 +573,12 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
         const qty = Number(c.number_of_copies) || 1;
         items.push({
           type: 'cert',
-          id: c.request_certificate_id,
+          id: c.request_certificate_id ?? c.id,
           name,
           qty,
           statusId: c.status_id,
+          statusName: c.status?.status_name || c.status_name,
+          status: c.status,
           generatedAt: c.generated_at,
           item: c,
         });
@@ -481,10 +748,9 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
   // "Returned", "Draft", "Archived") are not used directly.
   const statusFilterOptions = ['All', ...getWorkflowStatusOptions(requestStatuses)];
 
-  const indexOfLastItem = currentPage * ITEMS_PER_PAGE;
-  const indexOfFirstItem = indexOfLastItem - ITEMS_PER_PAGE;
-  const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
+  const currentItems = requests;
+  const totalPages = meta?.lastPage ?? 1;
+  const indexOfFirstItem = meta?.from ? meta.from - 1 : (currentPage - 1) * 20;
 
   const handleNextPage = () => currentPage < totalPages && setCurrentPage(prev => prev + 1);
   const handlePrevPage = () => currentPage > 1 && setCurrentPage(prev => prev - 1);
@@ -499,17 +765,17 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
         <div className="grid grid-cols-1 gap-3 sm:gap-4 mb-4">
           <StatCard 
             title="Archived Requests" 
-            count={requests.length} 
+            count={statusCounts['Archived'] ?? 0} 
             color="blue" 
           />
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-4">
-          <StatCard title="New Requests" count={requests.filter(r => r.statusId === resolvedStatusIds.PENDING).length} color="yellow" />
-          <StatCard title="Awaiting Submission" count={requests.filter(r => r.statusId === resolvedStatusIds.AWAITING_SUBMISSION).length} color="emerald" />
-          <StatCard title="Processing" count={requests.filter(r => r.statusName?.toLowerCase() === 'processing').length} color="blue" />
-          <StatCard title="Awaiting Signature" count={requests.filter(r => r.statusId === resolvedStatusIds.PENDING_SIGNATURE).length} color="amber" />
-          <StatCard title="Ready for Pickup" count={requests.filter(r => r.statusId === resolvedStatusIds.READY).length} color="green" />
+          <StatCard title="New Requests" count={statusCounts['Pending'] ?? statusCounts['Pending Review'] ?? 0} color="yellow" />
+          <StatCard title="Awaiting Submission" count={statusCounts['Awaiting Submission'] ?? 0} color="emerald" />
+          <StatCard title="Processing" count={statusCounts['Processing'] ?? 0} color="blue" />
+          <StatCard title="Awaiting Signature" count={statusCounts['Pending Signature'] ?? 0} color="amber" />
+          <StatCard title="Ready for Pickup" count={statusCounts['Ready to Claim'] ?? 0} color="green" />
         </div>
       )}
 
@@ -818,12 +1084,19 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                         <div className="flex items-center justify-end gap-1.5 w-full">
                           {/* For single-item requests ONLY, render direct parent row action button */}
                           {(() => {
-                            const effectiveStatusId = subItems.length === 1 ? subItems[0].statusId : req.statusId;
                             const singleSubItem = subItems[0];
+                            const effectiveItem = singleSubItem ? getEffectiveStatus(req, singleSubItem) : { statusId: req.statusId, statusName: req.statusName };
+                            const effectiveStatusId = Number(effectiveItem.statusId);
+                            const statusName = (effectiveItem.statusName || '').toLowerCase();
+                            const isItemFinished =
+                              [3, 4, 13, 14].includes(effectiveStatusId) ||
+                              ['completed', 'forfeited', 'withdrawn', 'closed - unable to process'].includes(statusName) ||
+                              isTerminalRequest(req);
+                            const canActOnParentRow = !requestIsWithdrawn && !isMultiItem && canProcess && !req.isArchived && !isItemFinished;
 
                             return (
                               <>
-                                {!requestIsWithdrawn && !isMultiItem && canProcess && !req.isArchived && effectiveStatusId === resolvedStatusIds.AWAITING_SUBMISSION && (
+                                {canActOnParentRow && effectiveStatusId === resolvedStatusIds.AWAITING_SUBMISSION && (
                                   <button
                                     disabled={updatingId === req.id}
                                     onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.PENDING) : handleStatusUpdate(req.id, resolvedStatusIds.PENDING)}
@@ -837,7 +1110,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                     <span>Confirm Received</span>
                                   </button>
                                 )}
-                                {!requestIsWithdrawn && !isMultiItem && canProcess && !req.isArchived && effectiveStatusId === resolvedStatusIds.PENDING && (
+                                {canActOnParentRow && effectiveStatusId === resolvedStatusIds.PENDING && (
                                   <button
                                     disabled={updatingId === req.id}
                                     onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.PENDING_SIGNATURE) : handleStatusUpdate(req.id, resolvedStatusIds.PENDING_SIGNATURE)}
@@ -851,7 +1124,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                     <span>Pending Signature</span>
                                   </button>
                                 )}
-                                {!requestIsWithdrawn && !isMultiItem && canProcess && (!req.isArchived && (effectiveStatusId === resolvedStatusIds.PENDING || effectiveStatusId === resolvedStatusIds.PENDING_SIGNATURE)) && (
+                                {canActOnParentRow && (effectiveStatusId === resolvedStatusIds.PENDING || effectiveStatusId === resolvedStatusIds.PENDING_SIGNATURE) && (
                                   <button
                                     disabled={updatingId === req.id}
                                     onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.READY) : handleStatusUpdate(req.id, resolvedStatusIds.READY)}
@@ -861,7 +1134,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                     <CheckCircleIcon className="w-3.5 h-3.5" /> Ready
                                   </button>
                                 )}
-                                {!requestIsWithdrawn && !isMultiItem && canComplete && !req.isArchived && effectiveStatusId === resolvedStatusIds.READY && (
+                                {canActOnParentRow && canComplete && effectiveStatusId === resolvedStatusIds.READY && (
                                   <button
                                     disabled={updatingId === req.id}
                                     onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.COMPLETED) : handleStatusUpdate(req.id, resolvedStatusIds.COMPLETED)}
@@ -884,6 +1157,10 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                             onGenerateCert={() => setCertRequest(req)}
                             onArchive={() => handleArchiveOne(req.id)}
                             onRestore={() => handleRestoreOne(req.id)}
+                            onIssueDeficiencyNotice={handleOpenDeficiencyNotice}
+                            onWithdrawItem={handleOpenWithdrawItem}
+                            onCloseItem={handleOpenCloseItem}
+                            singleSubItem={subItems.length === 1 ? subItems[0] : null}
                             updatingId={updatingId}
                             isDark={isDark}
                           />
@@ -893,19 +1170,18 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
 
                     {/* Accordion Sub-Rows for Multi-Item Requests */}
                     {isExpanded && isMultiItem && !requestIsWithdrawn && subItems.map((subItem) => {
-                      const isItemAwaiting = subItem.statusId === resolvedStatusIds.AWAITING_SUBMISSION;
-                      const isItemReady = subItem.statusId === resolvedStatusIds.READY;
-                      const isItemDone = subItem.statusId === resolvedStatusIds.COMPLETED;
-                      const isItemPendingSig = subItem.statusId === resolvedStatusIds.PENDING_SIGNATURE;
-                      const itemStatusName = isItemAwaiting
-                        ? 'Awaiting Submission'
-                        : isItemReady
-                          ? 'Ready to Claim'
-                          : isItemPendingSig
-                            ? 'Pending Signature'
-                            : isItemDone
-                              ? 'Completed'
-                              : 'Processing';
+                      const effectiveItem = getEffectiveStatus(req, subItem);
+                      const effectiveStatusId = Number(effectiveItem.statusId);
+                      const isItemAwaiting = effectiveStatusId === resolvedStatusIds.AWAITING_SUBMISSION;
+                      const isItemReady = effectiveStatusId === resolvedStatusIds.READY;
+                      const isItemDone = effectiveStatusId === resolvedStatusIds.COMPLETED;
+                      const isItemPendingSig = effectiveStatusId === resolvedStatusIds.PENDING_SIGNATURE;
+                      const itemStatusName = (effectiveItem.statusName || '').toLowerCase();
+                      const isItemFinished =
+                        [3, 4, 13, 14].includes(effectiveStatusId) ||
+                        ['completed', 'forfeited', 'withdrawn', 'closed - unable to process'].includes(itemStatusName) ||
+                        isTerminalRequest(req);
+                      const canActOnSubItem = canProcess && !isItemFinished && !req.isArchived && viewMode !== 'archived';
 
                       return (
                         <tr key={`sub-${subItem.id}`} className={`transition-colors border-t border-gray-100 dark:border-zinc-800/60 ${isDark ? 'bg-[#18191a]/40 hover:bg-[#18191a]/80' : 'bg-gray-50/50 hover:bg-gray-50'}`}>
@@ -937,13 +1213,13 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
 
                           {/* Col 8: STATUS Badge */}
                           <Td center>
-                            <StatusBadge status={itemStatusName} />
+                            <StatusBadge status={effectiveItem.statusName} />
                           </Td>
 
                           {/* Col 9: ACTIONS — Per-item Action Button */}
                           <td className={`px-3 py-2 text-xs ${isDark ? 'text-[#e4e6eb]' : 'text-inherit'} w-62.5 min-w-62.5`}>
                             <div className="flex items-center justify-end gap-1.5 w-full">
-                              {canProcess && isItemAwaiting && (
+                              {canActOnSubItem && isItemAwaiting && (
                                 <button
                                   type="button"
                                   disabled={updatingId === req.id}
@@ -960,7 +1236,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                 </button>
                               )}
 
-                              {canProcess && !isItemAwaiting && !isItemReady && !isItemDone && !isItemPendingSig && (
+                              {canActOnSubItem && !isItemAwaiting && !isItemReady && !isItemDone && !isItemPendingSig && (
                                 <button
                                   type="button"
                                   disabled={updatingId === req.id}
@@ -976,7 +1252,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                 </button>
                               )}
 
-                              {canProcess && !isItemAwaiting && !isItemReady && !isItemDone && (
+                              {canActOnSubItem && !isItemAwaiting && !isItemReady && !isItemDone && (
                                 <button
                                   type="button"
                                   disabled={updatingId === req.id}
@@ -989,7 +1265,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                 </button>
                               )}
 
-                              {isItemReady && (
+                              {canActOnSubItem && isItemReady && (
                                 <button
                                   type="button"
                                   disabled={updatingId === req.id}
@@ -1002,16 +1278,15 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                 </button>
                               )}
 
-                              <RowActionsDropdown
+                              <SubItemActionsDropdown
                                 req={req}
+                                subItem={subItem}
                                 viewMode={viewMode}
-                                resolvedStatusIds={resolvedStatusIds}
                                 canProcess={canProcess}
                                 onViewDetails={() => setSelectedRequest(req.rawRequest)}
-                                onGenerateCert={() => setCertRequest(req)}
-                                onArchive={() => handleArchiveOne(req.id)}
-                                onRestore={() => handleRestoreOne(req.id)}
-                                updatingId={updatingId}
+                                onIssueDeficiencyNotice={handleOpenDeficiencyNotice}
+                                onWithdrawItem={handleOpenWithdrawItem}
+                                onCloseItem={handleOpenCloseItem}
                                 isDark={isDark}
                               />
                             </div>
@@ -1028,9 +1303,9 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
 
         {/* ---------------- PAGINATION ---------------- */}
         <Pagination
-          filteredCount={filteredData.length}
-          indexOfFirstItem={indexOfFirstItem}
-          indexOfLastItem={indexOfLastItem}
+          filteredCount={meta?.total ?? 0}
+          indexOfFirstItem={meta?.from ? meta.from - 1 : 0}
+          indexOfLastItem={meta?.to ?? 0}
           currentPage={currentPage}
           totalPages={totalPages}
           handlePrevPage={handlePrevPage}
@@ -1059,6 +1334,32 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
           onClose={() => setCertRequest(null)}
         />
       )}
+
+      <ItemWithdrawCloseModal
+        open={itemModalState.open}
+        mode={itemModalState.mode}
+        reqId={itemModalState.reqId}
+        subItem={itemModalState.subItem}
+        onClose={() => setItemModalState(prev => ({ ...prev, open: false }))}
+        onSuccess={(res, message) => {
+          showSuccess(message);
+          queryClient.invalidateQueries({ queryKey: ['documentRequests'] });
+          queryClient.invalidateQueries({ queryKey: ['documentRequestsCounts'] });
+        }}
+      />
+
+      <RequestActionModal
+        isOpen={actionModalState.open}
+        onClose={() => setActionModalState(prev => ({ ...prev, open: false }))}
+        modalType={actionModalState.modalType}
+        req={actionModalState.req}
+        subItem={actionModalState.subItem}
+        isDark={isDark}
+        onRefresh={() => {
+          queryClient.invalidateQueries({ queryKey: ['documentRequests'] });
+          queryClient.invalidateQueries({ queryKey: ['documentRequestsCounts'] });
+        }}
+      />
     </>
   );
 

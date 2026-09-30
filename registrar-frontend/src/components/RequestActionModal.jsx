@@ -1,7 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { XCircleIcon } from '@heroicons/react/24/solid';
-import { issueDeficiencyNotice, withdrawDocumentRequest, closeRequestUnableToProcess } from '../services/api';
+import { XCircleIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
+import {
+  getDocumentRequest,
+  issueDeficiencyNotice,
+  issueItemDeficiencyNotice,
+  withdrawDocumentRequest,
+  closeRequestUnableToProcess,
+  clearDeficiencyNotice,
+  voidDeficiencyNotice,
+} from '../services/api';
 import { useAlertToast } from '../context/AlertToastContext';
 import DropdownGroup from './DropDown';
 import InputGroup from './InputGroup';
@@ -28,6 +36,7 @@ const CLOSURE_REASONS = [
 const RequestActionModal = ({ isOpen, onClose, modalType, req, subItem, isDark, onRefresh }) => {
   const { showSuccess, showError } = useAlertToast();
   const [loading, setLoading] = useState(false);
+  const [fetchedRequest, setFetchedRequest] = useState(null);
 
   // Form states (store labels for DropdownGroup)
   const [deficiencyLabel, setDeficiencyLabel] = useState(DEFICIENCY_ITEMS[0].label);
@@ -40,9 +49,82 @@ const RequestActionModal = ({ isOpen, onClose, modalType, req, subItem, isDark, 
   const [closureLabel, setClosureLabel] = useState(CLOSURE_REASONS[0].label);
   const [closureDetail, setClosureDetail] = useState('');
 
+  // Clear / Void states
+  const [voidReason, setVoidReason] = useState('');
+  const [showVoidSection, setShowVoidSection] = useState(false);
+
+  const requestId = subItem?.parentRequestId || subItem?.parentRequest?.id || req?.rawRequest?.request_id || req?.id;
+
+  // Fetch full request details when modal opens to ensure open notices are loaded
+  useEffect(() => {
+    if (!isOpen || !requestId || modalType !== 'deficiency') return;
+    let mounted = true;
+    getDocumentRequest(requestId)
+      .then((res) => {
+        if (mounted && res?.data) {
+          setFetchedRequest(res.data);
+        }
+      })
+      .catch(() => {});
+    return () => { mounted = false; };
+  }, [isOpen, requestId, modalType]);
+
   if (!isOpen || !req) return null;
 
-  const requestId = subItem?.parentRequestId || subItem?.parentRequest?.id || req.rawRequest?.request_id || req.id;
+  const realItemId = subItem
+    ? (subItem.item?.request_document_id ?? subItem.item?.request_certificate_id ?? subItem.id)
+    : null;
+
+  const targetReq = fetchedRequest || req.rawRequest || req;
+
+  const itemNotices = targetReq?.open_item_deficiency_notices ||
+                      targetReq?.open_deficiency_notices ||
+                      req.open_item_deficiency_notices || [];
+
+  const foundItemNotice = Array.isArray(itemNotices) && realItemId
+    ? itemNotices.find((n) =>
+        subItem?.type === 'cert'
+          ? Number(n.request_certificate_id) === Number(realItemId)
+          : Number(n.request_document_id) === Number(realItemId)
+      )
+    : null;
+
+  const openNotice = subItem?.item?.open_deficiency_notice ||
+                     subItem?.open_deficiency_notice ||
+                     foundItemNotice ||
+                     targetReq?.open_deficiency_notice ||
+                     req.open_deficiency_notice;
+
+  const handleClearNotice = async () => {
+    if (!openNotice?.remark_id) return;
+    setLoading(true);
+    try {
+      await clearDeficiencyNotice(openNotice.remark_id);
+      showSuccess('Deficiency notice cleared successfully.');
+      onRefresh?.();
+      onClose();
+    } catch (err) {
+      showError(err.response?.data?.message || 'Unable to clear deficiency notice.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVoidNotice = async (e) => {
+    e.preventDefault();
+    if (!openNotice?.remark_id || !voidReason.trim()) return;
+    setLoading(true);
+    try {
+      await voidDeficiencyNotice(openNotice.remark_id, voidReason.trim());
+      showSuccess('Deficiency notice voided successfully.');
+      onRefresh?.();
+      onClose();
+    } catch (err) {
+      showError(err.response?.data?.message || 'Unable to void deficiency notice.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -51,10 +133,21 @@ const RequestActionModal = ({ isOpen, onClose, modalType, req, subItem, isDark, 
       if (modalType === 'deficiency') {
         const itemObj = DEFICIENCY_ITEMS.find((i) => i.label === deficiencyLabel);
         const itemKey = itemObj?.key || 'other';
-        await issueDeficiencyNotice(requestId, {
-          item_key: itemKey,
-          ...(itemKey === 'other' ? { detail: deficiencyDetail.trim() } : {}),
-        });
+        const realItemId = subItem
+          ? (subItem.item?.request_document_id ?? subItem.item?.request_certificate_id ?? subItem.id)
+          : null;
+
+        if (subItem && realItemId && !String(realItemId).startsWith('fallback')) {
+          await issueItemDeficiencyNotice(requestId, subItem.type, realItemId, {
+            item_key: itemKey,
+            ...(itemKey === 'other' ? { detail: deficiencyDetail.trim() } : {}),
+          });
+        } else {
+          await issueDeficiencyNotice(requestId, {
+            item_key: itemKey,
+            ...(itemKey === 'other' ? { detail: deficiencyDetail.trim() } : {}),
+          });
+        }
         showSuccess('Deficiency notice issued successfully.');
       } else if (modalType === 'withdraw') {
         const itemObj = WITHDRAWAL_REASONS.find((i) => i.label === withdrawalLabel);
@@ -86,7 +179,7 @@ const RequestActionModal = ({ isOpen, onClose, modalType, req, subItem, isDark, 
   };
 
   const getTitle = () => {
-    if (modalType === 'deficiency') return 'Issue Deficiency Notice';
+    if (modalType === 'deficiency') return openNotice ? 'Deficiency Notice Management' : 'Issue Deficiency Notice';
     if (modalType === 'withdraw') return 'Withdraw Request';
     if (modalType === 'close') return 'Close Request (Unable to Process)';
     return '';
@@ -129,9 +222,70 @@ const RequestActionModal = ({ isOpen, onClose, modalType, req, subItem, isDark, 
 
         {/* Body */}
         <div className={`p-4 sm:p-6 space-y-4 overflow-visible ${isDark ? 'text-[#e4e6eb]' : 'text-gray-900'}`}>
+          {modalType === 'deficiency' && openNotice && (
+            <div className={`p-4 rounded-xl border space-y-3 ${isDark ? 'bg-amber-950/30 border-amber-800/50 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Active Deficiency Hold</p>
+                  <p className="text-sm font-semibold mt-0.5">{openNotice.item_key ? openNotice.item_key.replace(/_/g, ' ').toUpperCase() : 'Deficiency Notice Open'}</p>
+                  {openNotice.detail && <p className="text-xs mt-1 opacity-80">{openNotice.detail}</p>}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-amber-200/60 dark:border-amber-800/40">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={handleClearNotice}
+                  className="px-3.5 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <CheckCircleIcon className="w-4 h-4" />
+                  Mark Resolved / Clear Notice
+                </button>
+
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => setShowVoidSection(!showVoidSection)}
+                  className="px-3.5 py-1.5 text-xs font-bold rounded-lg bg-gray-200 hover:bg-gray-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-gray-800 dark:text-gray-100 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <XCircleIcon className="w-4 h-4 text-red-500" />
+                  Void Notice
+                </button>
+              </div>
+
+              {showVoidSection && (
+                <div className="pt-2 space-y-3.5 border-t border-amber-200/60 dark:border-amber-800/40">
+                  <InputGroup
+                    label="Void Reason (Required)"
+                    name="voidReason"
+                    value={voidReason}
+                    onChange={(e) => setVoidReason(e.target.value)}
+                    placeholder="e.g. Issued by mistake"
+                    labelColor={labelColor}
+                    voiceEnabled={false}
+                    isDark={isDark}
+                  />
+                  <button
+                    type="button"
+                    disabled={loading || !voidReason.trim()}
+                    onClick={handleVoidNotice}
+                    className="px-3.5 py-1.5 text-xs font-bold rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    Confirm Void Notice
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} id="request-action-form" className="space-y-4">
             {modalType === 'deficiency' && (
               <>
+                <p className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wider">
+                  {openNotice ? 'Issue Additional Deficiency Notice' : 'Issue New Deficiency Notice'}
+                </p>
+
                 <DropdownGroup
                   label="Deficiency Item"
                   name="deficiencyLabel"
