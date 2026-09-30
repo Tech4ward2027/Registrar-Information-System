@@ -611,41 +611,48 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
 
     if (items.length === 1) {
       const singleItem = items[0];
-      const itemStatusId = singleItem.statusId;
-      if (itemStatusId === resolvedStatusIds.COMPLETED) return <StatusBadge status="Completed" />;
-      if (itemStatusId === resolvedStatusIds.READY) return <StatusBadge status="Ready to Claim" />;
-      if (itemStatusId === resolvedStatusIds.PENDING_SIGNATURE) return <StatusBadge status="Pending Signature" />;
-      if (itemStatusId === resolvedStatusIds.AWAITING_SUBMISSION) return <StatusBadge status="Awaiting Submission" />;
-      return <StatusBadge status={req.statusName || 'Processing'} />;
+      const effective = getEffectiveStatus(req, singleItem);
+      const itemStatusName = effective.statusName;
+      return <StatusBadge status={itemStatusName} />;
     }
 
-    // Pure, derived rollup status computation from child line items:
-    const completedCount = items.filter(i => i.statusId === resolvedStatusIds.COMPLETED).length;
-    const readyCount = items.filter(i => i.statusId === resolvedStatusIds.READY).length;
-    const pendingSigCount = items.filter(i => i.statusId === resolvedStatusIds.PENDING_SIGNATURE).length;
-    const totalCount = items.length;
+    // Categorize items by status
+    const completedCount = items.filter(i => Number(i.statusId) === resolvedStatusIds.COMPLETED || String(i.statusName).toLowerCase() === 'completed').length;
+    const readyCount = items.filter(i => Number(i.statusId) === resolvedStatusIds.READY || String(i.statusName).toLowerCase() === 'ready to claim').length;
+    const pendingSigCount = items.filter(i => Number(i.statusId) === resolvedStatusIds.PENDING_SIGNATURE || String(i.statusName).toLowerCase() === 'pending signature').length;
+    const withdrawnCount = items.filter(i => Number(i.statusId) === 13 || String(i.statusName).toLowerCase() === 'withdrawn').length;
+    const closedCount = items.filter(i => Number(i.statusId) === 14 || String(i.statusName).toLowerCase() === 'closed - unable to process').length;
+    const forfeitedCount = items.filter(i => Number(i.statusId) === 4 || String(i.statusName).toLowerCase() === 'forfeited').length;
 
-    // 1. All children Completed -> "Completed"
-    if (completedCount === totalCount) {
+    const totalCount = items.length;
+    const terminalCount = completedCount + withdrawnCount + closedCount + forfeitedCount;
+    const activeTotal = totalCount - (withdrawnCount + closedCount + forfeitedCount);
+
+    // 1. ALL items in the request are terminal -> Request is Completed/Finished
+    if (terminalCount === totalCount) {
+      if (withdrawnCount === totalCount) return <StatusBadge status="Withdrawn" />;
+      if (closedCount === totalCount) return <StatusBadge status="Closed - Unable to Process" />;
+      if (forfeitedCount === totalCount) return <StatusBadge status="Forfeited" />;
       return <StatusBadge status="Completed" />;
     }
 
-    // 2. All children Ready (or combination of Ready + Completed) -> "Ready to Claim"
-    if (completedCount + readyCount === totalCount) {
+    // 2. All remaining active items are Ready -> "Ready to Claim"
+    if (activeTotal > 0 && (completedCount + readyCount === activeTotal)) {
       return <StatusBadge status="Ready to Claim" />;
     }
 
-    // 3. All items pending signature -> "Pending Signature"
-    if (pendingSigCount > 0 && (pendingSigCount + readyCount + completedCount === totalCount)) {
+    // 3. All remaining active items pending signature -> "Pending Signature"
+    if (pendingSigCount > 0 && (pendingSigCount + readyCount + completedCount === activeTotal)) {
       return <StatusBadge status="Pending Signature" />;
     }
 
-    // 4. Any child still Processing/Pending -> "X of Y Processing"
+    // 4. Processing in progress
     const doneCount = completedCount + readyCount;
+    const denominator = activeTotal > 0 ? activeTotal : totalCount;
     return (
       <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap ${isDark ? 'bg-yellow-900/20 text-yellow-400 border-yellow-600' : 'bg-yellow-100 text-yellow-700 border-yellow-200'
         }`}>
-        {doneCount > 0 ? `${doneCount} of ${totalCount} Processing` : `Processing (${totalCount} docs)`}
+        {doneCount > 0 ? `${doneCount} of ${denominator} Processing` : `Processing (${denominator} docs)`}
       </span>
     );
   };
