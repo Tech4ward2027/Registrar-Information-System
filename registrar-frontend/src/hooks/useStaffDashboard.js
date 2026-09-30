@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import {
   getDocumentRequests,
+  getDocumentRequestCounts,
+  cleanListParams,
   updateDocumentRequest,
   deleteDocumentRequest,
   archiveDocumentRequest,
@@ -45,6 +47,7 @@ export const useStaffDashboard = (viewMode) => {
   const [filterClassification, setFilterClassification] = useState('All');
   const [filterDocument, setFilterDocument] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [updatingId, setUpdatingId] = useState(null);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -57,51 +60,83 @@ export const useStaffDashboard = (viewMode) => {
   const [classificationDropdownOpen, setClassificationDropdownOpen] = useState(false);
   const [documentDropdownOpen, setDocumentDropdownOpen] = useState(false);
 
+  // 300ms Search Debounce Box
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
   const requestStatuses = referenceStatuses ?? [];
   const resolvedStatusIds = resolveStatusIds(requestStatuses);
 
-  /* ---------------- TANSTACK QUERY: FETCH REQUESTS ---------------- */
-  // BUG FIX (client-side auto-forfeit race condition — see routes/console.php
-  // for the full writeup): this queryFn used to call updateDocumentRequest()
-  // for any request it locally decided was 90+ days old, on every 30s poll,
-  // from every open staff dashboard — a write triggered by a read, racing
-  // across every open tab, and computed from the wrong clock (requested_at
-  // instead of the most recent ReadyToClaim transition the backend actually
-  // uses). Forfeiture is now handled exclusively by the backend's
-  // ShredExpiredRequests cron (now hourly), which is transactional, audited,
-  // and cache-invalidated. This queryFn is a pure read again — it maps and
-  // returns whatever status the backend reports, nothing more.
-  const { data: requests = [], isLoading: loading } = useQuery({
-    queryKey: ['documentRequests', viewMode],
-    queryFn: async () => {
-      const requestsRes = await getDocumentRequests({
-        per_page: 200,
-        ...(viewMode === 'archived' ? { view: 'archived' } : { all_statuses: true }),
-      });
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterStatus, filterClassification, filterDocument, debouncedSearchTerm, sortOrder]);
 
-      const rawList = requestsRes.data?.data ?? requestsRes.data ?? [];
-      return rawList.map(r => mapDocumentRequest(r, resolvedStatusIds, docTypeName));
-    },
+  const listParams = useMemo(() => {
+    return cleanListParams({
+      search: debouncedSearchTerm,
+      status: filterStatus,
+      classification: filterClassification,
+      document: filterDocument,
+      sort: sortOrder,
+      view: viewMode === 'archived' ? 'archived' : 'active',
+      page: currentPage,
+      per_page: 20,
+    });
+  }, [debouncedSearchTerm, filterStatus, filterClassification, filterDocument, sortOrder, viewMode, currentPage]);
+
+  /* ---------------- TANSTACK QUERY: FETCH REQUESTS ---------------- */
+  const { data: requestsResponse, isLoading: loading } = useQuery({
+    queryKey: ['documentRequests', viewMode, listParams],
+    queryFn: () => getDocumentRequests(listParams),
+    placeholderData: keepPreviousData,
     refetchInterval: 30_000,
     staleTime: 10_000,
   });
+
+  /* ---------------- TANSTACK QUERY: FETCH COUNTS ---------------- */
+  const { data: statusCounts = {} } = useQuery({
+    queryKey: ['documentRequestsCounts'],
+    queryFn: async () => {
+      const res = await getDocumentRequestCounts();
+      return res.data ?? res;
+    },
+    staleTime: 30_000,
+  });
+
+  const rawList = requestsResponse?.data?.data ?? requestsResponse?.data ?? [];
+  const meta = {
+    total: requestsResponse?.data?.total ?? rawList.length,
+    currentPage: requestsResponse?.data?.current_page ?? currentPage,
+    lastPage: requestsResponse?.data?.last_page ?? 1,
+    perPage: requestsResponse?.data?.per_page ?? 20,
+    from: requestsResponse?.data?.from ?? 1,
+    to: requestsResponse?.data?.to ?? rawList.length,
+  };
+
+  const requests = useMemo(() => {
+    return rawList.map(r => mapDocumentRequest(r, resolvedStatusIds, docTypeName));
+  }, [rawList, resolvedStatusIds, docTypeName]);
 
   // Refetch when a relevant notification arrives via WebSocket.
   useEffect(() => {
     if (notifications.length === 0) return;
     const latest = notifications[0];
     if (latest && DASHBOARD_REFETCH_TRIGGERS.has(latest.type)) {
-      queryClient.invalidateQueries({ queryKey: ['documentRequests', viewMode] });
+      queryClient.invalidateQueries({ queryKey: ['documentRequests'] });
+      queryClient.invalidateQueries({ queryKey: ['documentRequestsCounts'] });
     }
   }, [notifications[0]?.id, viewMode, queryClient, notifications]);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filterStatus, filterClassification, filterDocument, searchTerm, sortOrder]);
-
   /* ---------------- TANSTACK QUERY: MUTATIONS ---------------- */
-  const invalidateRequests = () =>
-    queryClient.invalidateQueries({ queryKey: ['documentRequests', viewMode] });
+  const invalidateRequests = () => {
+    queryClient.invalidateQueries({ queryKey: ['documentRequests'] });
+    queryClient.invalidateQueries({ queryKey: ['documentRequestsCounts'] });
+  };
 
   const statusMutation = useMutation({
     mutationFn: ({ id, statusId }) => updateDocumentRequest(id, { status_id: statusId }),
@@ -267,19 +302,13 @@ export const useStaffDashboard = (viewMode) => {
     return ['All', ...Array.from(set).sort((a, b) => a.localeCompare(b))];
   }, [requests, documentTypes, certifications]);
 
-  const filteredData = filterAndSortRequests(requests, {
-    filterStatus,
-    filterClassification,
-    filterDocument,
-    searchTerm,
-    sortOrder,
-    viewMode,
-    resolvedStatusIds,
-  });
+  const filteredData = requests;
 
   return {
     requests,
     filteredData,
+    meta,
+    statusCounts,
     loading,
     actionLoading,
     filterStatus,
@@ -327,7 +356,5 @@ export const useStaffDashboard = (viewMode) => {
     handleBulkDone,
     handleCertificatePrinted,
     queryClient,
-    setUpdatingId,
-    updatingId,
   };
 };

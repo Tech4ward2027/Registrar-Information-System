@@ -2,9 +2,12 @@
 
 namespace App\Models;
 
+use App\Enums\RequestStatusEnum;
 use App\Models\Scopes\ExcludeArchivedScope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
@@ -179,6 +182,297 @@ class DocumentRequest extends Model
         return $query->where('channel', \App\Enums\RequestChannelEnum::AdminFiledFree->value);
     }
 
+    // =========================================================================
+    // Staff dashboard list — search / filter / order scopes
+    // (used by DocumentRequestController::index())
+    //
+    // Design rules:
+    //  - Every user-supplied string is a BOUND value. The only SQL text that
+    //    varies is chosen from hard-coded constants, never from input.
+    //  - Search never touches an encrypted column (phone, address, date of
+    //    birth, reason for non-enrollment). Only plaintext name / student
+    //    number columns are searched.
+    //  - Each lookup is an UNCORRELATED "col IN (subquery)" so the optimizer
+    //    can materialize the small side once and probe document_request by
+    //    its FK index, instead of running a correlated EXISTS per row.
+    // =========================================================================
+
+    /**
+     * LIKE escape character. '!' (not backslash) because backslash is MySQL's
+     * default escape but a plain character in SQLite; an explicit
+     * ESCAPE '!' behaves identically on both (production MySQL, test SQLite).
+     */
+    private const LIKE_ESCAPE = '!';
+
+    /** Max whitespace-separated words considered in one search. */
+    private const SEARCH_MAX_TOKENS = 5;
+
+    /**
+     * Escape LIKE wildcards so user input is matched literally
+     * ("50%" must not match everything).
+     */
+    public static function escapeLike(string $value): string
+    {
+        return str_replace(
+            [self::LIKE_ESCAPE, '%', '_'],
+            [self::LIKE_ESCAPE . self::LIKE_ESCAPE, self::LIKE_ESCAPE . '%', self::LIKE_ESCAPE . '_'],
+            $value
+        );
+    }
+
+    /** "col LIKE ? ESCAPE '!'" — $column is always an internal constant. */
+    private static function likeSql(string $column): string
+    {
+        return $column . " LIKE ? ESCAPE '" . self::LIKE_ESCAPE . "'";
+    }
+
+    /**
+     * Every word must start a first/middle/last name of the profile.
+     * "Juan Cruz", "Cruz, Juan" and "dela cruz" all work, and a last name
+     * such as "Dela Cruz" is found by "cruz" (word-prefix, not just
+     * whole-column prefix). A leading-wildcard scan is acceptable here
+     * because it runs against a small profile table, not document_request.
+     *
+     * @param  \Illuminate\Database\Query\Builder|Builder  $query
+     * @param  string[]  $tokens
+     */
+    private static function applyNameTokens($query, string $table, array $tokens): void
+    {
+        foreach ($tokens as $token) {
+            $like = self::escapeLike($token);
+
+            $query->where(function ($word) use ($table, $like) {
+                foreach (['first_name', 'middle_name', 'last_name'] as $column) {
+                    $sql = self::likeSql("{$table}.{$column}");
+                    $word->orWhereRaw($sql, [$like . '%'])
+                         ->orWhereRaw($sql, ['% ' . $like . '%']);
+                }
+            });
+        }
+    }
+
+    /** Uncorrelated subquery: request_ids having a document/certificate whose name contains $like. */
+    private static function itemNameRequestIds(string $like): array
+    {
+        return [
+            DB::table('request_document')
+                ->join('document_type', 'document_type.document_type_id', '=', 'request_document.document_type_id')
+                ->whereRaw(self::likeSql('document_type.document_name'), ['%' . $like . '%'])
+                ->select('request_document.request_id'),
+
+            DB::table('request_certificate')
+                ->join('certificate_type', 'certificate_type.certificate_type_id', '=', 'request_certificate.certificate_type_id')
+                ->whereRaw(self::likeSql('certificate_type.certificate_name'), ['%' . $like . '%'])
+                ->select('request_certificate.request_id'),
+        ];
+    }
+
+    /**
+     * Free-text search across: request id (exact), claim code (exact),
+     * requester name and student number for Student / Alumni / Undergrad
+     * Requestor, document and certificate names (unless $includeItemNames
+     * is false), and status name.
+     */
+    public function scopeSearch(Builder $query, ?string $term, bool $includeItemNames = true): Builder
+    {
+        $term = trim((string) $term);
+
+        if ($term === '') {
+            return $query;
+        }
+
+        $tokens = array_slice(
+            array_values(array_unique(preg_split('/[\s,]+/u', $term, -1, PREG_SPLIT_NO_EMPTY) ?: [])),
+            0,
+            self::SEARCH_MAX_TOKENS
+        );
+        // A term made only of separators (e.g. ",,") has no searchable word.
+        // Without this guard the name subqueries below would carry no
+        // condition at all and match every profile.
+        if ($tokens === []) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        $like = self::escapeLike($term);
+
+        return $query->where(function (Builder $q) use ($term, $tokens, $like, $includeItemNames) {
+            // Exact lookups (indexed / unique).
+            if (ctype_digit($term) && strlen($term) <= 9) {
+                $q->orWhere('document_request.request_id', (int) $term);
+            }
+            if (preg_match('/^[A-Za-z0-9]{6}$/', $term)) {
+                $q->orWhere('document_request.claim_code', strtoupper($term));
+            }
+
+            // Student — name via student_profile, number via the academic record.
+            $q->orWhereIn('document_request.student_profile_id',
+                DB::table('student_profile')
+                    ->select('student_profile_id')
+                    ->where(fn ($p) => self::applyNameTokens($p, 'student_profile', $tokens)));
+
+            $q->orWhereIn('document_request.student_academic_id',
+                DB::table('student_academic_record')
+                    ->select('student_academic_id')
+                    ->whereRaw(self::likeSql('student_academic_record.student_number'), [$like . '%']));
+
+            // Alumni.
+            $q->orWhereIn('document_request.alumni_profile_id',
+                DB::table('alumni_profile')
+                    ->select('alumni_profile_id')
+                    ->where(fn ($p) => self::applyNameTokens($p, 'alumni_profile', $tokens)));
+
+            $q->orWhereIn('document_request.alumni_academic_id',
+                DB::table('alumni_academic_record')
+                    ->select('alumni_academic_id')
+                    ->whereRaw(self::likeSql('alumni_academic_record.student_number'), [$like . '%']));
+
+            // Undergrad Requestor — joined on user_id (no academic-record FK
+            // exists for this role; see undergradRequestorProfile()). Only
+            // plaintext columns are referenced.
+            $q->orWhereIn('document_request.user_id',
+                DB::table('undergrad_requestor_profiles')
+                    ->select('undergrad_requestor_profiles.user_id')
+                    ->where(function ($p) use ($tokens, $like) {
+                        $p->where(fn ($n) => self::applyNameTokens($n, 'undergrad_requestor_profiles', $tokens))
+                          ->orWhereRaw(self::likeSql('undergrad_requestor_profiles.student_number'), [$like . '%']);
+                    }));
+
+            // Requested documents / certificates. Skipped by the per-document
+            // list, which matches the item's OWN name instead so that
+            // searching "TOR" shows only TOR rows, not every sibling item.
+            if ($includeItemNames) {
+                foreach (self::itemNameRequestIds($like) as $subquery) {
+                    $q->orWhereIn('document_request.request_id', $subquery);
+                }
+            }
+
+            // Status name (e.g. typing "ready").
+            $q->orWhereIn('document_request.status_id',
+                DB::table('request_status')
+                    ->select('status_id')
+                    ->whereRaw(self::likeSql('request_status.status_name'), [$like . '%']));
+        });
+    }
+
+    /** Exact status-name filter (validated against request_status by the FormRequest). */
+    public function scopeWithStatusName(Builder $query, ?string $statusName): Builder
+    {
+        if ($statusName === null || $statusName === '') {
+            return $query;
+        }
+
+        return $query->whereIn(
+            'document_request.status_id',
+            DB::table('request_status')->select('status_id')->where('status_name', $statusName)
+        );
+    }
+
+    /**
+     * Requester classification. Derived from which FK is populated:
+     * student_profile_id -> Student, alumni_profile_id -> Alumni, neither
+     * (Undergrad Requestors have no academic-record FK) -> Undergrad Requestor.
+     */
+    public function scopeWithClassification(Builder $query, ?string $classification): Builder
+    {
+        return match ($classification) {
+            'Student'             => $query->whereNotNull('document_request.student_profile_id'),
+            'Alumni'              => $query->whereNull('document_request.student_profile_id')
+                                           ->whereNotNull('document_request.alumni_profile_id'),
+            'Undergrad Requestor' => $query->whereNull('document_request.student_profile_id')
+                                           ->whereNull('document_request.alumni_profile_id'),
+            default               => $query,
+        };
+    }
+
+    /** Requests that include a document or certificate whose name contains $name. */
+    public function scopeWithItemNamed(Builder $query, ?string $name): Builder
+    {
+        $name = trim((string) $name);
+
+        if ($name === '') {
+            return $query;
+        }
+
+        return $query->where(function (Builder $q) use ($name) {
+            foreach (self::itemNameRequestIds(self::escapeLike($name)) as $subquery) {
+                $q->orWhereIn('document_request.request_id', $subquery);
+            }
+        });
+    }
+
+    /**
+     * Default "actionable work" view: Awaiting Submission, Processing,
+     * Pending Signature and Ready to Claim always; Completed only for 24h
+     * after it was actually completed.
+     *
+     * Fixes two defects of the old inline filter: the Completed window used
+     * requested_at (the FILING date, so a request filed days ago vanished
+     * the moment it was completed) and Pending Signature / Awaiting
+     * Submission were missing entirely. status_updated_at is stamped by
+     * booted() on every status change; requested_at is only a fallback for
+     * rows that predate that column.
+     */
+    public function scopeActiveDashboardWindow(Builder $query): Builder
+    {
+        $cutoff = now()->subDay();
+
+        return $query->where(function (Builder $q) use ($cutoff) {
+            $q->whereIn('document_request.status_id', [
+                RequestStatusEnum::AwaitingSubmission->value,
+                RequestStatusEnum::Processing->value,
+                RequestStatusEnum::PendingSignature->value,
+                RequestStatusEnum::ReadyToClaim->value,
+            ])->orWhere(function (Builder $completed) use ($cutoff) {
+                $completed->where('document_request.status_id', RequestStatusEnum::Completed->value)
+                    ->where(function (Builder $window) use ($cutoff) {
+                        $window->where('document_request.status_updated_at', '>=', $cutoff)
+                            ->orWhere(function (Builder $legacy) use ($cutoff) {
+                                $legacy->whereNull('document_request.status_updated_at')
+                                       ->where('document_request.requested_at', '>=', $cutoff);
+                            });
+                    });
+            });
+        });
+    }
+
+    /**
+     * Dashboard ordering. Completed rows always sort last (as the client did),
+     * then the chosen key, then requested_at DESC and request_id DESC as
+     * stable tie-breakers so pages never overlap or skip rows.
+     *
+     * $sort MUST already be validated against IndexDocumentRequestsRequest::SORTS;
+     * it only selects among hard-coded expressions below.
+     */
+    public function scopeDashboardOrder(Builder $query, string $sort): Builder
+    {
+        $completed = (int) RequestStatusEnum::Completed->value;
+
+        $classificationCase = 'CASE WHEN document_request.student_profile_id IS NOT NULL THEN \'Student\' '
+            . 'WHEN document_request.alumni_profile_id IS NOT NULL THEN \'Alumni\' '
+            . 'ELSE \'Undergrad Requestor\' END';
+
+        $statusName = '(SELECT request_status.status_name FROM request_status '
+            . 'WHERE request_status.status_id = document_request.status_id)';
+
+        $query->orderByRaw("CASE WHEN document_request.status_id = {$completed} THEN 1 ELSE 0 END ASC");
+
+        match ($sort) {
+            'Old Requests'        => $query->orderBy('document_request.requested_at', 'asc'),
+            'Classification Asc'  => $query->orderByRaw("{$classificationCase} ASC"),
+            'Classification Desc' => $query->orderByRaw("{$classificationCase} DESC"),
+            'Status Asc'          => $query->orderByRaw("{$statusName} ASC"),
+            'Status Desc'         => $query->orderByRaw("{$statusName} DESC"),
+            default               => null, // 'Recent Requests' falls through to the tie-breakers
+        };
+
+        if ($sort !== 'Old Requests') {
+            $query->orderBy('document_request.requested_at', 'desc');
+        }
+
+        return $query->orderBy('document_request.request_id', 'desc');
+    }
+
+
     public function user()
     {
         return $this->belongsTo(SystemUser::class, 'user_id');
@@ -336,7 +630,25 @@ class DocumentRequest extends Model
      */
     public function openDeficiencyNotice()
     {
+        // Phase 5: request-level notices only. Item-level notices are
+        // exposed separately (openItemDeficiencyNotices) so the existing
+        // request banner keeps meaning "the whole request is on hold".
         return $this->hasOne(RequestRemark::class, 'request_id', 'request_id')
-            ->where('status', RequestRemark::STATUS_OPEN);
+            ->where('status', RequestRemark::STATUS_OPEN)
+            ->whereNull('request_document_id')
+            ->whereNull('request_certificate_id');
+    }
+
+    /**
+     * Phase 5 - every open notice attached to a single document/certificate.
+     * Zero or more rows; each holds only its own item.
+     */
+    public function openItemDeficiencyNotices()
+    {
+        return $this->hasMany(RequestRemark::class, 'request_id', 'request_id')
+            ->where('status', RequestRemark::STATUS_OPEN)
+            ->where(function ($q) {
+                $q->whereNotNull('request_document_id')->orWhereNotNull('request_certificate_id');
+            });
     }
 }

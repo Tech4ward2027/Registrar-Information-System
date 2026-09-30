@@ -4,19 +4,12 @@ import risLogo from "../assets/ris_logo.png";
 import Tech4wardProfile from "../components/Tech4wardProfile.jsx";
 import { useEffect } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthProvider';
+import { useAuth, ROLE_HOME } from '../context/AuthProvider';
 import { useState } from 'react';
 import LineLoading from "../components/LineLoading.jsx";
 import tech4ward from "../assets/Tech4ward_Logo.png";
 import LandingPage from "../layouts/LandingPage.jsx";
 import logoImage from "../assets/puplogoimage.png";
-
-const ROLE_HOME = {
-  student: "/student",
-  alumni: "/alumni",
-  admin: "/staff",
-  super_admin: "/super-admin",
-};
 
 const MainPage = () => {
   const [loading, setLoading] = useState(false);

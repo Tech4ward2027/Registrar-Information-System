@@ -56,29 +56,6 @@ class RequestItemStatusService
 {
     use FlushesAnalyticsCache;
 
-    /**
-     * Relative progress rank used to pick the aggregate status out of a
-     * set of item statuses — lower rank = earlier stage. Terminal
-     * statuses (Completed/Forfeited) intentionally share the highest
-     * rank: see recomputeAggregateStatus() for how a mixed terminal set
-     * is resolved (an edge case that cannot occur yet under today's
-     * single-ticket claiming, since Forfeited is only ever written at
-     * the request level by the automated shredder — flagged here rather
-     * than silently guessed at).
-     *
-     * Cancelled is deliberately absent — it is unreachable going
-     * forward (see RequestStatusEnum::Cancelled's @deprecated note) and
-     * is never a value a live item status column should hold.
-     */
-    private const STAGE_RANK = [
-        RequestStatusEnum::AwaitingSubmission->value => 0,
-        RequestStatusEnum::Processing->value         => 1,
-        RequestStatusEnum::PendingSignature->value   => 2,
-        RequestStatusEnum::ReadyToClaim->value       => 3,
-        RequestStatusEnum::Completed->value          => 4,
-        RequestStatusEnum::Forfeited->value          => 4,
-    ];
-
     public function __construct(
         private NotificationServiceInterface $notificationService,
         private BusinessCalendarService      $businessCalendarService,
@@ -103,7 +80,15 @@ class RequestItemStatusService
                 ->findOrFail($item->request_id);
 
             $this->guardArchived($documentRequest);
+            $this->guardNotTerminal($documentRequest);
 
+            $this->guardNotExitStatus($targetStatusId);
+
+            // Phase 5: an item with its own open Deficiency Notice cannot be
+            // released (marked Completed) until the notice is cleared/voided.
+            if ($targetStatusId === RequestStatusEnum::Completed->value) {
+                ItemDeficiencyHold::assertNotHeld($item);
+            }
             $targetStatus = $this->validateTransition($item->status_id, $targetStatusId);
             $this->authorizeItemStatusChange($targetStatus);
 
@@ -142,7 +127,15 @@ class RequestItemStatusService
                 ->findOrFail($item->request_id);
 
             $this->guardArchived($documentRequest);
+            $this->guardNotTerminal($documentRequest);
 
+            $this->guardNotExitStatus($targetStatusId);
+
+            // Phase 5: an item with its own open Deficiency Notice cannot be
+            // released (marked Completed) until the notice is cleared/voided.
+            if ($targetStatusId === RequestStatusEnum::Completed->value) {
+                ItemDeficiencyHold::assertNotHeld($item);
+            }
             $targetStatus = $this->validateTransition($item->status_id, $targetStatusId);
             $this->guardCertificateGenerated($item, $targetStatus);
             $this->authorizeItemStatusChange($targetStatus);
@@ -193,6 +186,9 @@ class RequestItemStatusService
      *   - An archived request is entirely skipped (read-only, same rule
      *     as every other write path) — restoring must happen first via
      *     DocumentRequestService::restoreRequest().
+     *   - A request that is already Completed, Forfeited, Withdrawn or
+     *     Closed is skipped with reason 'request_terminal' — its outcome
+     *     is final and its items must not be reopened or re-notified.
      *   - A request id that doesn't exist is reported back, not thrown,
      *     so one typo/stale id in a large batch doesn't fail the whole
      *     call — same "skip and report" contract as
@@ -258,6 +254,18 @@ class RequestItemStatusService
                     ];
                     continue;
                 }
+                // A request that already reached its final outcome
+                // (Completed, Forfeited, Withdrawn, Closed) is frozen.
+                // Advancing one of its items would either be a no-op or
+                // — before this check — let recomputeAggregateStatus()
+                // pull the request back out of that outcome.
+                if ($this->isTerminalRequest($documentRequest)) {
+                    $result['requests_skipped'][] = [
+                        'request_id' => (int) $documentRequest->request_id,
+                        'reason'     => 'request_terminal',
+                    ];
+                    continue;
+                }
                 $processableRequestIds[] = $documentRequest->request_id;
             }
 
@@ -273,6 +281,12 @@ class RequestItemStatusService
                 ->lockForUpdate()
                 ->get();
 
+            // Phase 5: one query for every open item-level notice in the
+            // batch; only relevant when the batch is releasing items.
+            $holds = $targetStatus === RequestStatusEnum::Completed
+                ? ItemDeficiencyHold::forRequest($processableRequestIds)
+                : [];
+
             $touchedRequestIds      = [];
             $touchedReleaseGroupIds = [];
 
@@ -283,6 +297,7 @@ class RequestItemStatusService
                     itemType:        'document',
                     itemId:          $item->request_document_id,
                     targetStatus:    $targetStatus,
+                    holds:           $holds,
                 );
 
                 if ($outcome['action'] === 'skipped') {
@@ -315,6 +330,7 @@ class RequestItemStatusService
                     itemType:        'certificate',
                     itemId:          $item->request_certificate_id,
                     targetStatus:    $targetStatus,
+                    holds:           $holds,
                 );
 
                 if ($outcome['action'] === 'skipped') {
@@ -384,6 +400,7 @@ class RequestItemStatusService
         string $itemType,
         int $itemId,
         RequestStatusEnum $targetStatus,
+        array $holds = [],
     ): array {
         // Defensive default mirrors validateTransition()'s single-item
         // handling — a NULL item status "shouldn't be reachable in
@@ -401,6 +418,18 @@ class RequestItemStatusService
                     'request_id'     => (int) $item->request_id,
                     'reason'         => 'invalid_transition',
                     'current_status' => $currentStatus->name,
+                ],
+            ];
+        }
+
+        if (isset($holds[ItemDeficiencyHold::key($item)])) {
+            return [
+                'action' => 'skipped',
+                'entry'  => [
+                    'type'       => $itemType,
+                    'id'         => $itemId,
+                    'request_id' => (int) $item->request_id,
+                    'reason'     => 'item_on_hold',
                 ],
             ];
         }
@@ -432,6 +461,19 @@ class RequestItemStatusService
     // Internal helpers
     // -------------------------------------------------------------------------
 
+    /**
+     * Withdrawn and Closed need a reason (and, for Closed, proof), so they
+     * are only reachable through RequestItemTerminationService. Refusing
+     * them here stops the plain status endpoint from withdrawing an item
+     * with no reason recorded.
+     */
+    private function guardNotExitStatus(int $targetStatusId): void
+    {
+        if (RequestAggregateStatus::hasLeftRequest($targetStatusId)) {
+            abort(422, 'Use the withdraw or close action for this item; it needs a reason.');
+        }
+    }
+
     private function guardArchived(DocumentRequest $documentRequest): void
     {
         // Same rule as DocumentRequestService::updateRequest() — archived
@@ -441,6 +483,31 @@ class RequestItemStatusService
         if ($documentRequest->is_archived) {
             abort(422, 'This request is archived and is read-only. Restore it first.');
         }
+    }
+
+    /**
+     * A request in a terminal status (Completed, Forfeited, Withdrawn,
+     * Closed - Unable to Process) has reached its final outcome. Item
+     * writes against it are refused, because recomputeAggregateStatus()
+     * would otherwise recompute the parent from whichever item rows are
+     * stale and move the request back out of that outcome, sending the
+     * student a second, contradictory notification.
+     */
+    private function guardNotTerminal(DocumentRequest $documentRequest): void
+    {
+        if ($this->isTerminalRequest($documentRequest)) {
+            $status = RequestStatusEnum::from((int) $documentRequest->status_id);
+            $label  = trim(preg_replace('/(?<!^)[A-Z]/', ' $0', $status->name));
+
+            abort(422, "This request is already {$label}, so its items can no longer be changed.");
+        }
+    }
+
+    private function isTerminalRequest(DocumentRequest $documentRequest): bool
+    {
+        $status = RequestStatusEnum::tryFrom((int) $documentRequest->status_id);
+
+        return $status !== null && $status->isTerminal();
     }
 
     /**
@@ -557,7 +624,7 @@ class RequestItemStatusService
      * rather than the whole request's, so an item's SLA segment timing
      * reflects only its own prior transitions.
      */
-    private function recordItemHistory(
+    public function recordItemHistory(
         DocumentRequest $documentRequest,
         ?int $oldStatusId,
         int $newStatusId,
@@ -608,8 +675,16 @@ class RequestItemStatusService
      * A request with zero items (should not occur — store() always
      * creates at least one) is left untouched rather than guessed at.
      */
-    private function recomputeAggregateStatus(DocumentRequest $documentRequest): void
+    public function recomputeAggregateStatus(DocumentRequest $documentRequest): void
     {
+        // Defense in depth behind guardNotTerminal() and the bulk skip:
+        // a request in a final status is never recomputed from its items.
+        // A stale item row must not be able to move it backward, and must
+        // not trigger a second notification.
+        if ($this->isTerminalRequest($documentRequest)) {
+            return;
+        }
+
         $itemStatusIds = DB::table('request_document')
             ->where('request_id', $documentRequest->request_id)
             ->whereNotNull('status_id')
@@ -625,11 +700,11 @@ class RequestItemStatusService
             return;
         }
 
-        $leastAdvancedStatusId = $itemStatusIds
-            ->sortBy(fn (int $statusId) => self::STAGE_RANK[$statusId] ?? PHP_INT_MAX)
-            ->first();
+        // Withdrawn / Closed items have left the request and are ignored
+        // while any other item remains - see RequestAggregateStatus.
+        $leastAdvancedStatusId = RequestAggregateStatus::resolve($itemStatusIds);
 
-        if ((int) $leastAdvancedStatusId === (int) $documentRequest->status_id) {
+        if ($leastAdvancedStatusId === null || $leastAdvancedStatusId === (int) $documentRequest->status_id) {
             return;
         }
 
@@ -638,7 +713,14 @@ class RequestItemStatusService
         $documentRequest->update(['status_id' => $leastAdvancedStatusId]);
 
         $this->recordItemHistory($documentRequest, $oldStatusId, $leastAdvancedStatusId);
-        $this->notifyOwnerOfStatusChange($documentRequest);
+
+        // A request whose last item just left (Withdrawn / Closed) is
+        // announced by RequestItemTerminationService after its commit, with
+        // the reason attached. The generic status message has no reason and
+        // would be a second, contradicting notification.
+        if (!RequestAggregateStatus::hasLeftRequest($leastAdvancedStatusId)) {
+            $this->notifyOwnerOfStatusChange($documentRequest);
+        }
     }
 
     /**
@@ -665,7 +747,7 @@ class RequestItemStatusService
      * than guessed at, matching recomputeAggregateStatus()'s same
      * defensive choice for an empty request.
      */
-    private function recomputeReleaseGroupAggregate(int $releaseGroupId): void
+    public function recomputeReleaseGroupAggregate(int $releaseGroupId): void
     {
         // lockForUpdate() here (rather than a plain find()) guards against
         // a concurrent RequestReleaseGroupService::claimReleaseGroup() call
@@ -692,11 +774,9 @@ class RequestItemStatusService
             return;
         }
 
-        $leastAdvancedStatusId = $memberStatusIds
-            ->sortBy(fn (int $statusId) => self::STAGE_RANK[$statusId] ?? PHP_INT_MAX)
-            ->first();
+        $leastAdvancedStatusId = RequestAggregateStatus::resolve($memberStatusIds);
 
-        if ((int) $leastAdvancedStatusId === (int) $group->status_id) {
+        if ($leastAdvancedStatusId === null || $leastAdvancedStatusId === (int) $group->status_id) {
             return;
         }
 

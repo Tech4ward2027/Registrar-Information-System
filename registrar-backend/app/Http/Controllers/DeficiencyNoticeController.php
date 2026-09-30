@@ -57,9 +57,11 @@ class DeficiencyNoticeController extends Controller
         $remark = $this->deficiencyNoticeService->issue($documentRequest, $validated);
 
         $this->auditLogger->log($request, $actor, AuditLog::ACTION_DEFICIENCY_NOTICE_ISSUED, [
-            'request_id' => $remark->request_id,
-            'remark_id'  => $remark->remark_id,
-            'item_key'   => $remark->item_key,
+            'request_id'             => $remark->request_id,
+            'remark_id'              => $remark->remark_id,
+            'item_key'               => $remark->item_key,
+            'request_document_id'    => $remark->request_document_id,
+            'request_certificate_id' => $remark->request_certificate_id,
         ]);
 
         return response()->json($remark->load(self::RELATIONS), 201);
@@ -83,8 +85,10 @@ class DeficiencyNoticeController extends Controller
         $remark = $this->deficiencyNoticeService->clear($deficiencyNotice);
 
         $this->auditLogger->log($request, $actor, AuditLog::ACTION_DEFICIENCY_NOTICE_CLEARED, [
-            'request_id' => $remark->request_id,
-            'remark_id'  => $remark->remark_id,
+            'request_id'             => $remark->request_id,
+            'remark_id'              => $remark->remark_id,
+            'request_document_id'    => $remark->request_document_id,
+            'request_certificate_id' => $remark->request_certificate_id,
         ]);
 
         return response()->json($remark->load(self::RELATIONS), 200);
@@ -103,9 +107,11 @@ class DeficiencyNoticeController extends Controller
         $remark = $this->deficiencyNoticeService->void($deficiencyNotice, $validated);
 
         $this->auditLogger->log($request, $actor, AuditLog::ACTION_DEFICIENCY_NOTICE_VOIDED, [
-            'request_id'  => $remark->request_id,
-            'remark_id'   => $remark->remark_id,
-            'void_reason' => $remark->void_reason,
+            'request_id'             => $remark->request_id,
+            'remark_id'              => $remark->remark_id,
+            'request_document_id'    => $remark->request_document_id,
+            'request_certificate_id' => $remark->request_certificate_id,
+            'void_reason'            => $remark->void_reason,
         ]);
 
         return response()->json($remark->load(self::RELATIONS), 200);

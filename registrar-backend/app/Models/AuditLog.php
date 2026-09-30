@@ -88,6 +88,11 @@ class AuditLog extends Model
     // maximally audit-sensitive events.
     public const ACTION_DEFICIENCY_NOTICE_ESCALATED    = 'deficiency_notice_escalated';
     public const ACTION_REQUEST_CLOSED_UNABLE_TO_PROCESS = 'request_closed_unable_to_process';
+    // Per-item Withdraw / Close (Phase 4). Logged unconditionally by
+    // ItemTerminationController for the same reason the request-level
+    // actions above are: an item leaving a request is audit-sensitive.
+    public const ACTION_ITEM_WITHDRAWN                   = 'request_item_withdrawn';
+    public const ACTION_ITEM_CLOSED_UNABLE_TO_PROCESS    = 'request_item_closed_unable_to_process';
 
     // Document / certificate type management — archiving
     public const ACTION_DOCUMENT_TYPE_ARCHIVED    = 'document_type_archived';

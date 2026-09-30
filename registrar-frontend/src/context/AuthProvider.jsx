@@ -32,7 +32,7 @@ export const ROLE_HOME = {
   [ROLES.ALUMNI]:      "/alumni",
   [ROLES.ADMIN]:       "/staff",
   [ROLES.SUPER_ADMIN]: "/super-admin",
-  [ROLES.UNDERGRAD_REQUESTOR]: "/student",
+  [ROLES.UNDERGRAD_REQUESTOR]: "/undergrad",
 };
 
 // Mirrors SystemUser::ROLE_STUDENT / ROLE_ALUMNI / ROLE_ADMIN /

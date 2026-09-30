@@ -26,6 +26,10 @@ class RequestRemark extends Model
 
     protected $fillable = [
         'request_id',
+        // Phase 5 - both NULL = request-level notice; exactly one set =
+        // notice on that single document/certificate.
+        'request_document_id',
+        'request_certificate_id',
         'remark_type',
         'item_key',
         'item_label',
@@ -96,6 +100,41 @@ class RequestRemark extends Model
     public function documentRequest()
     {
         return $this->belongsTo(DocumentRequest::class, 'request_id', 'request_id');
+    }
+
+    public function document()
+    {
+        return $this->belongsTo(RequestDocument::class, 'request_document_id', 'request_document_id');
+    }
+
+    public function certificate()
+    {
+        return $this->belongsTo(RequestCertificate::class, 'request_certificate_id', 'request_certificate_id');
+    }
+
+    /** True when this notice is attached to one document/certificate. */
+    public function isItemLevel(): bool
+    {
+        return $this->request_document_id !== null || $this->request_certificate_id !== null;
+    }
+
+    public function scopeOpen($query)
+    {
+        return $query->where('status', self::STATUS_OPEN);
+    }
+
+    /** Request-level notices only (no item attached). */
+    public function scopeRequestLevel($query)
+    {
+        return $query->whereNull('request_document_id')->whereNull('request_certificate_id');
+    }
+
+    /** Item-level notices only. */
+    public function scopeItemLevel($query)
+    {
+        return $query->where(function ($q) {
+            $q->whereNotNull('request_document_id')->orWhereNotNull('request_certificate_id');
+        });
     }
 
     public function issuedByUser()

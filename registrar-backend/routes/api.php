@@ -8,6 +8,9 @@ use App\Http\Controllers\RequestStatusController;
 use App\Http\Controllers\DocumentTypeController;
 use App\Http\Controllers\CertificationTypeController;
 use App\Http\Controllers\DocumentRequestController;
+use App\Http\Controllers\ItemClaimController;
+use App\Http\Controllers\ItemTerminationController;
+use App\Http\Controllers\RequestItemListController;
 use App\Http\Controllers\DeficiencyNoticeController;
 use App\Http\Controllers\RequestDocumentController;
 use App\Http\Controllers\RequestHistoryController;
@@ -225,6 +228,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::get('/',                           [DocumentRequestController::class, 'index'])->middleware('module:dashboard,View');
         Route::get('logbook',                     [DocumentRequestController::class, 'logbook'])->middleware(['role:3,4', 'module:logbook,View']);
         Route::get('counts',                      [DocumentRequestController::class, 'counts'])->middleware(['role:3,4', 'module:dashboard,View']);
+        // One row per document/certificate (staff dashboard). Registered before
+        // the '{documentRequest}' wildcard so "items" is never read as an id.
+        Route::get('items',                       [RequestItemListController::class, 'index'])->middleware(['role:3,4', 'module:dashboard,View']);
         Route::post('archive-bulk',                [DocumentRequestController::class, 'archiveBulk'])->middleware('role:3');
         Route::post('restore-bulk',                [DocumentRequestController::class, 'restoreBulk'])->middleware('role:3');
         // Bulk Ready / Bulk Done — Multi-Item/Mixed-Status Batch rules.
@@ -241,6 +247,10 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::post('bulk-done',  [DocumentRequestController::class, 'bulkDoneItems'])
             ->middleware(['role:3', 'module:dashboard,Process|Complete']);
         Route::post('claim',                       [DocumentRequestController::class, 'claim'])->middleware(['role:3', 'module:dashboard,Complete']);
+        // Per-item claiming: lookup (read-only) then confirm. Same gate as the
+        // whole-request claim above; both sit under the group's throttle:60,1.
+        Route::post('claim/lookup',                [ItemClaimController::class, 'lookup'])->middleware(['role:3', 'module:dashboard,Complete']);
+        Route::post('claim/confirm',               [ItemClaimController::class, 'confirm'])->middleware(['role:3', 'module:dashboard,Complete']);
         // Dedicated throttle on top of the group's throttle:60,1 — OR
         // numbers look sequential (see cashier sample data), so this is a
         // soft enumeration surface (probing which numbers return `valid`)
@@ -309,6 +319,21 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::put('{documentRequest}/certificates/{requestCertificate}',
             [DocumentRequestController::class, 'updateCertificateItemStatus'])
             ->middleware(['role:3', 'module:dashboard,Process|Complete']);
+        // Per-item Withdraw / Close (Phase 4). Same coarse gate as the
+        // whole-request withdraw and close-unable-to-process above (always
+        // 'Process'); the policy check runs in the FormRequests.
+        Route::post('{documentRequest}/documents/{requestDocument}/withdraw',
+            [ItemTerminationController::class, 'withdrawDocument'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
+        Route::post('{documentRequest}/documents/{requestDocument}/close-unable-to-process',
+            [ItemTerminationController::class, 'closeDocument'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
+        Route::post('{documentRequest}/certificates/{requestCertificate}/withdraw',
+            [ItemTerminationController::class, 'withdrawCertificate'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
+        Route::post('{documentRequest}/certificates/{requestCertificate}/close-unable-to-process',
+            [ItemTerminationController::class, 'closeCertificate'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
         // Real print/generation signal — see DocumentRequestService::
         // markCertificatesGenerated() and migration
         // 2026_08_29_000010_add_generated_at_to_request_certificate. Gated

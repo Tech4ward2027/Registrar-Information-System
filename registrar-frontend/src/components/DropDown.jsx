@@ -34,10 +34,6 @@ const DropdownGroup = ({ label, name, value, onChange, options, required = false
           setOpenUpward(false);
         }
       }
-      const timer = setTimeout(() => {
-        inputRef.current?.focus();
-      }, 50);
-      return () => clearTimeout(timer);
     }
   }, [open]);
 
@@ -74,36 +70,21 @@ const DropdownGroup = ({ label, name, value, onChange, options, required = false
         </label>
       )}
 
-      {/* Trigger Button / Input */}
+      {/* Trigger Button */}
       <div className="relative">
-        {open ? (
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder={value || "Search..."}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className={`
-              w-full flex items-center justify-between gap-2 pl-3 pr-10 py-3 rounded-lg text-sm font-medium shadow-sm focus:outline-none border transition-colors text-left
-              ring-2 ring-[#FFC72C] border-transparent
-              ${isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042]' : 'bg-white text-gray-700 border-gray-200'}
-            `}
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className={`
-              w-full flex items-center justify-between gap-2 pl-3 pr-10 py-3 rounded-lg text-sm font-medium shadow-sm focus:outline-none border transition-colors text-left cursor-pointer
-              border-transparent hover:border-gray-200
-              ${isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042]' : 'bg-white text-gray-700 border-gray-200'}
-            `}
-          >
-            <span className={value ? '' : (isDark ? 'text-gray-500' : 'text-gray-400')}>
-              {value || "Please Select"}
-            </span>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className={`
+            w-full flex items-center justify-between gap-2 pl-3 pr-10 py-3 rounded-lg text-sm font-medium shadow-sm focus:outline-none border transition-colors text-left cursor-pointer
+            ${open ? 'ring-2 ring-[#FFC72C] border-transparent' : 'border-transparent hover:border-gray-200'}
+            ${isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042]' : 'bg-white text-gray-700 border-gray-200'}
+          `}
+        >
+          <span className={value ? '' : (isDark ? 'text-gray-500' : 'text-gray-400')}>
+            {value || "Please Select"}
+          </span>
+        </button>
 
         {/* Toggle Arrow (Clickable) */}
         <span 
@@ -124,6 +105,22 @@ const DropdownGroup = ({ label, name, value, onChange, options, required = false
             className={`absolute z-[9999] ${isUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} w-full rounded-xl overflow-hidden ${isDark ? 'bg-[#1f1f1f]' : 'bg-white'}`}
             style={{ boxShadow: '0 8px 32px -4px rgba(0,0,0,0.18), 0 2px 8px -2px rgba(0,0,0,0.10)', border: '1px solid #FFC72C' }}
           >
+            {/* Search Input inside the dropdown popover when options are many */}
+            {safeOptions.length > 5 && (
+              <div className={`p-2 border-b ${isDark ? 'border-[#3e4042] bg-[#242526]' : 'border-gray-200 bg-gray-50'}`}>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  placeholder="Search options..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className={`w-full px-3 py-1.5 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#FFC72C] ${
+                    isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] placeholder-gray-500 border border-[#3e4042]' : 'bg-white text-gray-800 placeholder-gray-400 border border-gray-200'
+                  }`}
+                />
+              </div>
+            )}
+
             <ul className="max-h-56 overflow-y-auto py-1 dropdown-scroll">
               {filteredOptions.length > 0 ? (
                 filteredOptions.map((option) => {
@@ -134,15 +131,15 @@ const DropdownGroup = ({ label, name, value, onChange, options, required = false
                         type="button"
                         onClick={() => handleSelect(option)}
                         className={`
-                          w-full flex items-center px-1 py-2.5 text-left text-sm transition-colors duration-100
+                          w-full flex items-center px-3 py-2.5 text-left text-sm transition-colors duration-100
                           ${isSelected
                             ? 'bg-[#800000] text-white font-bold'
                             : isDark ? 'text-[#b0b3b8] hover:bg-[#3a3b3c] hover:text-[#e4e6eb]' : 'text-gray-700 hover:bg-amber-50 hover:text-[#800000]'
                           }
                         `}
                       >
-                        <span className="truncate px-2 flex-1">{option}</span>
-                        {isSelected && <CheckIcon className="w-4 h-4 mr-2" />}
+                        <span className="truncate flex-1">{option}</span>
+                        {isSelected && <CheckIcon className="w-4 h-4 ml-2 shrink-0" />}
                       </button>
                     </li>
                   );

@@ -4,15 +4,12 @@ namespace App\Console\Commands;
 
 use App\Enums\RequestStatusEnum;
 use App\Models\DocumentRequest;
-use App\Models\RequestCertificate;
-use App\Models\RequestDocument;
 use App\Models\RequestHistory;
-use App\Models\RequestReleaseGroup;
 use App\Models\SystemUser;
 use App\Console\Commands\Concerns\LogsJobRun;
 use App\Contracts\NotificationServiceInterface;
-use App\Services\BusinessCalendarService;
 use App\Services\Concerns\FlushesAnalyticsCache;
+use App\Services\RequestStatusCascade;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -73,7 +70,7 @@ class ShredExpiredRequests extends Command
     protected $signature   = 'notifications:shred-expired-requests';
     protected $description = 'Auto-forfeit ReadyToClaim requests unclaimed for 90+ days and notify the student';
 
-    public function __construct(private BusinessCalendarService $businessCalendarService)
+    public function __construct(private RequestStatusCascade $statusCascade)
     {
         parent::__construct();
     }
@@ -153,37 +150,22 @@ class ShredExpiredRequests extends Command
 
                 $oldStatusId = $documentRequest->status_id;
 
-                $forfeitedDocuments = RequestDocument::where('request_id', $documentRequest->request_id)
-                    ->where('status_id', RequestStatusEnum::ReadyToClaim->value)
-                    ->lockForUpdate()
-                    ->get();
-
-                $forfeitedCertificates = RequestCertificate::where('request_id', $documentRequest->request_id)
-                    ->where('status_id', RequestStatusEnum::ReadyToClaim->value)
-                    ->lockForUpdate()
-                    ->get();
-
-                foreach ($forfeitedDocuments as $item) {
-                    $item->update(['status_id' => RequestStatusEnum::Forfeited->value]);
-                    $this->recordItemHistory($documentRequest, RequestStatusEnum::ReadyToClaim->value, requestDocumentId: $item->request_document_id);
-                }
-
-                foreach ($forfeitedCertificates as $item) {
-                    $item->update(['status_id' => RequestStatusEnum::Forfeited->value]);
-                    $this->recordItemHistory($documentRequest, RequestStatusEnum::ReadyToClaim->value, requestCertificateId: $item->request_certificate_id);
-                }
-
-                // Phase 3 release-group tickets (only present on requests
-                // whose items span more than one fulfillment_track — see
-                // RequestReleaseGroupService::assignReleaseGroups()). A
-                // group already Completed was legitimately claimed early
-                // and is left alone; only a still-outstanding group
-                // ticket is forfeited alongside its items above.
-                RequestReleaseGroup::where('request_id', $documentRequest->request_id)
-                    ->where('status_id', RequestStatusEnum::ReadyToClaim->value)
-                    ->lockForUpdate()
-                    ->get()
-                    ->each(fn (RequestReleaseGroup $group) => $group->update(['status_id' => RequestStatusEnum::Forfeited->value]));
+                // Items and release-group tickets still at ReadyToClaim
+                // are forfeited alongside the parent, in this same
+                // transaction, through the same helper the QR claim uses
+                // (RequestStatusCascade). Rows already Completed (a
+                // partial claim before expiry, e.g. via a release-group
+                // ticket) are left alone — they were legitimately
+                // claimed and are not being shredded. History rows are
+                // written as an automated actor (changed_by null,
+                // processed_by_email 'system').
+                $forfeited = $this->statusCascade->cascade(
+                    $documentRequest,
+                    RequestStatusEnum::ReadyToClaim,
+                    RequestStatusEnum::Forfeited,
+                    actorId:   null,
+                    automated: true,
+                );
 
                 $documentRequest->update(['status_id' => RequestStatusEnum::Forfeited->value]);
 
@@ -215,8 +197,9 @@ class ShredExpiredRequests extends Command
                 Log::info('[ShredExpiredRequests] request forfeited', [
                     'request_id'             => $documentRequest->request_id,
                     'user_id'                => $owner?->user_id,
-                    'documents_forfeited'    => $forfeitedDocuments->count(),
-                    'certificates_forfeited' => $forfeitedCertificates->count(),
+                    'documents_forfeited'    => $forfeited['documents'],
+                    'certificates_forfeited' => $forfeited['certificates'],
+                    'groups_forfeited'       => $forfeited['groups'],
                 ]);
             });
         }
@@ -241,60 +224,5 @@ class ShredExpiredRequests extends Command
         }
 
         return $shredded;
-    }
-
-    /**
-     * Writes a per-item RequestHistory row for a forfeited
-     * request_document/request_certificate row. Same shape and same
-     * business_minutes segment-timing calculation as
-     * RequestItemStatusService::recordItemHistory() / RequestReleaseGroupService::
-     * recordHistory() — this is now the THIRD call site for this exact
-     * logic (flagged as the threshold worth extracting in both of those
-     * classes' docblocks). Left as a third duplicate here rather than
-     * extracting a shared trait in this pass, to avoid touching two
-     * already-shipped, already-tested service files as a side effect of
-     * an unrelated bugfix — but a future change to any of these three
-     * should pull this into a shared
-     * App\Services\Concerns\RecordsRequestItemHistory trait instead of
-     * copying it a fourth time.
-     *
-     * changed_by = null / processed_by_email = 'system', matching this
-     * command's own parent-level history row — every row this command
-     * writes should be identifiable as an automated transition, not just
-     * the parent one.
-     */
-    private function recordItemHistory(
-        DocumentRequest $documentRequest,
-        int $oldStatusId,
-        ?int $requestDocumentId = null,
-        ?int $requestCertificateId = null,
-    ): void {
-        $minutesProcessed = (int) $documentRequest->requested_at->diffInMinutes(now());
-
-        $segmentStart = RequestHistory::where('request_id', $documentRequest->request_id)
-            ->when($requestDocumentId, fn ($q) => $q->where('request_document_id', $requestDocumentId))
-            ->when($requestCertificateId, fn ($q) => $q->where('request_certificate_id', $requestCertificateId))
-            ->orderByDesc('changed_at')
-            ->orderByDesc('request_history_id')
-            ->value('changed_at');
-
-        $segmentStart = $segmentStart
-            ? Carbon::parse($segmentStart)
-            : $documentRequest->requested_at;
-
-        $businessMinutes = $this->businessCalendarService->minutesBetween($segmentStart, now());
-
-        RequestHistory::create([
-            'request_id'             => $documentRequest->request_id,
-            'request_document_id'    => $requestDocumentId,
-            'request_certificate_id' => $requestCertificateId,
-            'old_status_id'          => $oldStatusId,
-            'new_status_id'          => RequestStatusEnum::Forfeited->value,
-            'changed_at'             => now(),
-            'changed_by'             => null,
-            'processed_by_email'     => 'system',
-            'minutes_processed'      => $minutesProcessed,
-            'business_minutes'       => $businessMinutes,
-        ]);
     }
 }

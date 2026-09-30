@@ -25,6 +25,12 @@ use Illuminate\Validation\Rules\Enum;
  * with WithdrawDocumentRequestRequest's pattern for consistency across
  * this feature's two staff-facing forms.
  *
+ * Phase 5 - optional scope. Send request_document_id OR
+ * request_certificate_id (never both) to put the hold on one item; send
+ * neither for a request-level notice (the original behaviour). That the item
+ * really belongs to {documentRequest} is verified inside
+ * DeficiencyNoticeService::issue() under the item lock, not here.
+ *
  * item_label is NOT accepted from the client: DeficiencyNoticeService::
  * issue() derives it from DeficiencyItemEnum::label() at write time
  * (see that migration's docblock for why the column is denormalized
@@ -46,6 +52,8 @@ class IssueDeficiencyNoticeRequest extends FormRequest
         return [
             'item_key' => ['required', 'string', new Enum(DeficiencyItemEnum::class)],
             'detail'   => ['sometimes', 'nullable', 'string', 'max:2000'],
+            'request_document_id'    => ['sometimes', 'nullable', 'integer', 'exists:request_document,request_document_id'],
+            'request_certificate_id' => ['sometimes', 'nullable', 'integer', 'exists:request_certificate,request_certificate_id'],
         ];
     }
 
@@ -58,6 +66,13 @@ class IssueDeficiencyNoticeRequest extends FormRequest
     public function withValidator(ValidatorContract $validator): void
     {
         $validator->after(function ($validator) {
+            if (filled($this->input('request_document_id')) && filled($this->input('request_certificate_id'))) {
+                $validator->errors()->add(
+                    'request_certificate_id',
+                    'Send either request_document_id or request_certificate_id, not both.'
+                );
+            }
+
             $itemKey = $this->input('item_key');
 
             if ($itemKey === DeficiencyItemEnum::Other->value && !filled($this->input('detail'))) {

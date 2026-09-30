@@ -262,8 +262,12 @@ export const mapDocumentRequest = (r, resolvedStatusIds, docTypeName) => {
     studentName: formatName(r) || 'N/A',
     studentNumber: r.academic_record?.student_number
       ?? r.alumni_academic_record?.student_number
+      ?? r.undergrad_requestor_profile?.student_number
+      ?? r.undergradRequestorProfile?.student_number
+      ?? r.user?.undergrad_requestor_profile?.student_number
+      ?? r.user?.undergradRequestorProfile?.student_number
       ?? 'N/A',
-    userType: r.student_profile ? 'Student' : 'Alumni',
+    userType: (r.undergrad_requestor_profile || r.undergradRequestorProfile || r.user?.undergrad_requestor_profile || r.user?.undergradRequestorProfile || r.user?.role_id === 5) ? 'Undergrad' : ((r.student_profile || r.studentProfile) ? 'Student' : 'Alumni'),
     certName: finalCertName,
     certificateNames: r.certificates?.map(c => c.certification_type?.certificate_name).filter(Boolean) ?? [],
     isCertificate,
@@ -382,4 +386,70 @@ export const filterAndSortRequests = (requests, { filterStatus, filterClassifica
       }
       return 0;
     });
+};
+
+export const TERMINAL_STATUS_NAMES = [
+  'Completed',
+  'Forfeited',
+  'Withdrawn',
+  'Closed - Unable to Process',
+  'Cancelled',
+];
+
+/**
+ * Returns the effective status for an item.
+ * A terminal parent request status (Completed, Forfeited, Withdrawn, Closed, Cancelled)
+ * overrides any stale item status.
+ */
+const STATUS_NAME_MAP = {
+  1: 'Pending',
+  2: 'Processing',
+  3: 'Completed',
+  4: 'Forfeited',
+  5: 'Cancelled',
+  6: 'Awaiting Submission',
+  7: 'Ready to Claim',
+  8: 'Pending Signature',
+  13: 'Withdrawn',
+  14: 'Closed - Unable to Process',
+};
+
+export const getEffectiveStatus = (request, item) => {
+  const reqStatusName = request?.statusName || request?.status?.status_name || request?.rawRequest?.status?.status_name || '';
+  const reqStatusId = Number(request?.statusId ?? request?.status_id ?? request?.rawRequest?.status_id);
+
+  const itemStatusId = Number(item?.statusId ?? item?.status_id ?? item?.item?.status_id ?? reqStatusId);
+  const itemStatusName = item?.statusName ?? item?.status?.status_name ?? item?.item?.status?.status_name ?? STATUS_NAME_MAP[itemStatusId] ?? reqStatusName ?? 'Processing';
+
+  // Check if the item itself has an explicit terminal status (Completed, Forfeited, Withdrawn, Closed, Cancelled)
+  const isItemTerminal = [3, 4, 5, 13, 14].includes(itemStatusId) || TERMINAL_STATUS_NAMES.some(
+    s => s.toLowerCase() === String(itemStatusName).trim().toLowerCase()
+  );
+
+  if (isItemTerminal) {
+    return {
+      statusId: itemStatusId,
+      statusName: itemStatusName,
+      isTerminal: true,
+    };
+  }
+
+  // Fallback: check if the parent request has reached a terminal status (e.g., whole-request Withdrawal/Closure)
+  const isParentTerminal = [3, 4, 5, 13, 14].includes(reqStatusId) || TERMINAL_STATUS_NAMES.some(
+    s => s.toLowerCase() === String(reqStatusName).trim().toLowerCase()
+  );
+
+  if (isParentTerminal) {
+    return {
+      statusId: reqStatusId,
+      statusName: reqStatusName || STATUS_NAME_MAP[reqStatusId] || 'Completed',
+      isTerminal: true,
+    };
+  }
+
+  return {
+    statusId: itemStatusId,
+    statusName: itemStatusName,
+    isTerminal: false,
+  };
 };

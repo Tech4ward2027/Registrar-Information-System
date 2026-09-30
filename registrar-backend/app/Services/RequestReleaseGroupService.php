@@ -74,6 +74,14 @@ class RequestReleaseGroupService
      */
     public function assignReleaseGroups(DocumentRequest $documentRequest): void
     {
+        // Legacy per-track tickets are being retired: every item now has its
+        // own claim credential (ItemClaimService). Existing groups are still
+        // honoured everywhere else; only CREATION is switched off here.
+        // Rollback: RELEASE_GROUPS_CREATE_ENABLED=true (config/release_groups.php).
+        if (!config('release_groups.create_enabled', false)) {
+            return;
+        }
+
         $documentRequest->loadMissing(['documents.documentType', 'certificates.certificationType']);
 
         $buckets = []; // track_id (or 'standard') => ['documents' => [...], 'certificates' => [...]]
@@ -162,6 +170,17 @@ class RequestReleaseGroupService
                 abort(422, 'This request is archived and is read-only. Restore it first.');
             }
 
+            // A request that already reached its final outcome cannot
+            // have a ticket claimed against it. Without this, a group
+            // row left stale under a Completed/Forfeited/Withdrawn parent
+            // could be "claimed" here and drag the parent back through
+            // recomputeParentAggregate(), re-notifying the student.
+            $parentStatus = RequestStatusEnum::tryFrom((int) $documentRequest->status_id);
+            if ($parentStatus !== null && $parentStatus->isTerminal()) {
+                $label = trim(preg_replace('/(?<!^)[A-Z]/', ' $0', $parentStatus->name));
+                abort(422, "This request is already {$label}, so this ticket can no longer be claimed.");
+            }
+
             $currentStatus = RequestStatusEnum::from((int) $group->status_id);
             $targetStatus  = RequestStatusEnum::Completed;
 
@@ -183,6 +202,16 @@ class RequestReleaseGroupService
             // }
 
             $groupDocuments = RequestDocument::where('request_release_group_id', $group->request_release_group_id)->get();
+
+            // Phase 5: a legacy group ticket releases all its items at once,
+            // so any item in it with its own open Deficiency Notice blocks it.
+            $holds = ItemDeficiencyHold::forRequest((int) $documentRequest->request_id, lock: true);
+
+            foreach ($groupDocuments->concat($groupCertificates) as $held) {
+                if (isset($holds[ItemDeficiencyHold::key($held)])) {
+                    abort(422, "This ticket includes an item that is on hold (open Deficiency Notice), so it cannot be claimed. Clear or void the notice first.");
+                }
+            }
 
             foreach ($groupDocuments as $item) {
                 $oldStatusId = $item->status_id;
@@ -256,6 +285,13 @@ class RequestReleaseGroupService
      */
     private function recomputeParentAggregate(DocumentRequest $documentRequest): void
     {
+        // Same rule as RequestItemStatusService::recomputeAggregateStatus():
+        // a request in a final status is never recomputed from its items.
+        $parentStatus = RequestStatusEnum::tryFrom((int) $documentRequest->status_id);
+        if ($parentStatus !== null && $parentStatus->isTerminal()) {
+            return;
+        }
+
         $itemStatusIds = DB::table('request_document')
             ->where('request_id', $documentRequest->request_id)
             ->whereNotNull('status_id')
@@ -271,11 +307,9 @@ class RequestReleaseGroupService
             return;
         }
 
-        $leastAdvancedStatusId = $itemStatusIds
-            ->sortBy(fn (int $statusId) => self::STAGE_RANK[$statusId] ?? PHP_INT_MAX)
-            ->first();
+        $leastAdvancedStatusId = RequestAggregateStatus::resolve($itemStatusIds);
 
-        if ((int) $leastAdvancedStatusId === (int) $documentRequest->status_id) {
+        if ($leastAdvancedStatusId === null || $leastAdvancedStatusId === (int) $documentRequest->status_id) {
             return;
         }
 
@@ -283,7 +317,12 @@ class RequestReleaseGroupService
         $documentRequest->update(['status_id' => $leastAdvancedStatusId]);
 
         $this->recordHistory($documentRequest, $oldStatusId, $leastAdvancedStatusId);
-        $this->notifyOwnerOfStatusChange($documentRequest);
+
+        // See RequestItemStatusService::recomputeAggregateStatus(): a
+        // Withdrawn / Closed parent is announced with its reason elsewhere.
+        if (!RequestAggregateStatus::hasLeftRequest($leastAdvancedStatusId)) {
+            $this->notifyOwnerOfStatusChange($documentRequest);
+        }
     }
 
     private function notifyOwnerOfStatusChange(DocumentRequest $documentRequest): void

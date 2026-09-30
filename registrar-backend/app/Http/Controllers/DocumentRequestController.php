@@ -6,6 +6,7 @@ use App\Enums\RequestStatusEnum;
 use App\Models\DocumentRequest;
 use App\Models\RequestCertificate;
 use App\Models\RequestDocument;
+use App\Models\RequestStatus;
 use App\Models\SystemUser;
 use App\Models\AuditLog;
 use App\Models\CashierOrOverride;
@@ -13,12 +14,14 @@ use App\Contracts\DocumentRequestServiceInterface;
 use App\Http\Requests\DocumentRequest\BulkRequestIdsRequest;
 use App\Http\Requests\DocumentRequest\ClaimDocumentRequestRequest;
 use App\Http\Requests\DocumentRequest\CloseRequestUnableToProcessRequest;
+use App\Http\Requests\DocumentRequest\IndexDocumentRequestsRequest;
 use App\Http\Requests\DocumentRequest\StoreDocumentRequestRequest;
 use App\Http\Requests\DocumentRequest\UpdateDocumentRequestRequest;
 use App\Http\Requests\DocumentRequest\VerifyOfficialReceiptRequest;
 use App\Http\Requests\DocumentRequest\WithdrawDocumentRequestRequest;
 use App\Http\Requests\RequestItem\UpdateRequestCertificateStatusRequest;
 use App\Http\Requests\RequestItem\UpdateRequestDocumentStatusRequest;
+use App\Http\Resources\DocumentRequestListResource;
 use App\Services\DocumentRequestService;
 use App\Services\RequestItemStatusService;
 use App\Services\AuditLogger;
@@ -90,7 +93,33 @@ class DocumentRequestController extends Controller
         // round trip — see DocumentRequest::openDeficiencyNotice()'s
         // docblock and this feature's Phase 3 exit criteria.
         'openDeficiencyNotice.issuedByUser',
+        // Phase 5: open notices attached to single documents/certificates.
+        // Each row carries request_document_id / request_certificate_id so
+        // the UI can flag the matching item row.
+        'openItemDeficiencyNotices.issuedByUser',
     ];
+
+    /**
+     * Eager-load definition for the staff list and the logbook: identical to
+     * RELATIONS except the undergrad profile is restricted to plaintext
+     * identity columns. The encrypted columns (phone, present_address,
+     * date_of_birth, reason_for_non_enrollment) are then never fetched, let
+     * alone decrypted, for a list. user_id must stay selected — it is the
+     * key the hasOne is matched on. Keep the columns in sync with
+     * DocumentRequestListResource::UNDERGRAD_LIST_FIELDS.
+     */
+    private const UNDERGRAD_LIST_RELATION = 'undergradRequestorProfile:'
+        . 'undergrad_requestor_profile_id,user_id,first_name,middle_name,last_name,suffix,student_number,program';
+
+    private static function listRelations(): array
+    {
+        return array_map(
+            fn (string $relation) => $relation === 'undergradRequestorProfile'
+                ? self::UNDERGRAD_LIST_RELATION
+                : $relation,
+            self::RELATIONS
+        );
+    }
 
     public function __construct(
         private DocumentRequestServiceInterface $requestService,
@@ -105,90 +134,105 @@ class DocumentRequestController extends Controller
     // -------------------------------------------------------------------------
     // GET /document-requests
     // -------------------------------------------------------------------------
-    public function index()
+    // Staff: server-side search, filtering, ordering and pagination. The
+    // browser renders one page; it no longer downloads "the newest 200" and
+    // filters them locally (which hid any older request from search).
+    //
+    // Query params (all optional; see IndexDocumentRequestsRequest):
+    //   search, status, classification, document, sort, view, page, per_page
+    //   all_statuses  legacy flag — still honoured
+    //
+    // Backward compatible: with no new params the response is the same
+    // paginator shape ordered newest-first. The Completed-last ordering only
+    // applies when `sort` is sent, so an old client's window is unchanged.
+    //
+    // Non-staff (students / alumni / undergrad requestors): unchanged — all of
+    // their OWN requests.
+    // -------------------------------------------------------------------------
+    public function index(IndexDocumentRequestsRequest $request)
     {
         /** @var SystemUser $user */
-        $user  = Auth::user();
-        $query = DocumentRequest::with(self::RELATIONS);
+        $user = Auth::user();
 
         if (!$user instanceof SystemUser) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
         if (!$user->isStaff()) {
-            // Students / alumni: return ALL of their own requests so the
-            // frontend dashboard never silently loses older records.
-            // Their volume is low enough that a full ->get() is safe.
+            // Their volume is low enough that a full ->get() is safe, and
+            // this is the requester's own data, so the full relations apply.
             return response()->json([
-                'data' => $query
+                'data' => DocumentRequest::with(self::RELATIONS)
                     ->where('user_id', $user->user_id)
                     ->orderByDesc('requested_at')
                     ->get(),
             ], 200);
         }
 
-        // Staff: potentially thousands of rows — keep pagination.
-        $perPage = min((int) request()->query('per_page', 20), 200); // cap at 200
+        $query = DocumentRequest::with(self::listRelations());
 
-        // Archived Records tab: bypass the default global scope entirely and
-        // return ONLY archived requests, regardless of status/age. Archived
-        // records are not part of "actionable work" so the all_statuses
-        // window below doesn't apply to them.
-        if (request()->query('view') === 'archived') {
-            return response()->json(
-                $query->withArchived()
-                    ->where('document_request.is_archived', true)
-                    ->orderByDesc('archived_on')
-                    ->paginate($perPage),
-                200
-            );
+        // Archived Records tab: bypass the global scope and return ONLY
+        // archived requests, regardless of status/age.
+        if ($request->isArchivedView()) {
+            $query->withArchived()->where('document_request.is_archived', true);
         }
 
-        // By default the dashboard only shows actionable work: Processing, ReadyToClaim,
-        // and Completed requests that are less than 1 day old.  Forfeited, Cancelled, and
-        // older Completed records are omitted unless the caller passes ?all_statuses=1
-        // (used when the frontend has an explicit status filter or search active).
-        $allStatuses = filter_var(request()->query('all_statuses', false), FILTER_VALIDATE_BOOLEAN);
+        $query->search($request->searchTerm())
+              ->withStatusName($request->statusName())
+              ->withClassification($request->classification())
+              ->withItemNamed($request->documentName());
 
-        if (!$allStatuses) {
-            $cutoff = now()->subDay();
-
-            $query->where(function ($q) use ($cutoff) {
-                // Processing (1) and ReadyToClaim (2) — always visible
-                $q->whereHas('status', fn ($s) => $s->whereIn('status_name', ['Processing', 'Ready to Claim']))
-                  // Completed (3) within the last 24 hours
-                  ->orWhere(function ($q2) use ($cutoff) {
-                      $q2->whereHas('status', fn ($s) => $s->where('status_name', 'Completed'))
-                         ->where('requested_at', '>=', $cutoff);
-                  });
-            });
+        // Default "actionable work" window — skipped for the archive tab,
+        // when the caller asked for everything, or when narrowing by
+        // status/search/etc. (same rule the client applied via isFiltering).
+        if (!$request->isArchivedView() && !$request->wantsAllStatuses() && !$request->isFiltering()) {
+            $query->activeDashboardWindow();
         }
 
-        return response()->json($query->orderByDesc('requested_at')->paginate($perPage), 200);
+        if ($request->sortOption() !== null) {
+            $query->dashboardOrder($request->sortOption());
+        } elseif ($request->isArchivedView()) {
+            $query->orderByDesc('document_request.archived_on')->orderByDesc('document_request.request_id');
+        } else {
+            $query->orderByDesc('document_request.requested_at')->orderByDesc('document_request.request_id');
+        }
+
+        $page = $query->paginate($request->perPage())
+            ->through(fn (DocumentRequest $row) => (new DocumentRequestListResource($row))->resolve());
+
+        return response()->json($page, 200);
     }
 
 
     // -------------------------------------------------------------------------
     // GET /document-requests/counts
     // -------------------------------------------------------------------------
-    // Returns a total count per status across the WHOLE table, not just the
-    // current page. The staff dashboard stat cards (New Requests, Processing,
-    // Ready for Pickup, etc.) must call this instead of deriving counts from
-    // the paginated `index()` response — index() is capped at per_page=200
-    // and, by default, already excludes Forfeited/Cancelled/old-Completed rows,
-    // so filtering that array client-side silently under-counts once total
-    // volume passes 200 requests. This endpoint runs a single grouped COUNT
-    // query and is unaffected by pagination or the actionable-work filter.
+    // Total count per status across the WHOLE table (not one page, and not
+    // the default dashboard window) — the staff dashboard stat cards must use
+    // this instead of counting the list response.
+    //
+    // Every known status is present in the response (0 when empty) so a card
+    // never reads `undefined`. "Archived" is a cross-cutting flag rather than
+    // a status, so it is reported as its own key. Archived requests are
+    // excluded from the status counts (global scope), so the two never
+    // double count. One grouped query on dr_status_id_idx + one indexed count.
     // Staff/superadmin only (role:3,4) — same audience as the dashboard.
     public function counts()
     {
-        $counts = DocumentRequest::join('request_status', 'document_request.status_id', '=', 'request_status.status_id')
+        $counts = RequestStatus::query()->pluck('status_name')
+            ->mapWithKeys(fn ($name) => [$name => 0])
+            ->all();
+
+        $grouped = DocumentRequest::query()
+            ->join('request_status', 'document_request.status_id', '=', 'request_status.status_id')
             ->selectRaw('request_status.status_name, COUNT(*) as total')
             ->groupBy('request_status.status_name')
             ->pluck('total', 'status_name');
 
-        // Archived count is reported separately — it's a cross-cutting flag,
-        // not a status, so it doesn't belong in the status_name-keyed map above.
+        foreach ($grouped as $name => $total) {
+            $counts[$name] = (int) $total;
+        }
+
         $counts['Archived'] = DocumentRequest::withArchived()
             ->where('document_request.is_archived', true)
             ->count();
@@ -219,7 +263,7 @@ class DocumentRequestController extends Controller
     // stay index-backed.
     public function logbook(Request $request)
     {
-        $query = DocumentRequest::with(array_merge(self::RELATIONS, ['history']))
+        $query = DocumentRequest::with(array_merge(self::listRelations(), ['history']))
             ->whereHas('status', fn ($q) => $q->where('status_name', 'Completed'));
 
         if ($from = $request->query('from')) {
@@ -239,10 +283,13 @@ class DocumentRequestController extends Controller
         $perPage = (int) $request->query('per_page', 25);
         $perPage = max(1, min($perPage, 100));
 
-        return response()->json(
-            $query->orderByDesc('requested_at')->paginate($perPage),
-            200
-        );
+        // Same privacy treatment as index(): no decrypted undergrad PII in
+        // a list row, plus display_name / student_number / requester_type.
+        $page = $query->orderByDesc('requested_at')->orderByDesc('request_id')
+            ->paginate($perPage)
+            ->through(fn (DocumentRequest $row) => (new DocumentRequestListResource($row))->resolve());
+
+        return response()->json($page, 200);
     }
 
     // -------------------------------------------------------------------------
@@ -724,10 +771,10 @@ class DocumentRequestController extends Controller
         // DeficiencyNoticeController::void() directly instead of it
         // happening automatically. Keeps both audit trails (the
         // request's and the notice's) independently complete.
-        if ($autoVoidedRemarkId) {
+        foreach ($documentRequest->getAttribute('auto_voided_deficiency_notice_ids') ?? [] as $voidedId) {
             $this->auditLogger->log($request, $actor, AuditLog::ACTION_DEFICIENCY_NOTICE_VOIDED, [
                 'request_id'  => $documentRequest->request_id,
-                'remark_id'   => $autoVoidedRemarkId,
+                'remark_id'   => $voidedId,
                 'auto_voided' => true,
             ]);
         }
@@ -763,10 +810,10 @@ class DocumentRequestController extends Controller
             'voided_deficiency_notice_id' => $voidedRemarkId,
         ]);
 
-        if ($voidedRemarkId) {
+        foreach ($documentRequest->getAttribute('closed_deficiency_notice_ids') ?? [] as $voidedId) {
             $this->auditLogger->log($request, $actor, AuditLog::ACTION_DEFICIENCY_NOTICE_VOIDED, [
                 'request_id'  => $documentRequest->request_id,
-                'remark_id'   => $voidedRemarkId,
+                'remark_id'   => $voidedId,
                 'auto_voided' => true,
             ]);
         }

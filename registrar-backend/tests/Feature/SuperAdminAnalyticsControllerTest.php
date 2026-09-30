@@ -515,8 +515,9 @@ test('needs_attention counts failed, stalled, overdue, and never_run jobs togeth
 
     $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
 
-    // failed + stalled + overdue + never_run (audit:verify) = 4.
-    expect($response->json('needs_attention'))->toBe(4);
+    // failed + stalled + overdue + never_run (audit:verify) + never_run
+    // (requests:check-consistency, not seeded here) = 5.
+    expect($response->json('needs_attention'))->toBe(5);
 });
 
 test('only the latest row per job is considered, not an older healthy or unhealthy one', function () {

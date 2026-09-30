@@ -17,6 +17,7 @@ use App\Contracts\NotificationServiceInterface;
 use App\Services\Concerns\FlushesAnalyticsCache;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Encapsulates all business logic for document requests.
@@ -32,6 +33,8 @@ class DocumentRequestService implements DocumentRequestServiceInterface
         private NotificationServiceInterface $notificationService,
         private BusinessCalendarService $businessCalendarService,
         private RequestReleaseGroupService $releaseGroupService,
+        private RequestStatusCascade $statusCascade,
+        private RequestItemTerminationService $itemTermination,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -235,6 +238,26 @@ class DocumentRequestService implements DocumentRequestServiceInterface
      */
     public function updateRequest(DocumentRequest $documentRequest, array $validated): DocumentRequest
     {
+        return $this->performUpdate($documentRequest, $validated);
+    }
+
+    /**
+     * The body of updateRequest(), split out so claimRequest() can run
+     * extra work INSIDE the same locked transaction (see the
+     * $withinTransaction hook below) without duplicating any of the
+     * guards, history, notification or cache-flush behaviour above.
+     * updateRequest()'s own behaviour is unchanged: it calls this with
+     * no hook.
+     *
+     * @param callable(DocumentRequest, int): void|null $withinTransaction
+     *        Invoked with the locked request and its previous status_id,
+     *        after the row update and before the history row and owner
+     *        notification are written. It runs only when status_id is
+     *        actually changing, and an exception thrown from it rolls
+     *        back the whole update, so nothing has been notified by then.
+     */
+    private function performUpdate(DocumentRequest $documentRequest, array $validated, ?callable $withinTransaction = null): DocumentRequest
+    {
         // BUG FIX (RIS-PROCESS-BUGS #9 — "Omission of Completed Documents
         // in Staff Performance Analytics"): every analytics endpoint
         // (AnalyticsController) is cached for 10 minutes under the
@@ -249,7 +272,7 @@ class DocumentRequestService implements DocumentRequestServiceInterface
         // a transaction that later rolls back).
         $statusChanged = false;
 
-        $documentRequest = DB::transaction(function () use ($documentRequest, $validated, &$statusChanged) {
+        $documentRequest = DB::transaction(function () use ($documentRequest, $validated, $withinTransaction, &$statusChanged) {
             // Re-fetch with a row-level lock so concurrent admin updates
             // cannot race: the second request will block here until the
             // first transaction commits, then re-read the committed state.
@@ -341,7 +364,33 @@ class DocumentRequestService implements DocumentRequestServiceInterface
             // crafted API call that never touches the UI.
             $this->authorizeStatusChange($validated, $targetStatus);
 
+            // Phase 5: releasing the WHOLE request (QR claim or manual Done)
+            // is refused while any single item is held by its own open
+            // Deficiency Notice. Locked reads, inside this transaction.
+            if (
+                $targetStatus === RequestStatusEnum::Completed &&
+                (int) $oldStatusId !== RequestStatusEnum::Completed->value
+            ) {
+                $holds = ItemDeficiencyHold::forRequest((int) $documentRequest->request_id, lock: true);
+
+                if ($holds !== []) {
+                    abort(422, sprintf(
+                        '%d item(s) on this request are on hold (open Deficiency Notice), so the request cannot be released as a whole. '
+                        . 'Clear or void the notice(s), or release the other items individually.',
+                        count($holds)
+                    ));
+                }
+            }
+
             $documentRequest->update($validated);
+
+            if (
+                $withinTransaction !== null &&
+                isset($validated['status_id']) &&
+                (int) $validated['status_id'] !== (int) $oldStatusId
+            ) {
+                $withinTransaction($documentRequest, (int) $oldStatusId);
+            }
 
             if (isset($validated['status_id']) && (int) $validated['status_id'] !== (int) $oldStatusId) {
                 $this->recordStatusHistory($documentRequest, $oldStatusId);
@@ -513,9 +562,47 @@ class DocumentRequestService implements DocumentRequestServiceInterface
         // one that was already Completed by an earlier scan, is rejected
         // here with the same clear 422 updateRequest() already produces,
         // with no extra logic needed to distinguish those cases.
-        return $this->updateRequest($documentRequest, [
-            'status_id' => RequestStatusEnum::Completed->value,
-        ]);
+        //
+        // BUG FIX — "status doesn't update after the QR scan; admin still
+        // has to click Done": this used to write ONLY
+        // document_request.status_id. The dashboard draws each row's pill
+        // and Done button from the ITEM statuses (request_document /
+        // request_certificate), which stayed at Ready to Claim, so a
+        // claimed request still looked unclaimed. The hook below moves
+        // every still-Ready item and release group to Completed inside
+        // the SAME transaction and row lock as the parent update, so the
+        // parent and its items can never be observed out of sync, and a
+        // failure anywhere rolls the whole claim back. A repeat scan is
+        // rejected by the transition guard before the hook is reached, so
+        // it can neither re-run the cascade nor write a second set of
+        // history rows.
+        return $this->performUpdate(
+            $documentRequest,
+            ['status_id' => RequestStatusEnum::Completed->value],
+            function (DocumentRequest $lockedRequest) {
+                $moved = $this->statusCascade->cascade(
+                    $lockedRequest,
+                    RequestStatusEnum::ReadyToClaim,
+                    RequestStatusEnum::Completed,
+                    Auth::id() !== null ? (int) Auth::id() : null,
+                );
+
+                // A request can only be Ready to Claim when every item is
+                // (earliest-stage-wins), so nothing should be left over.
+                // If something is, the data had drifted before this scan.
+                // The claim still goes through — the student is standing
+                // at the counter — but the mismatch is logged so it can
+                // be found and fixed instead of staying invisible.
+                $outstanding = $this->statusCascade->countNonTerminalItems($lockedRequest);
+                if ($outstanding > 0) {
+                    Log::warning('[claimRequest] request completed with non-terminal items still attached', [
+                        'request_id'        => $lockedRequest->request_id,
+                        'outstanding_items' => $outstanding,
+                        'moved'             => $moved,
+                    ]);
+                }
+            }
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -664,9 +751,10 @@ class DocumentRequestService implements DocumentRequestServiceInterface
         // gets auto-voided as part of this withdrawal, so the caller
         // (DocumentRequestController::withdraw()) can write its own
         // audit_logs entry for the voided notice without a second query.
-        $autoVoidedRemarkId = null;
+        $autoVoidedRemarkId  = null;
+        $autoVoidedRemarkIds = [];
 
-        $documentRequest = DB::transaction(function () use ($documentRequest, $data, &$statusChanged, &$autoVoidedRemarkId) {
+        $documentRequest = DB::transaction(function () use ($documentRequest, $data, &$statusChanged, &$autoVoidedRemarkId, &$autoVoidedRemarkIds) {
             // Re-fetch with a row-level lock — same concurrency guarantee
             // as updateRequest(): a second concurrent write blocks here
             // until the first transaction commits, then re-reads the
@@ -724,12 +812,15 @@ class DocumentRequestService implements DocumentRequestServiceInterface
             // enough to justify the cross-cutting risk), while any
             // notification about it is deferred to the post-commit block
             // below, alongside notifyOwnerOfWithdrawal().
-            $openRemark = RequestRemark::where('request_id', $documentRequest->request_id)
-                ->where('status', RequestRemark::STATUS_OPEN)
+            // Phase 5: a request can now hold several open notices (one
+            // request-level plus one per item). Withdrawing the request
+            // ends all of them.
+            $openRemarks = RequestRemark::where('request_id', $documentRequest->request_id)
+                ->open()
                 ->lockForUpdate()
-                ->first();
+                ->get();
 
-            if ($openRemark) {
+            foreach ($openRemarks as $openRemark) {
                 $openRemark->update([
                     'status'      => RequestRemark::STATUS_VOIDED,
                     'voided_by'   => Auth::id(),
@@ -741,8 +832,11 @@ class DocumentRequestService implements DocumentRequestServiceInterface
                         ),
                 ]);
 
-                $autoVoidedRemarkId = $openRemark->remark_id;
+                $autoVoidedRemarkIds[] = (int) $openRemark->remark_id;
             }
+
+            // Kept for API compatibility: the first voided notice's id.
+            $autoVoidedRemarkId = $autoVoidedRemarkIds[0] ?? null;
 
             if (!empty($data['superseded_by_request_id'])) {
                 // withArchived() so an archived-but-real request can still
@@ -769,6 +863,20 @@ class DocumentRequestService implements DocumentRequestServiceInterface
                 'superseded_by_request_id' => $data['superseded_by_request_id'] ?? null,
             ]);
 
+            // Items follow the request. Refuses (rolling this whole
+            // transaction back) if an item is already Ready to Claim or
+            // released - those are withdrawn/closed item by item instead.
+            $this->itemTermination->cascadeFromRequest(
+                $documentRequest,
+                RequestStatusEnum::Withdrawn,
+                [
+                    'reason' => $data['withdrawal_reason'],
+                    'detail' => $data['withdrawal_detail'] ?? null,
+                    'proof'  => null,
+                ],
+                Auth::id(),
+            );
+
             $this->recordStatusHistory($documentRequest, $oldStatusId);
             $statusChanged = true;
 
@@ -784,6 +892,7 @@ class DocumentRequestService implements DocumentRequestServiceInterface
         // the JSON response: null on every withdrawal that didn't touch
         // an open notice, which is the overwhelming majority.
         $documentRequest->setAttribute('auto_voided_deficiency_notice_id', $autoVoidedRemarkId);
+        $documentRequest->setAttribute('auto_voided_deficiency_notice_ids', $autoVoidedRemarkIds);
 
         // Fired AFTER commit, not inside the transaction closure above —
         // unlike updateRequest()'s notifyOwnerOfStatusChange() call (which
@@ -926,9 +1035,10 @@ class DocumentRequestService implements DocumentRequestServiceInterface
     public function closeUnableToProcess(DocumentRequest $documentRequest, array $data): DocumentRequest
     {
         $statusChanged = false;
-        $voidedRemarkId = null;
+        $voidedRemarkId  = null;
+        $voidedRemarkIds = [];
 
-        $documentRequest = DB::transaction(function () use ($documentRequest, $data, &$statusChanged, &$voidedRemarkId) {
+        $documentRequest = DB::transaction(function () use ($documentRequest, $data, &$statusChanged, &$voidedRemarkId, &$voidedRemarkIds) {
             $documentRequest = DocumentRequest::lockForUpdate()
                 ->findOrFail($documentRequest->request_id);
 
@@ -947,12 +1057,14 @@ class DocumentRequestService implements DocumentRequestServiceInterface
             // method's docblock. Row-locked in the same parent-then-
             // child order DeficiencyNoticeService::issue()/withdraw()
             // already establish.
-            $openRemark = RequestRemark::where('request_id', $documentRequest->request_id)
-                ->where('status', RequestRemark::STATUS_OPEN)
+            // Phase 5: any open notice - request-level or on one item -
+            // satisfies the guard; closing the request voids all of them.
+            $openRemarks = RequestRemark::where('request_id', $documentRequest->request_id)
+                ->open()
                 ->lockForUpdate()
-                ->first();
+                ->get();
 
-            if (!$openRemark) {
+            if ($openRemarks->isEmpty()) {
                 abort(422, 'This request has no open Deficiency Notice. Closed - Unable to Process only applies to a request whose open notice cannot be resolved.');
             }
 
@@ -961,21 +1073,24 @@ class DocumentRequestService implements DocumentRequestServiceInterface
                 $data['closure_detail'] ?? null,
             );
 
-            // Void the notice as part of the same closure action — the
-            // request itself is now terminally closed, so the notice
-            // that triggered this closure can no longer sensibly remain
-            // "open". Deliberately inlined rather than delegated to
+            // Void the notices as part of the same closure action - the
+            // request is terminally closed, so none can stay "open".
+            // Deliberately inlined rather than delegated to
             // DeficiencyNoticeService::void(), for the identical
             // "notification fired inside a savepoint, not a real
             // commit" reason documented at length in withdraw() above.
-            $openRemark->update([
-                'status'      => RequestRemark::STATUS_VOIDED,
-                'voided_by'   => Auth::id(),
-                'voided_at'   => now(),
-                'void_reason' => 'Request closed — Unable to Process: ' . $closureReasonText,
-            ]);
+            foreach ($openRemarks as $openRemark) {
+                $openRemark->update([
+                    'status'      => RequestRemark::STATUS_VOIDED,
+                    'voided_by'   => Auth::id(),
+                    'voided_at'   => now(),
+                    'void_reason' => 'Request closed — Unable to Process: ' . $closureReasonText,
+                ]);
 
-            $voidedRemarkId = $openRemark->remark_id;
+                $voidedRemarkIds[] = (int) $openRemark->remark_id;
+            }
+
+            $voidedRemarkId = $voidedRemarkIds[0];
 
             $documentRequest->update([
                 'status_id'               => RequestStatusEnum::ClosedUnableToProcess->value,
@@ -985,6 +1100,18 @@ class DocumentRequestService implements DocumentRequestServiceInterface
                 'closed_by'               => Auth::id(),
                 'closed_at'               => now(),
             ]);
+
+            // Same item cascade as withdraw() - see that method.
+            $this->itemTermination->cascadeFromRequest(
+                $documentRequest,
+                RequestStatusEnum::ClosedUnableToProcess,
+                [
+                    'reason' => $data['closure_reason'],
+                    'detail' => $data['closure_detail'] ?? null,
+                    'proof'  => $data['closure_proof_reference'],
+                ],
+                Auth::id(),
+            );
 
             $this->recordStatusHistory($documentRequest, $oldStatusId);
             $statusChanged = true;
@@ -997,6 +1124,7 @@ class DocumentRequestService implements DocumentRequestServiceInterface
         // its own audit_logs entry for the voided notice without a
         // second query.
         $documentRequest->setAttribute('closed_deficiency_notice_id', $voidedRemarkId);
+        $documentRequest->setAttribute('closed_deficiency_notice_ids', $voidedRemarkIds);
 
         // Fired after commit, not inside the transaction closure —
         // identical reasoning to withdraw()'s notifyOwnerOfWithdrawal()

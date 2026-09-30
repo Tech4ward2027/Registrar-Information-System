@@ -104,6 +104,25 @@ const App = () => {
                   <Route path="/undergrad-requestor/register" element={<UndergradRequestorRegisterPage />} />
                   <Route path="/undergrad-requestor/verify-email" element={<UndergradRequestorVerifyEmailPage />} />
 
+                  {/* UNDERGRAD (role: undergrad_requestoR) */}
+                  <Route
+                    path="/undergrad"
+                    element={
+                      <ProtectedRoute allowedRoles={[ROLES.UNDERGRAD_REQUESTOR, ROLES.STUDENT]}>
+                        <StudentPage />
+                      </ProtectedRoute>
+                    }
+                  >
+                    <Route index element={<Navigate to="/undergrad/request" replace />} />
+                    <Route path="home" element={<StudentDashboard />} />
+                    <Route path="request" element={<RequestForm />} />
+                    <Route path="lists" element={<DocumentLists />} />
+                    <Route path="faqs" element={<FAQPage />} />
+                    <Route path="profile" element={<ProfilePage userType="undergrad" />} />
+                    <Route path="contact" element={<RegistrarContact />} />
+                    <Route path="inbox" element={<InboxCenter />} />
+                  </Route>
+
                   {/* STUDENT (role: student & undergrad_requestor) */}
                   <Route
                     path="/student"
