@@ -70,6 +70,7 @@ class JobRunLog extends Model
         'break-glass:test'                       => 'Weekly',
         'security-events:prune'                  => 'Daily 08:25',
         'job-run-logs:prune'                     => 'Daily 08:30',
+        'requests:check-consistency'             => 'Daily 03:30',
     ];
 
     /**
@@ -118,6 +119,7 @@ class JobRunLog extends Model
         'audit:verify'                           => 1560,
         'security-events:prune'                  => 1560,
         'job-run-logs:prune'                     => 1560,
+        'requests:check-consistency'             => 1560,
         'break-glass:test'                       => 11520,
     ];
 }
