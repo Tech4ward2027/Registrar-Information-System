@@ -42,7 +42,10 @@ function rgsMixedTrackRequest(): DocumentRequest
     return $request->fresh();
 }
 
-it('creates no release groups by default', function () {
+it('creates no release groups when the switch is off', function () {
+    // Pin the switch so a stray RELEASE_GROUPS_CREATE_ENABLED in .env or the
+    // container environment can't change what this test proves.
+    config(['release_groups.create_enabled' => false]);
     $request = rgsMixedTrackRequest();
 
     app(RequestReleaseGroupService::class)->assignReleaseGroups($request);
