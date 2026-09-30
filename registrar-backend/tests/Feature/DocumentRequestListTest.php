@@ -2,6 +2,7 @@
 
 use App\Enums\RequestStatusEnum;
 use App\Models\DocumentRequest;
+use App\Models\Policy;
 use App\Models\StudentAcademicRecord;
 use App\Models\StudentProfile;
 use App\Models\SystemUser;
@@ -22,7 +23,15 @@ uses(RefreshDatabase::class);
 function dlsStaff(): SystemUser
 {
     $admin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated']);
-    grantFullDashboardAccess($admin);
+
+    // Dashboard access plus logbook View (the logbook route is gated by its
+    // own module, which grantFullDashboardAccess() does not grant).
+    $policy = Policy::firstOrCreate(
+        ['name' => 'Test Dashboard And Logbook Access'],
+        ['permissions' => ['dashboard' => ['View', 'Process', 'Complete'], 'logbook' => ['View']], 'is_system' => false]
+    );
+    $admin->update(['policy_id' => $policy->policy_id]);
+
     Sanctum::actingAs($admin);
 
     return $admin;

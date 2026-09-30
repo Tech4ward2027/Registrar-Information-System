@@ -130,7 +130,7 @@ test('lookup by the request code lists every item with whether it can be claimed
 
     expect($items[$a->uuid]['claimable'])->toBeTrue()
         ->and($items[$b->uuid]['claimable'])->toBeFalse()
-        ->and($items[$b->uuid]['reason'])->toContain('not ready');
+        ->and(strtolower($items[$b->uuid]['reason']))->toContain('not ready');
 });
 
 test('an unknown code is a generic 404 and an archived request cannot be looked up', function () {
