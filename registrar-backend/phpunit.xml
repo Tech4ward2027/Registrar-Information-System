@@ -51,7 +51,7 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="log"/>
-        <env name="CACHE_STORE" value="array"/>
+        <env name="CACHE_STORE" value="array" force="true"/>
         <!-- Without this, docker-compose.local.yml's env_file: .env on the
              backend service leaks the real local CASHIER_API_KEY into
              `php artisan test` runs (Laravel's env() prefers an
