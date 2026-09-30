@@ -228,7 +228,12 @@ test('items that were already Completed are left alone, and other requests are n
 });
 
 test('a drifted request still claims, leaves the non-Ready item alone, and logs a warning', function () {
-    Log::spy();
+    // Capture the warning with a real Monolog handler instead of Log::spy():
+    // a spy replaces the WHOLE Log facade with a mock that returns null for
+    // every call, so any other code in the request pipeline that chains off
+    // Log (Log::channel(...)->..., withContext, ...) blows up with a 500.
+    $logHandler = new \Monolog\Handler\TestHandler();
+    Log::channel()->getLogger()->pushHandler($logHandler);
 
     $request  = cscRequest(CSC_READY);
     $readyDoc = cscDocument($request, CSC_READY);
@@ -240,9 +245,10 @@ test('a drifted request still claims, leaves the non-Ready item alone, and logs 
     expect($readyDoc->fresh()->status_id)->toBe(CSC_COMPLETED);
     expect($drifted->fresh()->status_id)->toBe(RequestStatusEnum::Processing->value);
 
-    Log::shouldHaveReceived('warning')->withArgs(
-        fn ($message) => str_contains((string) $message, 'non-terminal items')
-    )->once();
+    expect($logHandler->hasWarningThatContains('non-terminal items'))->toBeTrue();
+    expect(collect($logHandler->getRecords())->filter(
+        fn ($record) => str_contains((string) $record['message'], 'non-terminal items')
+    ))->toHaveCount(1);
 });
 
 test('a request-level scan is still refused while release-group tickets are outstanding, and nothing changes', function () {

@@ -41,7 +41,9 @@ function dlsStaff(): SystemUser
 function dlsStudentRequest(string $first, string $last, string $number, array $overrides = []): DocumentRequest
 {
     $user    = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
-    $profile = StudentProfile::factory()->create(['user_id' => $user->user_id, 'first_name' => $first, 'last_name' => $last]);
+    $profile = StudentProfile::factory()->create([
+        'user_id' => $user->user_id, 'first_name' => $first, 'middle_name' => null, 'last_name' => $last, 'suffix' => null,
+    ]);
     $record  = StudentAcademicRecord::factory()->create(['student_profile_id' => $profile->student_profile_id, 'student_number' => $number]);
 
     return DocumentRequest::factory()->create(array_merge([
