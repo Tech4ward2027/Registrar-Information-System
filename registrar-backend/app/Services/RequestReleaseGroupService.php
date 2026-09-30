@@ -74,6 +74,14 @@ class RequestReleaseGroupService
      */
     public function assignReleaseGroups(DocumentRequest $documentRequest): void
     {
+        // Legacy per-track tickets are being retired: every item now has its
+        // own claim credential (ItemClaimService). Existing groups are still
+        // honoured everywhere else; only CREATION is switched off here.
+        // Rollback: RELEASE_GROUPS_CREATE_ENABLED=true (config/release_groups.php).
+        if (!config('release_groups.create_enabled', false)) {
+            return;
+        }
+
         $documentRequest->loadMissing(['documents.documentType', 'certificates.certificationType']);
 
         $buckets = []; // track_id (or 'standard') => ['documents' => [...], 'certificates' => [...]]
