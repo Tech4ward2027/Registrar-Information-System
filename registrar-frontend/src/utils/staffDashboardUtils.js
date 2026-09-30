@@ -416,31 +416,39 @@ const STATUS_NAME_MAP = {
 
 export const getEffectiveStatus = (request, item) => {
   const reqStatusName = request?.statusName || request?.status?.status_name || request?.rawRequest?.status?.status_name || '';
-  const reqStatusId = request?.statusId ?? request?.status_id ?? request?.rawRequest?.status_id;
+  const reqStatusId = Number(request?.statusId ?? request?.status_id ?? request?.rawRequest?.status_id);
 
-  const isTerminal = TERMINAL_STATUS_NAMES.some(
-    s => s.toLowerCase() === String(reqStatusName).trim().toLowerCase()
-  ) || [3, 4, 5, 13, 14].includes(Number(reqStatusId));
+  const itemStatusId = Number(item?.statusId ?? item?.status_id ?? item?.item?.status_id ?? reqStatusId);
+  const itemStatusName = item?.statusName ?? item?.status?.status_name ?? item?.item?.status?.status_name ?? STATUS_NAME_MAP[itemStatusId] ?? reqStatusName ?? 'Processing';
 
-  if (isTerminal) {
+  // Check if the item itself has an explicit terminal status (Completed, Forfeited, Withdrawn, Closed, Cancelled)
+  const isItemTerminal = [3, 4, 5, 13, 14].includes(itemStatusId) || TERMINAL_STATUS_NAMES.some(
+    s => s.toLowerCase() === String(itemStatusName).trim().toLowerCase()
+  );
+
+  if (isItemTerminal) {
     return {
-      statusId: Number(reqStatusId),
-      statusName: reqStatusName || (
-        Number(reqStatusId) === 3 ? 'Completed' :
-        Number(reqStatusId) === 4 ? 'Forfeited' :
-        Number(reqStatusId) === 13 ? 'Withdrawn' :
-        Number(reqStatusId) === 14 ? 'Closed - Unable to Process' :
-        'Completed'
-      ),
+      statusId: itemStatusId,
+      statusName: itemStatusName,
       isTerminal: true,
     };
   }
 
-  const itemStatusId = item?.statusId ?? item?.status_id ?? item?.item?.status_id ?? reqStatusId;
-  const itemStatusName = item?.statusName ?? item?.status?.status_name ?? item?.item?.status?.status_name ?? STATUS_NAME_MAP[Number(itemStatusId)] ?? reqStatusName ?? 'Processing';
+  // Fallback: check if the parent request has reached a terminal status (e.g., whole-request Withdrawal/Closure)
+  const isParentTerminal = [3, 4, 5, 13, 14].includes(reqStatusId) || TERMINAL_STATUS_NAMES.some(
+    s => s.toLowerCase() === String(reqStatusName).trim().toLowerCase()
+  );
+
+  if (isParentTerminal) {
+    return {
+      statusId: reqStatusId,
+      statusName: reqStatusName || STATUS_NAME_MAP[reqStatusId] || 'Completed',
+      isTerminal: true,
+    };
+  }
 
   return {
-    statusId: Number(itemStatusId),
+    statusId: itemStatusId,
     statusName: itemStatusName,
     isTerminal: false,
   };
