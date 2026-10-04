@@ -538,15 +538,20 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::get('signature-turnaround', [AnalyticsController::class, 'signatureTurnaround']);
             Route::get('peak-hours',       [AnalyticsController::class, 'peakHours']);
             Route::get('by-purpose',       [AnalyticsController::class, 'byPurpose']);
+            // The two AI routes below are RETIRED behind
+            // 'feature:analytics_ai_legacy' (config/features.php, default
+            // false => 404). 'feature' is listed before 'throttle' so a
+            // disabled endpoint never consumes the caller's rate-limit
+            // budget. Code is kept until after the project defense.
             // Distinct prefixes below — see the verify-or route's comment
             // for why an unprefixed throttle stacked under the group's
             // throttle:60,1 shares its counter and trips at roughly half
             // its configured value.
             Route::post('ai-report', [AnalyticsController::class, 'aiReport'])
-                ->middleware('throttle:30,1,ai-report');
+                ->middleware(['feature:analytics_ai_legacy', 'throttle:30,1,ai-report']);
             // Phase 3 — Conversational NLQ
             Route::post('ai-query', [AiQueryController::class, 'query'])
-                ->middleware('throttle:30,1,ai-query');
+                ->middleware(['feature:analytics_ai_legacy', 'throttle:30,1,ai-query']);
         });
 
         Route::post('request-purposes',        [RequestPurposeController::class, 'store']);
