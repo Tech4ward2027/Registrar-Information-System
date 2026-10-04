@@ -67,6 +67,18 @@ function p0ReadCsv(string $path): array
     return $rows;
 }
 
+/**
+ * @param  list<array<string,string>> $rows
+ * @return list<array<string,string>>
+ */
+function p0RowsForTarget(array $rows, string $type, int $id): array
+{
+    return array_values(array_filter(
+        $rows,
+        fn (array $r) => $r['target_type'] === $type && (int) $r['target_id'] === $id
+    ));
+}
+
 test('exports patterns of active types and skips archived types', function () {
     p0DocType('Transcript of Records', ['TOR', 'Transcript of Records']);
     p0DocType('Old Archived Type', ['Legacy Label'], archived: true);
@@ -85,18 +97,19 @@ test('exports patterns of active types and skips archived types', function () {
 test('resolved audit entries are exported as source=resolved and not double counted as patterns', function () {
     // Resolving an item appends its label to the type's pattern list, so the
     // same label exists in BOTH places; it must appear exactly once.
+    // NOTE: migrations seed real catalog rows, so the CSV is never empty in
+    // tests. Assert only on the rows that belong to the type created here.
     $doc = p0DocType('Informative Copy of Grades', ['Info. Copy of Grades']);
     p0ResolvedAudit('Info. Copy of Grades', 'document', $doc->document_type_id);
 
     $this->artisan('cashier:export-label-eval', ['--output' => 'eval/test.csv'])->assertSuccessful();
 
-    $rows = p0ReadCsv('eval/test.csv');
+    $mine = p0RowsForTarget(p0ReadCsv('eval/test.csv'), 'document', $doc->document_type_id);
 
-    expect($rows)->toHaveCount(1)
-        ->and($rows[0]['source'])->toBe('resolved')
-        ->and($rows[0]['target_type'])->toBe('document')
-        ->and((int) $rows[0]['target_id'])->toBe($doc->document_type_id)
-        ->and($rows[0]['target_name'])->toBe('Informative Copy of Grades');
+    expect($mine)->toHaveCount(1)
+        ->and($mine[0]['source'])->toBe('resolved')
+        ->and($mine[0]['label'])->toBe('Info. Copy of Grades')
+        ->and($mine[0]['target_name'])->toBe('Informative Copy of Grades');
 });
 
 test('dismissals and resolutions pointing at archived or missing types are not exported', function () {
@@ -109,7 +122,9 @@ test('dismissals and resolutions pointing at archived or missing types are not e
 
     $this->artisan('cashier:export-label-eval', ['--output' => 'eval/test.csv'])->assertSuccessful();
 
-    expect(p0ReadCsv('eval/test.csv'))->toBeEmpty();
+    $labels = array_column(p0ReadCsv('eval/test.csv'), 'label');
+
+    expect($labels)->not->toContain('Dismissed Label', 'To Archived', 'To Missing');
 });
 
 test('spreadsheet formula characters in labels are neutralised', function () {
