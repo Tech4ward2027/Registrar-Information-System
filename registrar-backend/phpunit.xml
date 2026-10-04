@@ -101,8 +101,20 @@
         <server name="FEATURE_AI_LABEL_SUGGESTIONS" value="0" force="true"/>
         <server name="FEATURE_SYSTEM_HEALTH" value="0" force="true"/>
         <server name="FEATURE_ANALYTICS_AI_LEGACY" value="0" force="true"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
+        <!-- Test database: forced to in-memory SQLite. Without force="true"
+             (and the <server> twins), docker-compose.local.yml's
+             `environment: DB_CONNECTION: mysql` wins, because PHPUnit never
+             overrides an already-set OS variable, and the suite runs
+             RefreshDatabase against the real local MySQL (ris_local):
+             slow, wipes dev data, and leaves rows behind that break
+             count-based assertions. Same leak class as the FEATURE_* flags
+             above. -->
+        <env name="DB_CONNECTION" value="sqlite" force="true"/>
+        <env name="DB_DATABASE" value=":memory:" force="true"/>
+        <env name="DB_URL" value="" force="true"/>
+        <server name="DB_CONNECTION" value="sqlite" force="true"/>
+        <server name="DB_DATABASE" value=":memory:" force="true"/>
+        <server name="DB_URL" value="" force="true"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
