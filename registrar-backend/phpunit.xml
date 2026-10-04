@@ -81,12 +81,26 @@
              from the host .env into the run, same class of bug. -->
         <env name="FEATURE_FREE_REQUEST_PAGE" value="true" force="true"/>
         <!-- Cashier Reconciliation / System Health / AI label suggestions /
-             retired analytics AI: forced OFF so a host .env (docker env_file)
-             can never leak a real value into the suite. Tests that need a
-             flag on set it locally with config(['features.<flag>' => true]). -->
-        <env name="FEATURE_AI_LABEL_SUGGESTIONS" value="false" force="true"/>
-        <env name="FEATURE_SYSTEM_HEALTH" value="false" force="true"/>
-        <env name="FEATURE_ANALYTICS_AI_LEGACY" value="false" force="true"/>
+             retired analytics AI: forced OFF so a host .env can never leak a
+             real value into the suite.
+             Both <env> and <server> are set on purpose. docker-compose's
+             `env_file: .env` puts these variables in the container's real
+             environment, which PHP exposes through $_SERVER; Laravel then
+             read the leaked "true" from $_SERVER even though <env force>
+             had overridden $_ENV/getenv(). (Observed: getenv()='' but
+             env()=true.) Overriding $_SERVER too closes that gap.
+             Value is "0", not "false": PHPUnit casts the literal strings
+             "true"/"false" to booleans, and false is stored as an empty
+             string, which is needlessly ambiguous. "0" is a plain string and
+             (bool)"0" === false in PHP.
+             Tests that need a flag on set it locally with
+             config(['features.<flag>' => true]). -->
+        <env name="FEATURE_AI_LABEL_SUGGESTIONS" value="0" force="true"/>
+        <env name="FEATURE_SYSTEM_HEALTH" value="0" force="true"/>
+        <env name="FEATURE_ANALYTICS_AI_LEGACY" value="0" force="true"/>
+        <server name="FEATURE_AI_LABEL_SUGGESTIONS" value="0" force="true"/>
+        <server name="FEATURE_SYSTEM_HEALTH" value="0" force="true"/>
+        <server name="FEATURE_ANALYTICS_AI_LEGACY" value="0" force="true"/>
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="MAIL_MAILER" value="array"/>

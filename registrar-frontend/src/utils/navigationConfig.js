@@ -12,6 +12,7 @@ import {
   InboxIcon,
   ShieldCheckIcon,
   CalendarDaysIcon,
+  ScaleIcon,
 } from '@heroicons/react/24/outline';
 import { MODULE_KEYS } from './policy';
 
@@ -96,6 +97,16 @@ export const ROLE_CONFIG = {
         title: 'Management',
         items: [
           { name: 'Access Requests', to: 'access-requests', icon: ClipboardDocumentCheckIcon, module: MODULE_KEYS.ACCESS_REQUESTS },
+          {
+            name: 'Cashier Reconciliation',
+            to: 'cashier-reconciliation',
+            icon: ScaleIcon,
+            module: MODULE_KEYS.CASHIER_RECONCILIATION,
+            children: [
+              { name: 'Unmatched labels', to: 'cashier-reconciliation?tab=unmatched', tabKey: 'unmatched' },
+              { name: 'Failed verifications', to: 'cashier-reconciliation?tab=failed', tabKey: 'failed' },
+            ],
+          },
           { name: 'Cashier OR Overrides', to: 'cashier-overrides', icon: ShieldCheckIcon, module: MODULE_KEYS.CASHIER_OVERRIDES },
           { name: 'Free Requests', to: 'free-requests', icon: DocumentDuplicateIcon, module: MODULE_KEYS.FREE_REQUESTS },
           { name: 'Undergrad Requestors', to: 'undergrad-requestors', icon: AcademicCapIcon, module: MODULE_KEYS.UNDERGRAD_VERIFICATION },
@@ -125,12 +136,15 @@ export const ROLE_CONFIG = {
         title: 'Overview',
         items: [
           {
-            name: 'System analytics',
+            name: 'System health',
             to: 'system-analytics',
             icon: ChartBarSquareIcon,
             children: [
-              { name: 'System analytics', to: 'system-analytics?tab=analytics', tabKey: 'analytics' },
-              { name: 'Admin roster health', to: 'system-analytics?tab=roster', tabKey: 'roster' },
+              { name: 'Overview', to: 'system-analytics?tab=overview', tabKey: 'overview' },
+              { name: 'Cashier', to: 'system-analytics?tab=cashier', tabKey: 'cashier' },
+              { name: 'Sign-in & provisioning', to: 'system-analytics?tab=provisioning', tabKey: 'provisioning' },
+              { name: 'Jobs', to: 'system-analytics?tab=jobs', tabKey: 'jobs' },
+              { name: 'Roster', to: 'system-analytics?tab=roster', tabKey: 'roster' },
             ],
           },
           { name: 'Audit trail', to: 'report', icon: UserCircleIcon },
@@ -155,11 +169,19 @@ export const ROLE_CONFIG = {
             children: [
               { name: 'Certificate logo management', to: 'documents?tab=certificates', tabKey: 'certificates' },
               { name: 'Signatories', to: 'documents?tab=signatories', tabKey: 'signatories' },
-              { name: 'Unmatched cashier items', to: 'documents?tab=unmatched-cashier', tabKey: 'unmatched-cashier' },
               { name: 'Archived documents', to: 'documents?tab=archived', tabKey: 'archived' },
             ],
           },
           { name: 'Announcement management', to: 'settings', icon: Cog6ToothIcon },
+          {
+            name: 'Cashier reconciliation',
+            to: 'cashier-reconciliation',
+            icon: ScaleIcon,
+            children: [
+              { name: 'Unmatched labels', to: 'cashier-reconciliation?tab=unmatched', tabKey: 'unmatched' },
+              { name: 'Failed verifications', to: 'cashier-reconciliation?tab=failed', tabKey: 'failed' },
+            ],
+          },
           { name: 'Cashier overrides', to: 'cashier-overrides', icon: ShieldCheckIcon },
         ],
       },

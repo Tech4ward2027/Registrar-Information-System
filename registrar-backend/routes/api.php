@@ -424,6 +424,29 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::post('cashier-overrides/{id}/revoke',  [CashierOrOverrideController::class, 'revoke']);
     });
 
+    // Cashier Reconciliation — unmatched cashier receipt labels, the
+    // admin review screen backing the naming-drift fix from
+    // CashierDocumentSuggester (see UnmatchedCashierItemController's
+    // class docblock). Previously these three routes sat in the bare
+    // 'role:3' group with NO module gate, so every registrar admin
+    // could call them regardless of policy. They now require the
+    // 'cashier_reconciliation' module; the
+    // 2026_10_05_000001_backfill_cashier_reconciliation_policy_access
+    // migration grants it to every existing non-zero-access policy so
+    // nobody loses access on deploy, and a super admin can narrow it
+    // afterwards. Super admin bypasses the module check as usual.
+    // Own throttle bucket ('unmatched-cashier-items') — see the
+    // verify-or route's comment for why an unprefixed throttle would
+    // share the outer group's counter. Writes get a tighter bucket.
+    Route::middleware(['role:3,4', 'module:cashier_reconciliation'])->group(function () {
+        Route::get('unmatched-cashier-items',               [UnmatchedCashierItemController::class, 'index'])
+            ->middleware('throttle:60,1,unmatched-cashier-items');
+        Route::post('unmatched-cashier-items/{id}/resolve', [UnmatchedCashierItemController::class, 'resolve'])
+            ->middleware('throttle:30,1,unmatched-cashier-items-write');
+        Route::post('unmatched-cashier-items/{id}/dismiss', [UnmatchedCashierItemController::class, 'dismiss'])
+            ->middleware('throttle:30,1,unmatched-cashier-items-write');
+    });
+
     // Free Document/Certificate Request (FESPEC-0008) — the admin
     // Free Request page. Staff on-behalf-of filing for the Free
     // Documents/Certificates Request Policy and the First Copy Free
@@ -565,13 +588,6 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::post('fulfillment-tracks',        [FulfillmentTrackController::class, 'store']);
         Route::put('fulfillment-tracks/{id}',    [FulfillmentTrackController::class, 'update']);
         Route::delete('fulfillment-tracks/{id}', [FulfillmentTrackController::class, 'destroy']);
-
-        // Unmatched cashier receipt labels — admin review screen backing
-        // the naming-drift fix from CashierDocumentSuggester. See
-        // UnmatchedCashierItemController's class docblock.
-        Route::get('unmatched-cashier-items',              [UnmatchedCashierItemController::class, 'index']);
-        Route::post('unmatched-cashier-items/{id}/resolve', [UnmatchedCashierItemController::class, 'resolve']);
-        Route::post('unmatched-cashier-items/{id}/dismiss', [UnmatchedCashierItemController::class, 'dismiss']);
 
         // Signatories (certificate signees) — admin-only end to end,
         // unlike document-types/certifications above whose GET is open to

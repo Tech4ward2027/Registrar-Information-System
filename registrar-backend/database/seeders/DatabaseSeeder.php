@@ -178,6 +178,10 @@ class DatabaseSeeder extends Seeder
                     'analytics'      => ['Access'],
                     'dashboard'      => ['View', 'Process', 'Complete'],
                     'free_requests'  => ['View', 'File'],
+                    // Cashier Reconciliation — keeps a freshly seeded
+                    // Registrar Staff aligned with what the
+                    // 2026_10_05_000001 backfill migration grants.
+                    'cashier_reconciliation' => ['Access'],
                 ]),
                 'is_system'   => 1,
                 'created_at'  => now(),
