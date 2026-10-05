@@ -35,12 +35,30 @@ export const formatDateLong = (value, includeTime = false) => {
 
 /** Extract the gender/sex from a request row */
 export const getGender = (row) => {
+  if (!row) return '---';
   const p =
     row.student_profile ||
+    row.studentProfile ||
     row.alumni_profile ||
+    row.alumniProfile ||
+    row.undergrad_requestor_profile ||
+    row.undergradRequestorProfile ||
     row.user?.student_profile ||
-    row.user?.alumni_profile;
-  return p?.sex_at_birth || p?.gender || '---';
+    row.user?.studentProfile ||
+    row.user?.alumni_profile ||
+    row.user?.alumniProfile ||
+    row.user?.undergrad_requestor_profile ||
+    row.user?.undergradRequestorProfile;
+
+  return (
+    row.gender ||
+    row.sex_at_birth ||
+    p?.sex_at_birth ||
+    p?.gender ||
+    row.undergrad_requestor_verification?.matched_student_profile?.sex_at_birth ||
+    row.undergradRequestorVerification?.matchedStudentProfile?.sex_at_birth ||
+    '---'
+  );
 };
 
 /** Format an ISO value as "Month DD, YYYY HH:MM" (24-hour) */
@@ -97,12 +115,35 @@ export const getFullName = (row) => {
 };
 
 /** Extract the course string from a request row */
-export const getCourse = (row) =>
-  row.student_profile?.academic_records?.[0]?.course ||
-  row.student_profile?.course ||
-  row.academic_record?.course ||
-  row.alumni_academic_record?.course ||
-  '---';
+export const getCourse = (row) => {
+  if (!row) return '---';
+  const val =
+    row.course ||
+    row.undergrad_requestor_profile?.program ||
+    row.undergrad_requestor_profile?.course ||
+    row.undergradRequestorProfile?.program ||
+    row.undergradRequestorProfile?.course ||
+    row.user?.undergrad_requestor_profile?.program ||
+    row.user?.undergrad_requestor_profile?.course ||
+    row.user?.undergradRequestorProfile?.program ||
+    row.user?.undergradRequestorProfile?.course ||
+    row.program ||
+    row.undergrad_requestor_verification?.matched_student_profile?.academic_records?.[0]?.course ||
+    row.undergrad_requestor_verification?.matched_student_profile?.course ||
+    row.undergradRequestorVerification?.matchedStudentProfile?.academicRecords?.[0]?.course ||
+    row.undergradRequestorVerification?.matchedStudentProfile?.course ||
+    row.student_profile?.academic_records?.[0]?.course ||
+    row.student_profile?.course ||
+    row.studentProfile?.academicRecords?.[0]?.course ||
+    row.studentProfile?.course ||
+    row.academic_record?.course ||
+    row.academicRecord?.course ||
+    row.alumni_academic_record?.course ||
+    row.alumniAcademicRecord?.course ||
+    '';
+
+  return typeof val === 'string' && val.trim() ? val.trim() : '---';
+};
 
 /** Extract the email from a request row */
 export const getEmail = (row) =>

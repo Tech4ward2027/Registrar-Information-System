@@ -3,6 +3,10 @@ import PropTypes from 'prop-types';
 import { ChevronDownIcon, CheckIcon } from '@heroicons/react/24/outline';
 import { useTheme } from '../context/ThemeContext';
 
+const isDesktopPointer = () =>
+  typeof window !== 'undefined' &&
+  window.matchMedia('(pointer: fine) and (hover: hover)').matches;
+
 const DropdownGroup = ({ label, name, value, onChange, options, required = false, labelColor = 'text-white', direction = 'auto', isDark: isDarkProp }) => {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -12,28 +16,47 @@ const DropdownGroup = ({ label, name, value, onChange, options, required = false
   const { isDark: themeIsDark } = useTheme();
   const isDark = isDarkProp !== undefined ? isDarkProp : themeIsDark;
 
-  // Clear search term & auto-detect vertical direction when dropdown opens
-  useEffect(() => {
-    if (!open) {
-      setSearchTerm("");
-      setOpenUpward(false);
+  const handleClose = () => {
+    setOpen(false);
+    setSearchTerm("");
+    setOpenUpward(false);
+  };
+
+  const handleToggle = () => {
+    if (open) {
+      handleClose();
     } else {
-      if (ref.current) {
-        const rect = ref.current.getBoundingClientRect();
-        const scrollParent = ref.current.closest('.overflow-y-auto, .overflow-auto, modal');
-        let bottomLimit = window.innerHeight;
-        if (scrollParent) {
-          const parentRect = scrollParent.getBoundingClientRect();
-          bottomLimit = parentRect.bottom;
-        }
-        const spaceBelow = bottomLimit - rect.bottom;
-        const dropdownMenuHeight = 220;
-        if (spaceBelow < dropdownMenuHeight && rect.top > dropdownMenuHeight) {
-          setOpenUpward(true);
-        } else {
-          setOpenUpward(false);
-        }
+      setOpen(true);
+    }
+  };
+
+  // Auto-detect vertical direction and direct to search on desktop when dropdown opens
+  useEffect(() => {
+    if (!open) return;
+
+    if (ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      const scrollParent = ref.current.closest('.overflow-y-auto, .overflow-auto, modal');
+      let bottomLimit = window.innerHeight;
+      if (scrollParent) {
+        const parentRect = scrollParent.getBoundingClientRect();
+        bottomLimit = parentRect.bottom;
       }
+      const spaceBelow = bottomLimit - rect.bottom;
+      const dropdownMenuHeight = 220;
+      if (spaceBelow < dropdownMenuHeight && rect.top > dropdownMenuHeight) {
+        setOpenUpward(true);
+      } else {
+        setOpenUpward(false);
+      }
+    }
+
+    // Direct to search input on desktop devices (precision pointer with hover)
+    if (isDesktopPointer()) {
+      const frameId = requestAnimationFrame(() => {
+        inputRef.current?.focus({ preventScroll: true });
+      });
+      return () => cancelAnimationFrame(frameId);
     }
   }, [open]);
 
@@ -41,7 +64,7 @@ const DropdownGroup = ({ label, name, value, onChange, options, required = false
   useEffect(() => {
     const handler = (e) => {
       if (ref.current && !ref.current.contains(e.target)) {
-        setOpen(false);
+        handleClose();
       }
     };
     document.addEventListener('mousedown', handler);
@@ -50,7 +73,7 @@ const DropdownGroup = ({ label, name, value, onChange, options, required = false
 
   const handleSelect = (option) => {
     onChange({ target: { name, value: option } });
-    setOpen(false);
+    handleClose();
   };
 
   const safeOptions = Array.isArray(options) ? options : [];
@@ -74,7 +97,7 @@ const DropdownGroup = ({ label, name, value, onChange, options, required = false
       <div className="relative">
         <button
           type="button"
-          onClick={() => setOpen((prev) => !prev)}
+          onClick={handleToggle}
           className={`
             w-full flex items-center justify-between gap-2 pl-3 pr-10 py-3 rounded-lg text-sm font-medium shadow-sm focus:outline-none border transition-colors text-left cursor-pointer
             ${open ? 'ring-2 ring-[#FFC72C] border-transparent' : 'border-transparent hover:border-gray-200'}
@@ -88,7 +111,7 @@ const DropdownGroup = ({ label, name, value, onChange, options, required = false
 
         {/* Toggle Arrow (Clickable) */}
         <span 
-          onClick={() => setOpen((prev) => !prev)}
+          onClick={handleToggle}
           className="absolute inset-y-0 right-0 flex items-center pr-3 cursor-pointer z-10"
         >
           <ChevronDownIcon
@@ -114,6 +137,17 @@ const DropdownGroup = ({ label, name, value, onChange, options, required = false
                   placeholder="Search options..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      handleClose();
+                    } else if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (filteredOptions.length > 0) {
+                        handleSelect(filteredOptions[0]);
+                      }
+                    }
+                  }}
                   className={`w-full px-3 py-1.5 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#FFC72C] ${
                     isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] placeholder-gray-500 border border-[#3e4042]' : 'bg-white text-gray-800 placeholder-gray-400 border border-gray-200'
                   }`}
