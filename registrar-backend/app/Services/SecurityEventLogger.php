@@ -41,6 +41,17 @@ use Illuminate\Support\Facades\Log;
  */
 class SecurityEventLogger
 {
+    /**
+     * Provisioning-failure events held back while a caller's database
+     * transaction is open. See deferProvisioningFailures().
+     *
+     * @var array<int, array{reason:string,email:?string,httpStatus:?int}>
+     */
+    private array $deferredProvisioningFailures = [];
+
+    /** Nesting depth of deferProvisioningFailures() calls. */
+    private int $deferDepth = 0;
+
     public function __construct(
         private NotificationServiceInterface $notificationService,
     ) {}
@@ -249,6 +260,71 @@ class SecurityEventLogger
             return null;
         }
 
+        // Inside deferProvisioningFailures(): hold the event in memory and
+        // write it once the caller's transaction has finished (see below).
+        if ($this->deferDepth > 0) {
+            $this->deferredProvisioningFailures[] = [
+                'reason'     => $reason,
+                'email'      => $email,
+                'httpStatus' => $httpStatus,
+            ];
+
+            return null;
+        }
+
+        return $this->writeProvisioningFailed($reason, $system, $email, $httpStatus);
+    }
+
+    // -------------------------------------------------------
+    // Run $callback with provisioning-failure events held in memory, then
+    // write them AFTER it returns or throws.
+    //
+    // WHY THIS EXISTS. UserProvisioningService runs its OGOS/PUPTAPS
+    // "is this person a student or alumnus?" lookups INSIDE a
+    // DB::transaction(), and a brand-new user who is then refused
+    // (UnregisteredAccountException) makes that transaction roll back.
+    // An event written inside it would be rolled back with it — and "a
+    // new student was turned away because OGOS was down" is exactly the
+    // case this signal exists to capture. Writing after the transaction
+    // has ended means the record survives the refusal.
+    //
+    // Scoped and bounded: events are buffered only for the duration of
+    // the callback and always flushed in `finally`, so nothing lingers
+    // in this singleton across requests or queue jobs. Re-entrant: only
+    // the outermost call flushes. Flushing never throws (write() is
+    // best-effort), so it can never replace the caller's own exception.
+    //
+    // @template T
+    // @param  callable(): T $callback
+    // @return T
+    // -------------------------------------------------------
+    public function deferProvisioningFailures(callable $callback): mixed
+    {
+        $this->deferDepth++;
+
+        try {
+            return $callback();
+        } finally {
+            $this->deferDepth--;
+
+            if ($this->deferDepth === 0) {
+                $pending = $this->deferredProvisioningFailures;
+                $this->deferredProvisioningFailures = [];
+
+                foreach ($pending as $failure) {
+                    $this->writeProvisioningFailed(
+                        $failure['reason'],
+                        SecurityEvent::PROVISIONING_REASON_SYSTEM[$failure['reason']],
+                        $failure['email'],
+                        $failure['httpStatus'],
+                    );
+                }
+            }
+        }
+    }
+
+    private function writeProvisioningFailed(string $reason, string $system, ?string $email, ?int $httpStatus): ?SecurityEvent
+    {
         return $this->write(
             eventType: SecurityEvent::EVENT_TYPE_PROVISIONING_FAILED,
             email:     $email,

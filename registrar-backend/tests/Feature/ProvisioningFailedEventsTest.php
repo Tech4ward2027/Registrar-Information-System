@@ -238,3 +238,70 @@ test('a clean OGOS 404 in the new-user student check is NOT a provisioning failu
 
     expect(pfEvents()->where('email', 'pf.notstudent@example.com')->count())->toBe(0);
 });
+
+test('a refused new user does not lose the outage event to the provisioning transaction rollback', function () {
+    // Regression guard. provision() runs the OGOS/PUPTAPS checks inside
+    // DB::transaction(); the refusal below throws out of it and rolls the
+    // transaction back. The event must still exist afterwards. (This is
+    // the same scenario as the OGOS-outage test above, asserted here with
+    // the rollback made explicit and the alumni side included.)
+    $ogosClient = Mockery::mock(OgosClient::class);
+    $ogosClient->shouldReceive('getStudentByEmail')->once()->andThrow(new OgosException('connection error', 503));
+
+    $this->mock(OgosStudentService::class, function ($mock) use ($ogosClient) {
+        $mock->shouldReceive('getClient')->andReturn($ogosClient);
+    });
+
+    $before = \App\Models\SystemUser::count();
+
+    expect(fn () => app(UserProvisioningService::class)->provision([
+        'id' => 'pf-rollback', 'email' => 'pf.rollback@example.com',
+    ], Request::create('/api/sso/callback', 'GET')))->toThrow(UnregisteredAccountException::class);
+
+    expect(\App\Models\SystemUser::count())->toBe($before)               // the rollback really happened
+        ->and(pfEvents()->where('email', 'pf.rollback@example.com')->count())->toBe(1);
+});
+
+test('deferred events are written exactly once, in order, and the buffer is empty afterwards', function () {
+    $logger = app(SecurityEventLogger::class);
+
+    $logger->deferProvisioningFailures(function () use ($logger) {
+        $logger->recordProvisioningFailed(SecurityEvent::REASON_OGOS_UNREACHABLE, 'a@example.com', 503);
+        $logger->recordProvisioningFailed(SecurityEvent::REASON_ALUMNI_LOOKUP_FAILED, 'b@example.com', 502);
+
+        // Nothing is written while deferred.
+        expect(pfEvents()->count())->toBe(0);
+    });
+
+    expect(pfEvents()->orderBy('security_event_id')->pluck('email')->all())->toBe(['a@example.com', 'b@example.com']);
+
+    // A later, un-deferred call is a normal immediate write, and the old
+    // buffer does not replay.
+    $logger->recordProvisioningFailed(SecurityEvent::REASON_OGOS_NOT_FOUND, 'c@example.com', 404);
+    expect(pfEvents()->count())->toBe(3);
+});
+
+test('events are still flushed, and the original exception still propagates, when the callback throws', function () {
+    $logger = app(SecurityEventLogger::class);
+
+    expect(fn () => $logger->deferProvisioningFailures(function () use ($logger) {
+        $logger->recordProvisioningFailed(SecurityEvent::REASON_OGOS_UNREACHABLE, 'x@example.com', 503);
+        throw new RuntimeException('refused');
+    }))->toThrow(RuntimeException::class, 'refused');
+
+    expect(pfEvents()->where('email', 'x@example.com')->count())->toBe(1);
+});
+
+test('nested deferral only flushes at the outermost level', function () {
+    $logger = app(SecurityEventLogger::class);
+
+    $logger->deferProvisioningFailures(function () use ($logger) {
+        $logger->deferProvisioningFailures(function () use ($logger) {
+            $logger->recordProvisioningFailed(SecurityEvent::REASON_OGOS_UNREACHABLE, 'n@example.com', 503);
+        });
+
+        expect(pfEvents()->count())->toBe(0);   // inner exit did not flush
+    });
+
+    expect(pfEvents()->count())->toBe(1);
+});

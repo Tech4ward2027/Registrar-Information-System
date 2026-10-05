@@ -247,7 +247,12 @@ class UserProvisioningService
             );
         }
 
-        return DB::transaction(function () use ($existing, $email, $idpUserId, $firstName, $middleName, $lastName, $profile, $request) {
+        // Provisioning-failure events (OGOS/PUPTAPS lookups) are recorded
+        // after this transaction ends, not inside it: a refused new user
+        // (UnregisteredAccountException) rolls the transaction back, and
+        // an event written inside would be rolled back with it. See
+        // SecurityEventLogger::deferProvisioningFailures().
+        return $this->securityEvents->deferProvisioningFailures(fn () => DB::transaction(function () use ($existing, $email, $idpUserId, $firstName, $middleName, $lastName, $profile, $request) {
             $roleId = $this->roleResolver->resolve($existing);
 
             // Captured only if the not-pre-registered branch below ends up
@@ -408,7 +413,7 @@ class UserProvisioningService
             $this->ensureBaselineRoleAssignment($user, $roleId);
 
             return new ProvisioningResult($user, $needsOnboarding);
-        });
+        }));
     }
 
     /**

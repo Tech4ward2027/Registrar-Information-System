@@ -204,7 +204,7 @@ test('a NOT_FOUND cashier verification records failure_reason on its audit row',
     StudentProfile::factory()->create(['user_id' => $user->user_id, 'first_name' => 'Juan', 'last_name' => 'Dela Cruz']);
     \Laravel\Sanctum\Sanctum::actingAs($user);
 
-    $this->postJson('/api/verify-or', ['or_number' => '0000000', 'receipt_date' => now()->toDateString()])
+    $this->postJson('/api/document-requests/verify-or', ['or_number' => '0000000', 'receipt_date' => now()->toDateString()])
         ->assertStatus(422);
 
     $log = AuditLog::where('action', AuditLog::ACTION_CASHIER_VERIFICATION)->latest('id')->firstOrFail();
@@ -220,7 +220,7 @@ test('an API_ERROR cashier verification records failure_reason API_ERROR', funct
     StudentProfile::factory()->create(['user_id' => $user->user_id, 'first_name' => 'Juan', 'last_name' => 'Dela Cruz']);
     \Laravel\Sanctum\Sanctum::actingAs($user);
 
-    $this->postJson('/api/verify-or', ['or_number' => '0000000', 'receipt_date' => now()->toDateString()])
+    $this->postJson('/api/document-requests/verify-or', ['or_number' => '0000000', 'receipt_date' => now()->toDateString()])
         ->assertStatus(422);
 
     $log = AuditLog::where('action', AuditLog::ACTION_CASHIER_VERIFICATION)->latest('id')->firstOrFail();
