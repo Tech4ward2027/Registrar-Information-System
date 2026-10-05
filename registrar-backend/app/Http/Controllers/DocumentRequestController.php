@@ -640,6 +640,11 @@ class DocumentRequestController extends Controller
             'matched_name'   => $verification['valid'] ? $matchedName : null,
             'is_mock'        => $isMockAttempt,
             'final_approved' => $verification['valid'],
+            // System Health Phase 2b: the overall outcome as one
+            // queryable field (NOT_FOUND vs API_ERROR). It used to be
+            // derivable only by scanning every entry of `attempts`.
+            // null on success. Additive — no existing reader changes.
+            'failure_reason' => $verification['valid'] ? null : ($verification['reason'] ?? 'NOT_FOUND'),
         ]);
 
         if (!$verification['valid']) {

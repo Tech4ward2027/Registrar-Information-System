@@ -34,6 +34,7 @@ class DatabaseSeeder extends Seeder
         $this->seedLogbookCategories();
         $this->seedDocumentTypes();
         $this->seedCertificateTypes();
+        $this->call(FailureReasonCodeSeeder::class);
 
         // Overrides the inline cashier_document_patterns set above with the
         // authoritative, more recently verified pattern list (see that

@@ -13,12 +13,14 @@ use App\Models\Alumni;
 use App\Models\AlumniProfile;
 use App\Models\AuditLog;
 use App\Models\RoleAssignment;
+use App\Models\SecurityEvent;
 use App\Models\StudentProfile;
 use App\Models\SystemUser;
 use App\Services\Alumni\AlumniProvisioningService;
 use App\Services\AuditLogger;
 use App\Services\Ocms\OcmsAdminService;
 use App\Services\Ogos\OgosStudentService;
+use App\Services\SecurityEventLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -32,6 +34,7 @@ class UserProvisioningService
         private AlumniProvisioningService $alumniProvisioningService,
         private OcmsAdminService         $ocmsAdminService,
         private AuditLogger              $auditLogger,
+        private SecurityEventLogger      $securityEvents,
     ) {}
 
     /**
@@ -278,7 +281,23 @@ class UserProvisioningService
                 try {
                     $this->ogosStudentService->getClient()->getStudentByEmail($email);
                     $roleId = SystemUser::ROLE_STUDENT;
-                } catch (OgosException) {
+                } catch (OgosException $ogosException) {
+                    // System Health Phase 2a: a 404 is the ordinary "this
+                    // person is not an OGOS student" answer (alumni, or
+                    // genuinely unregistered) and is NOT a provisioning
+                    // failure. Anything else means OGOS could not answer —
+                    // and this person is about to be treated as "not a
+                    // student", so it is exactly the outage worth seeing.
+                    // Best-effort and flow-neutral: recordProvisioningFailed()
+                    // never throws, and control continues unchanged below.
+                    if ($ogosException->getCode() !== 404) {
+                        $this->securityEvents->recordProvisioningFailed(
+                            SecurityEvent::REASON_OGOS_UNREACHABLE,
+                            $email,
+                            (int) $ogosException->getCode() ?: null,
+                        );
+                    }
+
                     // Not a current OGOS student either — check PUPTAPS
                     // before rejecting. If they exist there they're a valid
                     // alumnus; auto-register them the same way. Keep the
