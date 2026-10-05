@@ -286,3 +286,31 @@ Schedule::command('requests:check-consistency')
     ->withoutOverlapping()
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+
+/*
+|--------------------------------------------------------------------------
+| Scheduled Commands — System Health (Phase 3)
+|--------------------------------------------------------------------------
+|
+| :25 hourly  health:detect — anomaly detection over the rollups. A no-op
+|             (still logged) while the system_health flag is off. Placed at
+|             :25 so it runs after the hourly rollup (added with the rollup
+|             service, at :10) and clear of the other hourly jobs.
+| 08:40 daily health:prune  — retention for rollups and alerts; after
+|             undergrad-requestors:purge-rejected-pii (08:35) so no 08:xx
+|             job shares a minute.
+|--------------------------------------------------------------------------
+*/
+
+Schedule::command('health:detect')
+    ->hourlyAt(25)
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+Schedule::command('health:prune')
+    ->dailyAt('08:40')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));

@@ -71,6 +71,8 @@ class JobRunLog extends Model
         'security-events:prune'                  => 'Daily 08:25',
         'job-run-logs:prune'                     => 'Daily 08:30',
         'requests:check-consistency'             => 'Daily 03:30',
+        'health:detect'                          => 'Hourly :25',
+        'health:prune'                           => 'Daily 08:40',
     ];
 
     /**
@@ -121,5 +123,7 @@ class JobRunLog extends Model
         'job-run-logs:prune'                     => 1560,
         'requests:check-consistency'             => 1560,
         'break-glass:test'                       => 11520,
+        'health:detect'                          => 120,
+        'health:prune'                           => 1560,
     ];
 }
