@@ -4,6 +4,10 @@ import { ChevronDownIcon, CheckIcon } from "@heroicons/react/24/outline";
 import { XMarkIcon } from "@heroicons/react/24/solid";
 import { useTheme } from "../context/ThemeContext";
 
+const isDesktopPointer = () =>
+  typeof window !== 'undefined' &&
+  window.matchMedia('(pointer: fine) and (hover: hover)').matches;
+
 const MultiSelectDropdown = ({
   name,
   label,
@@ -13,12 +17,28 @@ const MultiSelectDropdown = ({
   required = false,
   labelColor = 'text-white',
   placeholder = "Please Select",
+  direction = 'auto',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [openUpward, setOpenUpward] = useState(false);
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
   const { isDark } = useTheme();
+
+  const handleClose = () => {
+    setIsOpen(false);
+    setSearchTerm("");
+    setOpenUpward(false);
+  };
+
+  const handleToggle = () => {
+    if (isOpen) {
+      handleClose();
+    } else {
+      setIsOpen(true);
+    }
+  };
 
   /* Close dropdown when clicking outside */
   useEffect(() => {
@@ -27,7 +47,7 @@ const MultiSelectDropdown = ({
         dropdownRef.current &&
         !dropdownRef.current.contains(event.target)
       ) {
-        setIsOpen(false);
+        handleClose();
       }
     };
 
@@ -36,10 +56,33 @@ const MultiSelectDropdown = ({
       document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  /* Clear search term when dropdown closes */
+  // Auto-detect vertical direction and direct to search on desktop when dropdown opens
   useEffect(() => {
-    if (!isOpen) {
-      setSearchTerm("");
+    if (!isOpen) return;
+
+    if (dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      const scrollParent = dropdownRef.current.closest('.overflow-y-auto, .overflow-auto, modal');
+      let bottomLimit = window.innerHeight;
+      if (scrollParent) {
+        const parentRect = scrollParent.getBoundingClientRect();
+        bottomLimit = parentRect.bottom;
+      }
+      const spaceBelow = bottomLimit - rect.bottom;
+      const dropdownMenuHeight = 220;
+      if (spaceBelow < dropdownMenuHeight && rect.top > dropdownMenuHeight) {
+        setOpenUpward(true);
+      } else {
+        setOpenUpward(false);
+      }
+    }
+
+    // Direct to search input on desktop devices (precision pointer with hover)
+    if (isDesktopPointer()) {
+      const frameId = requestAnimationFrame(() => {
+        searchInputRef.current?.focus({ preventScroll: true });
+      });
+      return () => cancelAnimationFrame(frameId);
     }
   }, [isOpen]);
 
@@ -66,6 +109,8 @@ const MultiSelectDropdown = ({
         option.toLowerCase().includes(searchTerm.toLowerCase())
       );
 
+  const isUp = direction === 'up' || (direction === 'auto' && openUpward);
+
   return (
     <div className="w-full group relative" ref={dropdownRef}>
       {/* Label */}
@@ -79,7 +124,7 @@ const MultiSelectDropdown = ({
       {/* Trigger Box / Input */}
       <div className="relative">
         <div
-          onClick={() => setIsOpen((prev) => !prev)}
+          onClick={handleToggle}
           className={`
             w-full flex items-center justify-between gap-2 pl-3 pr-10 py-2.5 rounded-lg text-sm font-medium shadow-sm border transition-colors text-left cursor-pointer min-h-[46px]
             ${isOpen ? 'ring-2 ring-[#FFC72C] border-transparent' : 'border-gray-200 hover:border-gray-300'}
@@ -119,7 +164,7 @@ const MultiSelectDropdown = ({
         <span
           onClick={(e) => {
             e.stopPropagation();
-            setIsOpen((prev) => !prev);
+            handleToggle();
           }}
           className="absolute inset-y-0 right-0 flex items-center pr-3 cursor-pointer z-10"
         >
@@ -134,17 +179,29 @@ const MultiSelectDropdown = ({
         {/* Dropdown Menu */}
         {isOpen && (
           <div
-            className={`absolute z-50 mt-1.5 w-full rounded-xl overflow-hidden ${isDark ? 'bg-[#1f1f1f]' : 'bg-white'}`}
+            className={`absolute z-[9999] ${isUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} w-full rounded-xl overflow-hidden ${isDark ? 'bg-[#1f1f1f]' : 'bg-white'}`}
             style={{ boxShadow: '0 8px 32px -4px rgba(0,0,0,0.18), 0 2px 8px -2px rgba(0,0,0,0.10)', border: '1px solid #FFC72C' }}
           >
             {/* Search Input inside the dropdown popover when options are many */}
             {options.length > 5 && (
               <div className={`p-2 border-b ${isDark ? 'border-[#3e4042] bg-[#242526]' : 'border-gray-200 bg-gray-50'}`}>
                 <input
+                  ref={searchInputRef}
                   type="text"
                   placeholder="Search options..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      handleClose();
+                    } else if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (filteredOptions.length > 0) {
+                        toggleOption(filteredOptions[0]);
+                      }
+                    }
+                  }}
                   className={`w-full px-3 py-1.5 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#FFC72C] ${
                     isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] placeholder-gray-500 border border-[#3e4042]' : 'bg-white text-gray-800 placeholder-gray-400 border border-gray-200'
                   }`}
@@ -217,6 +274,7 @@ MultiSelectDropdown.propTypes = {
   required: PropTypes.bool,
   labelColor: PropTypes.string,
   placeholder: PropTypes.string,
+  direction: PropTypes.string,
 };
 
 export default MultiSelectDropdown;
