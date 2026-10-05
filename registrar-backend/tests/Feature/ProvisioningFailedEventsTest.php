@@ -1,5 +1,6 @@
 <?php
 
+use App\Contracts\AlumniSystemClientInterface;
 use App\DTOs\Ogos\OgosStudentDTO;
 use App\Exceptions\OgosException;
 use App\Models\SecurityEvent;
@@ -54,6 +55,20 @@ function pfOgosDto(): OgosStudentDTO
 function pfEvents()
 {
     return SecurityEvent::where('event_type', SecurityEvent::EVENT_TYPE_PROVISIONING_FAILED);
+}
+
+/**
+ * The new-user SSO check falls through to PUPTAPS after OGOS refuses. In the
+ * test environment no PUPTAPS is configured, so the REAL alumni client would
+ * fail too and (correctly) record its own alumni_lookup_failed event, which
+ * would muddy assertions about the OGOS side. Pin the alumni side to a clean
+ * "no such alumnus" so each test exercises exactly one system.
+ */
+function pfAlumniSaysNotFound(): void
+{
+    test()->mock(AlumniSystemClientInterface::class, function ($mock) {
+        $mock->shouldReceive('tryLookupAlumniByEmail')->andReturn(null);
+    });
 }
 
 test('an OGOS 404 during provisioning is recorded as ogos_not_found and still returns false', function () {
@@ -209,6 +224,7 @@ test('an OGOS outage during the new-user student check is recorded, and the logi
     $this->mock(OgosStudentService::class, function ($mock) use ($ogosClient) {
         $mock->shouldReceive('getClient')->andReturn($ogosClient);
     });
+    pfAlumniSaysNotFound();
 
     $service = app(UserProvisioningService::class);
 
@@ -219,7 +235,8 @@ test('an OGOS outage during the new-user student check is recorded, and the logi
     ], Request::create('/api/sso/callback', 'GET')))->toThrow(UnregisteredAccountException::class);
 
     $event = pfEvents()->where('email', 'pf.new@example.com')->sole();
-    expect($event->reason)->toBe(SecurityEvent::REASON_OGOS_UNREACHABLE);
+    expect($event->reason)->toBe(SecurityEvent::REASON_OGOS_UNREACHABLE)
+        ->and($event->metadata)->toBe(['system' => 'ogos', 'http_status' => 503]);
 });
 
 test('a clean OGOS 404 in the new-user student check is NOT a provisioning failure', function () {
@@ -229,6 +246,7 @@ test('a clean OGOS 404 in the new-user student check is NOT a provisioning failu
     $this->mock(OgosStudentService::class, function ($mock) use ($ogosClient) {
         $mock->shouldReceive('getClient')->andReturn($ogosClient);
     });
+    pfAlumniSaysNotFound();
 
     $service = app(UserProvisioningService::class);
 
@@ -239,12 +257,14 @@ test('a clean OGOS 404 in the new-user student check is NOT a provisioning failu
     expect(pfEvents()->where('email', 'pf.notstudent@example.com')->count())->toBe(0);
 });
 
-test('a refused new user does not lose the outage event to the provisioning transaction rollback', function () {
-    // Regression guard. provision() runs the OGOS/PUPTAPS checks inside
+test('a refused new user does not lose the outage events to the provisioning transaction rollback', function () {
+    // Regression guard. provision() runs the OGOS and PUPTAPS checks inside
     // DB::transaction(); the refusal below throws out of it and rolls the
-    // transaction back. The event must still exist afterwards. (This is
-    // the same scenario as the OGOS-outage test above, asserted here with
-    // the rollback made explicit and the alumni side included.)
+    // transaction back. BOTH outage events must still exist afterwards.
+    // Here both systems are genuinely down: OGOS answers 503, and the real
+    // alumni client is pointed at a closed local port (connection refused).
+    config(['alumni.base_url' => 'http://127.0.0.1:9', 'alumni.token' => 'x']);
+
     $ogosClient = Mockery::mock(OgosClient::class);
     $ogosClient->shouldReceive('getStudentByEmail')->once()->andThrow(new OgosException('connection error', 503));
 
@@ -258,8 +278,16 @@ test('a refused new user does not lose the outage event to the provisioning tran
         'id' => 'pf-rollback', 'email' => 'pf.rollback@example.com',
     ], Request::create('/api/sso/callback', 'GET')))->toThrow(UnregisteredAccountException::class);
 
-    expect(\App\Models\SystemUser::count())->toBe($before)               // the rollback really happened
-        ->and(pfEvents()->where('email', 'pf.rollback@example.com')->count())->toBe(1);
+    // The refusal really did roll back (no user was kept)...
+    expect(\App\Models\SystemUser::count())->toBe($before);
+
+    // ...but both outage records survived it, in the order they happened.
+    expect(
+        pfEvents()->where('email', 'pf.rollback@example.com')->orderBy('security_event_id')->pluck('reason')->all()
+    )->toBe([
+        SecurityEvent::REASON_OGOS_UNREACHABLE,
+        SecurityEvent::REASON_ALUMNI_LOOKUP_FAILED,
+    ]);
 });
 
 test('deferred events are written exactly once, in order, and the buffer is empty afterwards', function () {
