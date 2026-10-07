@@ -88,6 +88,7 @@ class UndergradRequestorVerificationDetailResource extends JsonResource
                 'middle_name' => $profile?->middle_name,
                 'last_name'   => $profile?->last_name,
                 'suffix'      => $profile?->suffix,
+                'gender'      => $profile?->gender,
                 'student_number' => $profile?->student_number,
                 'program'        => $profile?->program,
                 'last_school_year_attended' => $profile?->last_school_year_attended,

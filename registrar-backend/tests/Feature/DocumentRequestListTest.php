@@ -135,10 +135,16 @@ test('an old Ready to Claim request is found even with more than 200 newer reque
     ]);
 
     $filler = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
-    DocumentRequest::factory()->count(205)->create([
-        'user_id'   => $filler->user_id,
-        'status_id' => RequestStatusEnum::Completed->value,
-    ]);
+
+    // or_number is UNIQUE. Bulk-creating 205 rows from the factory's random
+    // default can collide, which made this test flaky. Assign a deterministic
+    // sequence instead (keep the base outside the factory's own range).
+    DocumentRequest::factory()->count(205)
+        ->sequence(fn ($sequence) => ['or_number' => 9000000 + $sequence->index])
+        ->create([
+            'user_id'   => $filler->user_id,
+            'status_id' => RequestStatusEnum::Completed->value,
+        ]);
 
     // The old row is NOT in the newest 200...
     $newest = $this->getJson('/api/document-requests?all_statuses=true&per_page=200')->assertOk();

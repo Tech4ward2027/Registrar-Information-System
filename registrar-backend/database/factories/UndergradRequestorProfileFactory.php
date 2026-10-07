@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\GenderEnum;
 use App\Models\SystemUser;
 use App\Models\UndergradRequestorProfile;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -21,6 +22,7 @@ class UndergradRequestorProfileFactory extends Factory
             'middle_name'                => $this->faker->optional()->lastName(),
             'last_name'                  => $this->faker->lastName(),
             'suffix'                     => null,
+            'gender'                     => $this->faker->randomElement(GenderEnum::values()),
             'student_number'             => $this->faker->unique()->numerify('####-#####-MN-#'),
             'program'                    => $this->faker->randomElement([
                 'BS Information Technology',

@@ -35,6 +35,9 @@ class UndergradRequestorProfile extends Model
         'middle_name',
         'last_name',
         'suffix',
+        // Self-declared (App\Enums\GenderEnum). Plaintext: it is shown in
+        // list rows and the Logbook. NULL for pre-existing submissions.
+        'gender',
         'student_number',
         'program',
         'last_school_year_attended',
