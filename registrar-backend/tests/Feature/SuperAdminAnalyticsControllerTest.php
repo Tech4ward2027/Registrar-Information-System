@@ -513,6 +513,20 @@ test('needs_attention counts failed, stalled, overdue, and never_run jobs togeth
     saWriteJobRun('job-run-logs:prune', JobRunLog::STATUS_SUCCESS, now()->subMinutes(5)); // healthy
     saWriteJobRun('break-glass:test', JobRunLog::STATUS_SUCCESS, now()->subMinutes(5)); // healthy
 
+    // Every OTHER registered job gets a healthy row, so this test keeps
+    // counting only the five deliberate cases below even as new scheduled
+    // jobs (e.g. the System Health ones) are added to JobRunLog::JOBS.
+    $deliberate = [
+        'notifications:shred-expired-requests', 'role-assignments:expire',
+        'notifications:send-unclaimed-reminders', 'audit:verify',
+        'requests:check-consistency',
+    ];
+    foreach (array_keys(JobRunLog::JOBS) as $jobName) {
+        if (!in_array($jobName, $deliberate, true)) {
+            saWriteJobRun($jobName, JobRunLog::STATUS_SUCCESS, now()->subMinutes(5));
+        }
+    }
+
     $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
 
     // failed + stalled + overdue + never_run (audit:verify) + never_run
