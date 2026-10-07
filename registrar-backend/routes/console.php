@@ -293,6 +293,8 @@ Schedule::command('requests:check-consistency')
 | Scheduled Commands — System Health (Phase 3)
 |--------------------------------------------------------------------------
 |
+| :10 hourly  health:rollup — aggregates today + yesterday into
+|             health_daily_metrics (idempotent). A no-op while the flag is off.
 | :25 hourly  health:detect — anomaly detection over the rollups. A no-op
 |             (still logged) while the system_health flag is off. Placed at
 |             :25 so it runs after the hourly rollup (added with the rollup
@@ -302,6 +304,12 @@ Schedule::command('requests:check-consistency')
 |             job shares a minute.
 |--------------------------------------------------------------------------
 */
+
+Schedule::command('health:rollup')
+    ->hourlyAt(10)
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
 
 Schedule::command('health:detect')
     ->hourlyAt(25)

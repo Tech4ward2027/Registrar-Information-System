@@ -38,6 +38,7 @@ use App\Http\Controllers\BusinessHoursController;
 use App\Http\Controllers\CalendarExceptionController;
 use App\Http\Controllers\CalendarOverrideController;
 use App\Http\Controllers\SuperAdminAnalyticsController;
+use App\Http\Controllers\SystemHealthController;
 use App\Http\Controllers\SecurityEventController;
 use App\Http\Controllers\UndergradRequestorController;
 use App\Http\Controllers\UndergradRequestorVerificationController;
@@ -651,6 +652,17 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::get('access-request-throughput',  [SuperAdminAnalyticsController::class, 'accessRequestThroughput']);
             Route::get('cashier-verification-health', [SuperAdminAnalyticsController::class, 'cashierVerificationHealth']);
             Route::get('scheduled-jobs-health',       [SuperAdminAnalyticsController::class, 'scheduledJobsHealth']);
+
+            // System Health (Phase 3): flag-gated. Reads rollups/alerts only.
+            // Acknowledge has its own named bucket and is audited.
+            Route::middleware('feature:system_health')->group(function () {
+                Route::get('cashier-trend',       [SystemHealthController::class, 'cashierTrend']);
+                Route::get('provisioning-health', [SystemHealthController::class, 'provisioningHealth']);
+                Route::get('alerts',              [SystemHealthController::class, 'alerts']);
+                Route::post('alerts/{alert}/acknowledge', [SystemHealthController::class, 'acknowledge'])
+                    ->whereNumber('alert')
+                    ->middleware('throttle:30,1,system-health-alert-ack');
+            });
         });
         Route::post('announcements',                      [AnnouncementController::class, 'store']);
         Route::put('announcements/{announcement}',        [AnnouncementController::class, 'update']);

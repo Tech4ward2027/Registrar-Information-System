@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\LogsJobRun;
 use App\Services\Health\HealthDetectionService;
+use App\Services\Health\RepeatFailureWatch;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 
@@ -28,7 +29,7 @@ class HealthDetect extends Command
 
     protected $description = 'Detect anomalies in the System Health rollups and raise alerts';
 
-    public function handle(HealthDetectionService $service): int
+    public function handle(HealthDetectionService $service, RepeatFailureWatch $repeatWatch): int
     {
         $this->startJobRun($this->getName());
 
@@ -48,6 +49,10 @@ class HealthDetect extends Command
             for ($i = $days - 1; $i >= 0; $i--) {
                 $raised += $service->evaluateDate($today->subDays($i), $notify)['raised'];
             }
+
+            // Repeat-failure watch is a rolling-window check on "now", so it
+            // runs once for today, not once per replayed day.
+            $raised += $repeatWatch->evaluate($today, $notify);
 
             $this->info("[health:detect] {$days} day(s) evaluated, {$raised} alert(s) raised.");
             $this->finishJobRun(self::SUCCESS, $raised);

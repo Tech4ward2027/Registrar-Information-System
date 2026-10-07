@@ -188,6 +188,10 @@ class AuditLog extends Model
     // cross-checking against OGOS/the alumni system.
     public const ACTION_CASHIER_VERIFICATION_ENRICHED = 'cashier_verification_enriched';
 
+    // System Health — a Super Admin acknowledged a system alert. Metadata
+    // only (alert id/type/metric); no personal data.
+    public const ACTION_SYSTEM_ALERT_ACKNOWLEDGED = 'system_alert_acknowledged';
+
     // Unmatched cashier receipt labels — admin resolution (see
     // UnmatchedCashierItem, CashierDocumentSuggester)
     public const ACTION_UNMATCHED_CASHIER_ITEM_RESOLVED  = 'unmatched_cashier_item_resolved';

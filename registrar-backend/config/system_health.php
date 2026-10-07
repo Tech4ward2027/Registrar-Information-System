@@ -10,7 +10,8 @@
  * METRIC CATALOG (health_daily_metrics rows; `dimension` is '' when unused)
  *   cashier      attempts              ''                 verification attempts that day
  *   cashier      failures              ''                 attempts that did not end in approval
- *   cashier      failures_by_reason    NOT_FOUND|API_ERROR
+ *   cashier      overrides             ''                 admin OR overrides (not lookups; not in attempts)
+ *   cashier      failures_by_reason    NOT_FOUND|API_ERROR|UNKNOWN
  *   cashier      diagnosis_code        <failure_reason_codes.code>
  *   provisioning failures              ogos|puptaps
  *   provisioning failures_by_reason    <SecurityEvent provisioning reason>
