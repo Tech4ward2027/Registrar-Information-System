@@ -109,6 +109,7 @@ class UndergradRequestorRegistrationService implements UndergradRequestorRegistr
                 'middle_name'                    => $validated['middle_name'] ?? null,
                 'last_name'                      => $validated['last_name'],
                 'suffix'                         => $validated['suffix'] ?? null,
+                'gender'                         => $validated['gender'] ?? null,
                 'student_number'                 => $validated['student_number'],
                 'program'                        => $validated['program'],
                 'last_school_year_attended'      => $validated['last_school_year_attended'],

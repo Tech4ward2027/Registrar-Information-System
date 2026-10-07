@@ -32,7 +32,7 @@ class RequestItemListController extends Controller
         'academicRecord',
         'alumniProfile',
         'alumniAcademicRecord',
-        'undergradRequestorProfile:undergrad_requestor_profile_id,user_id,first_name,middle_name,last_name,suffix,student_number,program',
+        'undergradRequestorProfile:undergrad_requestor_profile_id,user_id,first_name,middle_name,last_name,suffix,gender,student_number,program',
         'documents:request_document_id,request_id,status_id',
         'certificates:request_certificate_id,request_id,status_id',
     ];

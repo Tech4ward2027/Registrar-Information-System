@@ -44,6 +44,7 @@ class DocumentRequestListResource extends JsonResource
         'middle_name',
         'last_name',
         'suffix',
+        'gender',
         'student_number',
         'program',
     ];
@@ -69,6 +70,7 @@ class DocumentRequestListResource extends JsonResource
             'requester_type' => $this->requesterType(),
             'display_name'   => $profile ? $this->fullName($profile) : null,
             'student_number' => $this->studentNumber($profile),
+            'gender'         => $this->undergradGender($profile),
         ], $this->progress());
     }
 
@@ -160,6 +162,17 @@ class DocumentRequestListResource extends JsonResource
             self::TYPE_UNDERGRAD => $profile?->student_number,
             default              => null,
         };
+    }
+
+    /**
+     * Self-declared gender, Undergrad Requestors only. Null for Student/Alumni
+     * rows so the Logbook falls back to their existing sex_at_birth.
+     */
+    private function undergradGender(mixed $profile): ?string
+    {
+        return $this->requesterType() === self::TYPE_UNDERGRAD
+            ? ($profile?->gender ?: null)
+            : null;
     }
 
     private function fullName(mixed $profile): ?string

@@ -109,7 +109,7 @@ class DocumentRequestController extends Controller
      * DocumentRequestListResource::UNDERGRAD_LIST_FIELDS.
      */
     private const UNDERGRAD_LIST_RELATION = 'undergradRequestorProfile:'
-        . 'undergrad_requestor_profile_id,user_id,first_name,middle_name,last_name,suffix,student_number,program';
+        . 'undergrad_requestor_profile_id,user_id,first_name,middle_name,last_name,suffix,gender,student_number,program';
 
     private static function listRelations(): array
     {
