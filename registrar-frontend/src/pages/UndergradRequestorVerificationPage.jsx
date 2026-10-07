@@ -722,6 +722,11 @@ const UndergradRequestorVerificationPage = () => {
                         <span className={`block font-semibold ${isDark ? "text-[#b0b3b8]" : "text-gray-500"}`}>Date of Birth:</span>
                         <p className="font-bold text-sm mt-0.5">{detailData.declared_profile?.date_of_birth || "N/A"}</p>
                       </div>
+                      
+                      <div>
+                        <span className={`block font-semibold ${isDark ? "text-[#b0b3b8]" : "text-gray-500"}`}>Gender / Sex:</span>
+                        <p className="font-bold text-sm mt-0.5">{detailData.declared_profile?.gender || "N/A"}</p>
+                      </div>
 
                       <div>
                         <span className={`block font-semibold ${isDark ? "text-[#b0b3b8]" : "text-gray-500"}`}>Program / Course:</span>

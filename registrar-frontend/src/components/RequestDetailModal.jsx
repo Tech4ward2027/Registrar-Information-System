@@ -514,6 +514,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
                 </p>
                 <p className="wrap-break-word"><strong>Student Number:</strong> {activeRequest.undergrad_requestor_profile?.student_number ?? 'N/A'}</p>
                 <p className="wrap-break-word"><strong>Program:</strong> {activeRequest.undergrad_requestor_profile?.program ?? 'N/A'}</p>
+                <p className="wrap-break-word"><strong>Gender:</strong> {activeRequest.gender ?? activeRequest.undergrad_requestor_profile?.gender ?? 'N/A'}</p>
                 <p className="wrap-break-word"><strong>Classification:</strong> Undergrad</p>
               </div>
             </Section>

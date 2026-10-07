@@ -36,6 +36,7 @@ const INITIAL_FORM_STATE = {
   middle_name: "",
   last_name: "",
   suffix: "",
+  gender: "",
   student_number: "",
   program: "",
   last_school_year_attended: "",
@@ -140,6 +141,7 @@ const UndergradRequestorRegisterPage = () => {
     form.email.trim() &&
     form.first_name.trim() &&
     form.last_name.trim() &&
+    form.gender &&
     form.phone.trim() &&
     form.date_of_birth &&
     form.student_number.trim() &&
@@ -167,6 +169,10 @@ const UndergradRequestorRegisterPage = () => {
 
     if (!form.last_name.trim()) {
       fieldErrors.last_name = ["Last name is required."];
+    }
+
+    if (!form.gender) {
+      fieldErrors.gender = ["Gender is required."];
     }
 
     const studentNumTrimmed = form.student_number.trim();
@@ -221,7 +227,7 @@ const UndergradRequestorRegisterPage = () => {
       if (Object.keys(clientErrors).length > 0) {
         setErrors(clientErrors);
 
-        const sec1Fields = ["email", "phone", "first_name", "last_name", "date_of_birth", "student_number", "present_address"];
+        const sec1Fields = ["email", "phone", "first_name", "last_name", "gender", "date_of_birth", "student_number", "present_address"];
         const sec2Fields = ["program", "last_school_year_attended"];
         const sec3Fields = ["data_privacy_consent"];
 
@@ -255,6 +261,7 @@ const UndergradRequestorRegisterPage = () => {
         middle_name: form.middle_name.trim() || null,
         last_name: form.last_name.trim(),
         suffix: form.suffix.trim() || null,
+        gender: form.gender || null,
         student_number: form.student_number.trim(),
         program: form.program.trim(),
         last_school_year_attended: form.last_school_year_attended.trim(),
@@ -603,21 +610,37 @@ const UndergradRequestorRegisterPage = () => {
                       </div>
 
                       <div>
-                        <InputGroup
-                          label="Student Number"
-                          name="student_number"
-                          value={form.student_number}
+                        <DropDown
+                          label="Gender"
+                          name="gender"
+                          value={form.gender}
                           onChange={handleChange}
+                          options={["Male", "Female"]}
                           required
-                          voiceEnabled={false}
-                          placeholder="2020-00123-TG-0"
                           labelColor={isDark ? "text-[#e4e6eb]" : "text-gray-800"}
                           isDark={isDark}
                         />
-                        {errors.student_number && (
-                          <p className="text-xs text-red-500 mt-1">{errors.student_number[0]}</p>
+                        {errors.gender && (
+                          <p className="text-xs text-red-500 mt-1">{errors.gender[0]}</p>
                         )}
                       </div>
+                    </div>
+
+                    <div>
+                      <InputGroup
+                        label="Student Number"
+                        name="student_number"
+                        value={form.student_number}
+                        onChange={handleChange}
+                        required
+                        voiceEnabled={false}
+                        placeholder="2020-00123-TG-0"
+                        labelColor={isDark ? "text-[#e4e6eb]" : "text-gray-800"}
+                        isDark={isDark}
+                      />
+                      {errors.student_number && (
+                        <p className="text-xs text-red-500 mt-1">{errors.student_number[0]}</p>
+                      )}
                     </div>
 
                     <div>
