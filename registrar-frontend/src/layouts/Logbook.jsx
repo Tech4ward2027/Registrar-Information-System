@@ -744,6 +744,13 @@ const LogbookRecords = () => {
 
                   <div>
                     <span className="block text-[10px] uppercase font-bold tracking-wider text-gray-400 mb-0.5">
+                      Gender
+                    </span>
+                    <span className="font-semibold">{getGender(row) || '---'}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] uppercase font-bold tracking-wider text-gray-400 mb-0.5">
                       Email
                     </span>
                     <span className="font-semibold truncate block" title={getEmail(row)}>
