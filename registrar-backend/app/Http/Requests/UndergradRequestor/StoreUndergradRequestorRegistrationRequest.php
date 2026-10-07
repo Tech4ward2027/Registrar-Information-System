@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\UndergradRequestor;
 
+use App\Enums\GenderEnum;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -63,6 +64,7 @@ class StoreUndergradRequestorRegistrationRequest extends FormRequest
             'middle_name'                => $trim($this->input('middle_name')),
             'last_name'                  => $trim($this->input('last_name')),
             'suffix'                     => $trim($this->input('suffix')),
+            'gender'                     => GenderEnum::normalize($this->input('gender')),
             'student_number'             => $trim($this->input('student_number')),
             'program'                    => $trim($this->input('program')),
             'last_school_year_attended'  => $trim($this->input('last_school_year_attended')),
@@ -107,6 +109,12 @@ class StoreUndergradRequestorRegistrationRequest extends FormRequest
             'middle_name' => ['nullable', 'string', 'max:100', $singleLine],
             'last_name'   => ['required', 'string', 'max:100', $singleLine],
             'suffix'      => ['nullable', 'string', 'max:20', $singleLine],
+
+            // Optional for now so the existing onboarding form keeps working
+            // until it sends this field. Once the form is updated, change
+            // 'nullable' to 'required' to make it mandatory for new
+            // registrations. Existing rows stay NULL either way.
+            'gender'      => ['nullable', Rule::enum(GenderEnum::class)],
 
             // Deliberately NOT unique — see the
             // create_undergrad_requestor_profiles_table migration's
@@ -166,6 +174,7 @@ class StoreUndergradRequestorRegistrationRequest extends FormRequest
             'date_of_birth.before' => 'Please enter a valid date of birth.',
             'student_number.regex' => 'Please enter your student number using letters, numbers and hyphens only.',
             'phone.regex'          => 'Please enter a valid contact number.',
+            'gender.enum'          => 'Please select a valid gender.',
 
             'data_privacy_consent.required' => 'You must agree to the Data Privacy Notice before submitting this form.',
             'data_privacy_consent.accepted' => 'You must agree to the Data Privacy Notice before submitting this form.',
