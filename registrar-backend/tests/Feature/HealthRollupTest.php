@@ -19,6 +19,8 @@ function p3Audit(string $action, array $meta, CarbonImmutable $at, ?int $userId 
 {
     AuditLog::create([
         'user_id'    => $userId,
+        'email'      => 'system@ris.local',
+        'role_name'  => 'student',
         'action'     => $action,
         'metadata'   => $meta,
         'prev_hash'  => null,
