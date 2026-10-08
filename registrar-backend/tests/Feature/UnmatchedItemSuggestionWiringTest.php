@@ -65,9 +65,13 @@ test('repeat sightings of the same label do not queue another job', function () 
     Queue::fake();
     config(['features.ai_label_suggestions' => true]);
 
+    // These three differ only in case, whitespace and trailing punctuation,
+    // so they share one normalised key. (An INTERNAL period, as in
+    // 'info copy', would be a different key — the normaliser only strips
+    // trailing punctuation.)
     UnmatchedCashierItem::recordSighting('Info. Copy of Grades');
-    UnmatchedCashierItem::recordSighting('info copy of grades.');
-    UnmatchedCashierItem::recordSighting('INFO. COPY OF GRADES');
+    UnmatchedCashierItem::recordSighting('  INFO.   COPY OF GRADES. ');
+    UnmatchedCashierItem::recordSighting('info. copy of grades');
 
     Queue::assertPushed(SuggestUnmatchedLabelTargetJob::class, 1);
     expect(UnmatchedCashierItem::first()->occurrence_count)->toBe(3);
