@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Support\StringSimilarity;
+
 /**
  * NameMatcher
  *
@@ -324,8 +326,8 @@ class NameMatcher
         [$aLast, $aFirst, $aMiddle] = $this->splitName($a);
         [$bLast, $bFirst, $bMiddle] = $this->splitName($b);
 
-        $lastScore  = $this->similarity($aLast, $bLast);
-        $firstScore = $this->similarity($aFirst, $bFirst);
+        $lastScore  = StringSimilarity::jaroWinkler($aLast, $bLast);
+        $firstScore = StringSimilarity::jaroWinkler($aFirst, $bFirst);
         $middleOk   = $this->middleMatches($aMiddle, $bMiddle);
 
         $isMatch = $lastScore >= self::STRICT_THRESHOLD
@@ -427,99 +429,5 @@ class NameMatcher
         );
 
         return implode(' ', $tokens);
-    }
-
-    /**
-     * Jaro-Winkler similarity, 0.0–1.0. Pure PHP, no extension/package
-     * dependency — appropriate for short name tokens where a small,
-     * well-tested implementation is preferable to a new composer
-     * requirement.
-     */
-    private function similarity(string $a, string $b): float
-    {
-        if ($a === '' && $b === '') {
-            return 1.0;
-        }
-        if ($a === '' || $b === '') {
-            return 0.0;
-        }
-        if ($a === $b) {
-            return 1.0;
-        }
-
-        $jaro = $this->jaro($a, $b);
-
-        // Winkler boost: reward strings that share a common prefix
-        // (up to 4 chars), which is common with names (typos usually
-        // land mid-word, not at the start).
-        $prefixLength = 0;
-        $maxPrefix    = min(4, min(mb_strlen($a), mb_strlen($b)));
-        for ($i = 0; $i < $maxPrefix; $i++) {
-            if (mb_substr($a, $i, 1) === mb_substr($b, $i, 1)) {
-                $prefixLength++;
-            } else {
-                break;
-            }
-        }
-
-        return $jaro + ($prefixLength * 0.1 * (1 - $jaro));
-    }
-
-    private function jaro(string $a, string $b): float
-    {
-        $aLen = mb_strlen($a);
-        $bLen = mb_strlen($b);
-
-        if ($aLen === 0 || $bLen === 0) {
-            return 0.0;
-        }
-
-        $matchDistance = intdiv(max($aLen, $bLen), 2) - 1;
-        $matchDistance = max($matchDistance, 0);
-
-        $aMatches = array_fill(0, $aLen, false);
-        $bMatches = array_fill(0, $bLen, false);
-
-        $matches = 0;
-        for ($i = 0; $i < $aLen; $i++) {
-            $start = max(0, $i - $matchDistance);
-            $end   = min($i + $matchDistance + 1, $bLen);
-
-            for ($j = $start; $j < $end; $j++) {
-                if ($bMatches[$j] || mb_substr($a, $i, 1) !== mb_substr($b, $j, 1)) {
-                    continue;
-                }
-                $aMatches[$i] = true;
-                $bMatches[$j] = true;
-                $matches++;
-                break;
-            }
-        }
-
-        if ($matches === 0) {
-            return 0.0;
-        }
-
-        $transpositions = 0;
-        $k = 0;
-        for ($i = 0; $i < $aLen; $i++) {
-            if (!$aMatches[$i]) {
-                continue;
-            }
-            while (!$bMatches[$k]) {
-                $k++;
-            }
-            if (mb_substr($a, $i, 1) !== mb_substr($b, $k, 1)) {
-                $transpositions++;
-            }
-            $k++;
-        }
-        $transpositions = intdiv($transpositions, 2);
-
-        return (
-            ($matches / $aLen)
-            + ($matches / $bLen)
-            + (($matches - $transpositions) / $matches)
-        ) / 3;
     }
 }
