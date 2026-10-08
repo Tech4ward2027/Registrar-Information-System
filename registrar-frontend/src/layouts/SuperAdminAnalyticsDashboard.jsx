@@ -11,6 +11,9 @@ import {
   CreditCardIcon, InboxIcon, EllipsisHorizontalIcon,
 } from '@heroicons/react/24/outline';
 import DropdownGroup from '../components/DropDown';
+import {
+  useSystemHealthEnabled, AlertsFeed, CashierTrendPanel, RepeatFailurePanel, ProvisioningPanel,
+} from '../components/health/SystemHealthPanels';
 import { StatCardSkeleton, ChartCardSkeleton } from '../components/LoadingSkeleton';
 import {
   getAnalyticsOverview,
@@ -82,6 +85,9 @@ const SuperAdminAnalyticsDashboard = () => {
   const { isDark } = useTheme();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  // System Health panels (alerts, trends) render only when FEATURE_SYSTEM_HEALTH
+  // is on; the endpoints also 404 server-side while it is off.
+  const healthEnabled = useSystemHealthEnabled();
 
   // 'analytics' was the pre-split tab key; keep it as an alias so old
   // bookmarks/links land on Overview instead of silently defaulting.
@@ -222,6 +228,8 @@ const SuperAdminAnalyticsDashboard = () => {
 
         {activeTab === 'overview' && (
           <>
+            {healthEnabled && <AlertsFeed isDark={isDark} />}
+
             {/* ── System volume (reuses existing /analytics endpoints) ── */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               {loading || !overview
@@ -383,6 +391,8 @@ const SuperAdminAnalyticsDashboard = () => {
 
         {/* ── Cashier tab ── */}
         {activeTab === 'cashier' && (
+          <div className="space-y-6">
+          {healthEnabled && <CashierTrendPanel isDark={isDark} />}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
               {loading || !cashierHealth
                 ? <ChartCardSkeleton isDark={isDark} />
@@ -528,15 +538,21 @@ const SuperAdminAnalyticsDashboard = () => {
                 )
               }
           </div>
+          {healthEnabled && <RepeatFailurePanel isDark={isDark} />}
+          </div>
         )}
 
         {/* ── Sign-in & Provisioning tab (data arrives in a later phase) ── */}
         {activeTab === 'provisioning' && (
-          <PanelCard isDark={isDark} title="Sign-in & Provisioning" icon={<ServerIcon className="w-5 h-5" />}>
-            <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-              OGOS and PUPTAPS provisioning health will appear here once failure tracking is enabled.
-            </p>
-          </PanelCard>
+          healthEnabled
+            ? <ProvisioningPanel isDark={isDark} />
+            : (
+              <PanelCard isDark={isDark} title="Sign-in & Provisioning" icon={<ServerIcon className="w-5 h-5" />}>
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  OGOS and PUPTAPS provisioning health will appear here once System Health tracking is enabled for this environment.
+                </p>
+              </PanelCard>
+            )
         )}
 
         {/* ── Roster tab ── */}

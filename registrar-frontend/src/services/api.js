@@ -200,6 +200,19 @@ export const dismissUnmatchedCashierItem = (id) =>
   api.post(`/unmatched-cashier-items/${id}/dismiss`);
 
 // -------------------------------------------------------
+// FAILED CASHIER VERIFICATIONS (Cashier Reconciliation > Failed
+// verifications). Admin with the "cashier_reconciliation" module, or
+// Super Admin; 404 while the system_health flag is off. Opening a detail
+// writes an audit entry; the re-check only accepts an existing failed row.
+// -------------------------------------------------------
+export const getFailedCashierVerifications = (params = {}) =>
+  api.get("/failed-cashier-verifications", { params });
+export const getFailedCashierVerification = (auditLogId) =>
+  api.get(`/failed-cashier-verifications/${auditLogId}`);
+export const recheckFailedCashierVerification = (auditLogId) =>
+  api.post(`/failed-cashier-verifications/${auditLogId}/recheck`);
+
+// -------------------------------------------------------
 // CASHIER OR OVERRIDES (Admin with the "cashier_overrides" module, or
 // Super Admin) — the scoped, audited bypass for one (or_number,
 // student) pair when a real receipt is wrongly rejected by the
@@ -906,6 +919,12 @@ export const getAdminRosterHealth         = ()             => api.get("/system-a
 export const getAccessRequestThroughput   = (params = {}) => api.get("/system-analytics/access-request-throughput", { params });
 export const getCashierVerificationHealth = (params = {}) => api.get("/system-analytics/cashier-verification-health", { params });
 export const getScheduledJobsHealth       = ()             => api.get("/system-analytics/scheduled-jobs-health");
+
+// System Health (flag-gated on the server: 404 while system_health is off).
+export const getCashierTrend              = (params = {}) => api.get("/system-analytics/cashier-trend", { params });
+export const getProvisioningHealth        = (params = {}) => api.get("/system-analytics/provisioning-health", { params });
+export const getSystemAlerts              = (params = {}) => api.get("/system-analytics/alerts", { params });
+export const acknowledgeSystemAlert       = (id)           => api.post(`/system-analytics/alerts/${id}/acknowledge`);
 
 // -------------------------------------------------------
 // ANNOUNCEMENTS (read: all authenticated | write: Super Admin)

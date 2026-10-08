@@ -2,14 +2,16 @@ import React from "react";
 import { useSearchParams } from "react-router-dom";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { useTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthProvider";
 import UnmatchedCashierItemsManagement from "../layouts/UnmatchedCashierItemsManagement.jsx";
+import FailedVerificationsPanel from "../components/cashier/FailedVerificationsPanel.jsx";
 
 /**
  * Cashier Reconciliation — the single home for cashier-related review
  * work (Phase 1 of the Cashier Reconciliation / System Health plan).
  *
  *   ?tab=unmatched  Unmatched receipt labels (existing screen, reused as-is)
- *   ?tab=failed     Failed verifications (placeholder until Phase 5)
+ *   ?tab=failed     Failed verifications (shown when FEATURE_SYSTEM_HEALTH is on)
  *
  * Mounted for both staff (/staff/cashier-reconciliation, behind
  * ModuleRoute) and super admin (/super-admin/cashier-reconciliation).
@@ -24,6 +26,10 @@ const DEFAULT_TAB = "unmatched";
 
 const CashierReconciliation = () => {
   const { isDark } = useTheme();
+  const auth = useAuth();
+  // Strict === true so a missing flag fails closed. UI convenience only: the
+  // endpoints return 404 server-side while the flag is off.
+  const failedEnabled = auth?.user?.features?.system_health === true;
   const [searchParams, setSearchParams] = useSearchParams();
 
   const tabFromUrl = searchParams.get("tab");
@@ -63,7 +69,9 @@ const CashierReconciliation = () => {
       </div>
 
       {activeTab === "unmatched" && <UnmatchedCashierItemsManagement />}
-      {activeTab === "failed" && <FailedVerificationsPlaceholder isDark={isDark} />}
+      {activeTab === "failed" && (
+        failedEnabled ? <FailedVerificationsPanel /> : <FailedVerificationsPlaceholder isDark={isDark} />
+      )}
     </div>
   );
 };
@@ -83,10 +91,11 @@ const FailedVerificationsPlaceholder = ({ isDark }) => (
     >
       <ExclamationTriangleIcon className="w-7 h-7" />
     </div>
-    <h2 className="text-base font-bold mb-1">Failed verifications — coming soon</h2>
+    <h2 className="text-base font-bold mb-1">Failed verifications are not enabled</h2>
     <p className={`text-xs max-w-md ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-      Receipts that could not be verified against the Cashier system will be
-      listed here, with the likely contributing factors for each failure.
+      Failed receipt verifications, with the likely contributing factors for
+      each, appear here once failed-verification tracking is switched on for
+      this environment.
     </p>
   </div>
 );

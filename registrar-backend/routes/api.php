@@ -38,6 +38,7 @@ use App\Http\Controllers\BusinessHoursController;
 use App\Http\Controllers\CalendarExceptionController;
 use App\Http\Controllers\CalendarOverrideController;
 use App\Http\Controllers\SuperAdminAnalyticsController;
+use App\Http\Controllers\FailedCashierVerificationController;
 use App\Http\Controllers\SystemHealthController;
 use App\Http\Controllers\SecurityEventController;
 use App\Http\Controllers\UndergradRequestorController;
@@ -446,6 +447,22 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             ->middleware('throttle:30,1,unmatched-cashier-items-write');
         Route::post('unmatched-cashier-items/{id}/dismiss', [UnmatchedCashierItemController::class, 'dismiss'])
             ->middleware('throttle:30,1,unmatched-cashier-items-write');
+
+        // Failed verifications (System Health Phase 5). Same module gate as
+        // the unmatched labels, plus the system_health flag (404 when off).
+        // Own named buckets; the re-check is the tightest. The feature
+        // check runs before throttling so a disabled route never spends the
+        // caller's rate limit.
+        Route::middleware('feature:system_health')->group(function () {
+            Route::get('failed-cashier-verifications', [FailedCashierVerificationController::class, 'index'])
+                ->middleware('throttle:60,1,failed-verifications');
+            Route::get('failed-cashier-verifications/{auditLogId}', [FailedCashierVerificationController::class, 'show'])
+                ->whereNumber('auditLogId')
+                ->middleware('throttle:60,1,failed-verification-detail');
+            Route::post('failed-cashier-verifications/{auditLogId}/recheck', [FailedCashierVerificationController::class, 'recheck'])
+                ->whereNumber('auditLogId')
+                ->middleware('throttle:10,1,failed-verification-recheck');
+        });
     });
 
     // Free Document/Certificate Request (FESPEC-0008) — the admin
