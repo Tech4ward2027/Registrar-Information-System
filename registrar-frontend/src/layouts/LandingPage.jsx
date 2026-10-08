@@ -230,8 +230,9 @@ const LandingPage = () => {
                 <Link
                   to="/undergrad-requestor/register"
                   className="text-xs text-gray-300 hover:text-white font-medium underline underline-offset-4 transition-colors font-inter cursor-pointer"
+                  title="For former undergraduate students who are no longer enrolled. Currently enrolled students should use Log in with IDP."
                 >
-                  Undergraduate? Sign Up Here
+                  Not currently enrolled? Sign Up Here
                 </Link>
               </div>
             </div>
