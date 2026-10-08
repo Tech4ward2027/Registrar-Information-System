@@ -3,6 +3,7 @@
 use App\Models\CertificationType;
 use App\Models\DocumentType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
@@ -26,11 +27,17 @@ beforeEach(function () {
 });
 
 test('it reports leave-one-out and drift separately, with n and a confidence interval, and writes a CSV', function () {
-    $this->artisan('cashier:eval-label-suggestions', ['--output' => 'eval/test.csv'])
-        ->expectsOutputToContain('leave-one-out')
-        ->expectsOutputToContain('drift')
-        ->expectsOutputToContain('n=')
-        ->assertExitCode(0);
+    // Read the whole buffered output instead of using expectsOutputToContain():
+    // that helper lets a single output line satisfy only ONE expectation, so
+    // "drift n=..." could not also satisfy "n=".
+    $exit   = Artisan::call('cashier:eval-label-suggestions', ['--output' => 'eval/test.csv']);
+    $output = Artisan::output();
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('leave-one-out')
+        ->and($output)->toContain('drift')
+        ->and($output)->toMatch('/n=\d+/')
+        ->and($output)->toMatch('/\[\d+\.\d-\d+\.\d\]/');
 
     Storage::disk('local')->assertExists('eval/test.csv');
     $csv = Storage::disk('local')->get('eval/test.csv');
@@ -69,11 +76,17 @@ test('without --with-llm no HTTP request is ever made', function () {
 
 test('with-llm reports a lift line and only sends catalogue labels', function () {
     config(['services.anthropic.api_key' => 'k']);
+    // Force every row to count as ambiguous (scores never exceed 1.0), so the
+    // test does not depend on how close the tiny fixture catalogue's types are.
+    config(['label_suggestions.low_threshold' => 1.01]);
     Http::fake(['api.anthropic.com/*' => Http::response(['content' => [['type' => 'text', 'text' => '{"choice":"none","reason":"x"}']]])]);
 
-    $this->artisan('cashier:eval-label-suggestions', ['--with-llm' => true, '--limit' => 5, '--output' => 'eval/t4.csv'])
-        ->expectsOutputToContain('Rows sent to the LLM')
-        ->assertExitCode(0);
+    $exit   = Artisan::call('cashier:eval-label-suggestions', ['--with-llm' => true, '--limit' => 5, '--output' => 'eval/t4.csv']);
+    $output = Artisan::output();
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('Rows sent to the LLM: 5')
+        ->and($output)->toContain('lift=');
 
     Http::assertSent(function ($req) {
         $user = $req['messages'][0]['content'] ?? '';
