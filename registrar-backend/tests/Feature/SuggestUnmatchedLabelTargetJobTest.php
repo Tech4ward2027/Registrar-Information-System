@@ -20,6 +20,12 @@ function sj_item(string $label = 'Info. Copy of Grades'): UnmatchedCashierItem
     ]);
 }
 
+function sj_row(int $id): ?object
+{
+    // The PK is unmatched_cashier_item_id, so DB::table()->find() (which assumes `id`) cannot be used.
+    return \DB::table('unmatched_cashier_items')->where('unmatched_cashier_item_id', $id)->first();
+}
+
 beforeEach(function () {
     DocumentType::query()->delete();
     CertificationType::query()->delete();
@@ -41,7 +47,7 @@ test('job stores rule-based suggestions with the flag off and makes no HTTP call
 
     (new SuggestUnmatchedLabelTargetJob($item->unmatched_cashier_item_id))->handle(app(\App\Services\LabelSuggestionService::class));
 
-    $row = \DB::table('unmatched_cashier_items')->find($item->unmatched_cashier_item_id);
+    $row = sj_row($item->unmatched_cashier_item_id);
     expect($row->suggestion_source)->toBe('rules')
         ->and($row->suggested_at)->not->toBeNull()
         ->and(json_decode($row->suggestions, true)[0]['name'])->toBe('Informative Copy of Grades')
@@ -59,10 +65,10 @@ test('job is idempotent and force recomputes', function () {
         ->update(['suggestion_source' => 'marker']);
 
     (new SuggestUnmatchedLabelTargetJob($item->unmatched_cashier_item_id))->handle($svc);
-    expect(\DB::table('unmatched_cashier_items')->find($item->unmatched_cashier_item_id)->suggestion_source)->toBe('marker');
+    expect(sj_row($item->unmatched_cashier_item_id)->suggestion_source)->toBe('marker');
 
     (new SuggestUnmatchedLabelTargetJob($item->unmatched_cashier_item_id, true))->handle($svc);
-    expect(\DB::table('unmatched_cashier_items')->find($item->unmatched_cashier_item_id)->suggestion_source)->toBe('rules');
+    expect(sj_row($item->unmatched_cashier_item_id)->suggestion_source)->toBe('rules');
 });
 
 test('job skips resolved and missing items', function () {
@@ -73,7 +79,7 @@ test('job skips resolved and missing items', function () {
     (new SuggestUnmatchedLabelTargetJob($item->unmatched_cashier_item_id))->handle($svc);
     (new SuggestUnmatchedLabelTargetJob(999999))->handle($svc);
 
-    expect(\DB::table('unmatched_cashier_items')->find($item->unmatched_cashier_item_id)->suggested_at)->toBeNull();
+    expect(sj_row($item->unmatched_cashier_item_id)->suggested_at)->toBeNull();
 });
 
 test('an ambiguous label uses the LLM pick when the flag and key are on', function () {
@@ -86,7 +92,7 @@ test('an ambiguous label uses the LLM pick when the flag and key are on', functi
 
     (new SuggestUnmatchedLabelTargetJob($item->unmatched_cashier_item_id))->handle(app(\App\Services\LabelSuggestionService::class));
 
-    $row = \DB::table('unmatched_cashier_items')->find($item->unmatched_cashier_item_id);
+    $row = sj_row($item->unmatched_cashier_item_id);
     // Either the rules were unambiguous (no call, 'rules') or the LLM pick was applied.
     if ($row->suggestion_source === 'llm') {
         expect(json_decode($row->suggestions, true)[0]['id'])->toBe($diploma->document_type_id);
@@ -102,5 +108,5 @@ test('an LLM outage leaves rule-based suggestions in place', function () {
 
     (new SuggestUnmatchedLabelTargetJob($item->unmatched_cashier_item_id))->handle(app(\App\Services\LabelSuggestionService::class));
 
-    expect(\DB::table('unmatched_cashier_items')->find($item->unmatched_cashier_item_id)->suggestion_source)->toBe('rules');
+    expect(sj_row($item->unmatched_cashier_item_id)->suggestion_source)->toBe('rules');
 });
