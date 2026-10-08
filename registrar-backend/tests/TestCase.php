@@ -2,6 +2,8 @@
 
 namespace Tests;
 
+use App\Contracts\UndergradEnrollmentLookupClientInterface;
+use App\DTOs\Ogos\OgosEnrollmentLookupResult;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 
 abstract class TestCase extends BaseTestCase
@@ -26,4 +28,31 @@ abstract class TestCase extends BaseTestCase
     // DatabaseSeeder::run()'s docblock for why an env-var guard inside
     // the seeder call itself wasn't a reliable enough boundary on its own.
     protected $seed = true;
+
+    /**
+     * Keep every test hermetic with respect to OGOS.
+     *
+     * UserProvisioningService and UndergradRequestorRegistrationService
+     * both consult the enrollment lookup for Undergrad Requestor emails.
+     * Without a default, any test that reaches them would make a real
+     * outbound OGOS call (slow, flaky, environment-dependent). The default
+     * is "performed, no match" — the expected answer for a genuine former
+     * student. Tests that need a different answer rebind the interface
+     * themselves (app()->instance(...) / $this->mock(...)), which takes
+     * precedence over this.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->app->instance(
+            UndergradEnrollmentLookupClientInterface::class,
+            new class implements UndergradEnrollmentLookupClientInterface {
+                public function lookup(?string $studentNumber, ?string $email): OgosEnrollmentLookupResult
+                {
+                    return OgosEnrollmentLookupResult::noMatch();
+                }
+            }
+        );
+    }
 }

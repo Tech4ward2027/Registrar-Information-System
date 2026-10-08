@@ -274,6 +274,16 @@ class AuditLog extends Model
     // silently get the other.
     public const ACTION_UNDERGRAD_REQUESTOR_EXPIRED         = 'undergrad_requestor_expired';
 
+    // Written by UserProvisioningService::provision() when a still-Pending
+    // (or Expired) Undergrad Requestor row turns out to belong to a person
+    // OGOS reports as CURRENTLY ENROLLED — i.e. a student who used the
+    // undergrad onboarding form by mistake. The account is converted to a
+    // normal Student and the mistaken submission's PII is deleted; this
+    // entry is the permanent record that it happened (it carries no
+    // personal data beyond the email already present on the account).
+    // Actor is the person themselves, like ACTION_UNDERGRAD_REQUESTOR_ACTIVATED.
+    public const ACTION_UNDERGRAD_REQUESTOR_RECLASSIFIED    = 'undergrad_requestor_reclassified_as_student';
+
     // Phase 4/D9 — the 90-day rejected-PII purge. This is the ONLY
     // permanent record that the disposal happened, precisely because the
     // data it describes no longer exists anywhere else. Written via

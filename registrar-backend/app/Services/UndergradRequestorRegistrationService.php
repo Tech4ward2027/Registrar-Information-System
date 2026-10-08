@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Contracts\UndergradEnrollmentLookupClientInterface;
 use App\Contracts\UndergradRequestorRegistrationServiceInterface;
 use App\Mail\UndergradRequestorEmailVerificationMail;
 use App\Models\AuditLog;
@@ -48,6 +49,7 @@ class UndergradRequestorRegistrationService implements UndergradRequestorRegistr
     public function __construct(
         private AuditLogger         $auditLogger,
         private SecurityEventLogger $securityEvents,
+        private UndergradEnrollmentLookupClientInterface $enrollmentLookup,
     ) {}
 
     /**
@@ -66,6 +68,8 @@ class UndergradRequestorRegistrationService implements UndergradRequestorRegistr
                 'email' => 'This email is already associated with an account.',
             ]);
         }
+
+        $this->assertNotCurrentlyEnrolled($validated['email']);
 
         [$plainToken, $tokenHash] = $this->generateVerificationToken();
 
@@ -177,6 +181,45 @@ class UndergradRequestorRegistrationService implements UndergradRequestorRegistr
         );
 
         return $profile;
+    }
+
+    /**
+     * Refuse the registration when OGOS reports this email as a currently
+     * enrolled student.
+     *
+     * This form is only for people who are NO LONGER enrolled. A student
+     * who submits it creates a role-5 account on the very email they sign
+     * in with, which then blocks their normal student login. Stopping it
+     * here keeps the mistake from ever being made; UserProvisioningService
+     * ::provision() independently repairs any such account that already
+     * exists, so the two layers do not depend on each other.
+     *
+     * Looks up by EMAIL ONLY, never by the declared student number: the
+     * email is the identity that collides with the student login, and a
+     * student-number probe on a public endpoint would let anyone test
+     * whether a given number is currently enrolled. Even by email this
+     * discloses a yes/no about enrolment, which is why the response is
+     * limited to the existing per-IP/per-email throttles on this route and
+     * the lookup result is memoised by the client for a short TTL.
+     *
+     * Fails OPEN: the lookup client never throws and reports "OGOS could
+     * not be asked" as performed = false. An OGOS outage must not stop a
+     * genuine former student from registering — the review step and the
+     * login-time repair both still catch a mistaken submission later.
+     *
+     * @throws ValidationException
+     */
+    private function assertNotCurrentlyEnrolled(string $email): void
+    {
+        $lookup = $this->enrollmentLookup->lookup(null, $email);
+
+        if ($lookup->performed && $lookup->matchFound) {
+            throw ValidationException::withMessages([
+                'email' => 'This form is only for students who are no longer enrolled. '
+                    . 'This email is linked to a currently enrolled student, so please '
+                    . 'log in with your OGOS/GUISIS account on the home page instead.',
+            ]);
+        }
     }
 
     /**
