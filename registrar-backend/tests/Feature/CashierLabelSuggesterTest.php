@@ -114,3 +114,26 @@ test('stored suggestions never include pattern lists, candidates do', function (
     expect($r['suggestions'][0])->not->toHaveKey('patterns')
         ->and($r['candidates'][0])->toHaveKey('patterns');
 });
+
+test('an abbreviation that expands to a phrase containing stopwords scores as an exact match', function () {
+    $tor = ls_doc('Transcript of Records');
+    ls_doc('Diploma');
+
+    $top = app(CashierLabelSuggester::class)->suggest('TOR')['suggestions'][0];
+
+    expect($top['id'])->toBe($tor->document_type_id)->and($top['score'])->toBe(1.0);
+});
+
+test('a catalogue override is used instead of the live catalogue and skips the ownership rule', function () {
+    ls_doc('Diploma');
+    $suggester = app(CashierLabelSuggester::class);
+
+    $override = [[
+        'key' => 'd999', 'type' => 'document', 'id' => 999, 'name' => 'Only In Override',
+        'strings' => ['name' => ['Only In Override'], 'pattern' => []],
+    ]];
+
+    $r = $suggester->suggest('Only In Override', $override);
+
+    expect($r['suggestions'])->toHaveCount(1)->and($r['suggestions'][0]['id'])->toBe(999);
+});

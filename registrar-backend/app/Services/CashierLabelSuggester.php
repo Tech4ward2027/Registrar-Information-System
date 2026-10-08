@@ -27,6 +27,7 @@ final class CashierLabelSuggester
     public function __construct(private CashierPatternConflictChecker $conflictChecker) {}
 
     /**
+     * @param  list<array<string,mixed>>|null  $catalogue  Optional override, shape of catalogue().
      * @return array{
      *     suggestions: list<array{key:string,type:'document'|'certificate',id:int,name:string,score:float,matched_on:string}>,
      *     candidates:  list<array{key:string,type:'document'|'certificate',id:int,name:string,score:float,matched_on:string,patterns:list<string>}>,
@@ -35,8 +36,12 @@ final class CashierLabelSuggester
      *   suggestions = top N (what the admin sees); candidates = wider list
      *   handed to the LLM re-ranker when is_ambiguous is true.
      */
-    public function suggest(string $rawLabel): array
+    public function suggest(string $rawLabel, ?array $catalogue = null): array
     {
+        // $catalogue is only passed by the evaluation command (to hold one
+        // label out of the catalogue). Normal use reads the live catalogue
+        // and applies the one-label-one-type ownership rule below.
+        $live = $catalogue === null;
         $cfg   = config('label_suggestions');
         $label = mb_substr(trim($rawLabel), 0, (int) $cfg['max_label_length']);
         $norm  = CashierLabelNormalizer::normalize($label);
@@ -49,7 +54,7 @@ final class CashierLabelSuggester
         $labelString = implode(' ', $labelTokens);
 
         $scored = [];
-        foreach ($this->catalogue() as $type) {
+        foreach (($catalogue ?? $this->catalogue()) as $type) {
             $best = null;
             foreach ($type['strings'] as $source => $strings) {
                 foreach ($strings as $candidateString) {
@@ -74,7 +79,7 @@ final class CashierLabelSuggester
 
         // "One label -> one type": if another type already owns this exact
         // normalised label, only that owner is a valid target.
-        $owners = $this->conflictChecker->findConflicts([$norm]);
+        $owners = $live ? $this->conflictChecker->findConflicts([$norm]) : [];
         if ($owners !== []) {
             $owner  = reset($owners);
             $scored = array_values(array_filter($scored, static fn (array $c) => $c['name'] === $owner));
@@ -143,14 +148,14 @@ final class CashierLabelSuggester
         $abbr = (array) config('label_suggestions.abbreviations', []);
         $stop = (array) config('label_suggestions.stopwords', []);
 
+        // Expand abbreviations FIRST, then drop stopwords, so that e.g.
+        // "TOR" -> "transcript of records" -> [transcript, records] matches
+        // the type "Transcript of Records" exactly.
         $out = [];
         foreach (preg_split('/\s+/u', trim($norm), -1, PREG_SPLIT_NO_EMPTY) ?: [] as $token) {
-            if (in_array($token, $stop, true)) {
-                continue;
-            }
             $expanded = $abbr[$token] ?? $token;
             foreach (explode(' ', $expanded) as $part) {
-                if ($part !== '') {
+                if ($part !== '' && !in_array($part, $stop, true)) {
                     $out[] = $part;
                 }
             }
@@ -164,7 +169,7 @@ final class CashierLabelSuggester
      *
      * @return list<array{key:string,type:'document'|'certificate',id:int,name:string,strings:array{name:list<string>,pattern:list<string>}}>
      */
-    private function catalogue(): array
+    public function catalogue(): array
     {
         $accessIds = AccessType::selfServiceVisibleIds();
         $types     = [];
