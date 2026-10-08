@@ -56,7 +56,7 @@ const COPY = {
     fallbackMessage:
       'Your Undergrad Requestor registration is still awaiting review. Please check back soon.',
     note:
-      'No action is needed from you right now. You will be able to sign in normally once a Registrar Admin has reviewed your submission — this usually does not take long. If it has been more than a few days, please contact the Registrar\u2019s Office.',
+      'No action is needed from you right now. You will be able to sign in normally once a Registrar Admin has reviewed your submission — this usually does not take long. If it has been more than a few days, please contact the Registrar\u2019s Office. If you are a currently enrolled student, you do not need to wait: try signing in again in a few minutes, and if you still see this message, contact the Registrar\u2019s Office so they can fix your account.',
     backLabel: 'Back to Login',
   },
   rejected: {

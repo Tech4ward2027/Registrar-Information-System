@@ -2,6 +2,7 @@
 
 namespace App\Services\Sso;
 
+use App\Contracts\UndergradEnrollmentLookupClientInterface;
 use App\DTOs\Alumni\AlumniDTO;
 use App\Exceptions\AccountDeactivatedException;
 use App\Exceptions\AccountExpiredException;
@@ -34,6 +35,7 @@ class UserProvisioningService
         private AlumniProvisioningService $alumniProvisioningService,
         private OcmsAdminService         $ocmsAdminService,
         private AuditLogger              $auditLogger,
+        private UndergradEnrollmentLookupClientInterface $enrollmentLookup,
         private SecurityEventLogger      $securityEvents,
     ) {}
 
@@ -157,6 +159,28 @@ class UserProvisioningService
             throw new AccountRejectedException(
                 'Your Undergrad Requestor registration was not approved. Please contact the registrar for more information.'
             );
+        }
+
+        // A CURRENTLY ENROLLED student who submitted the Undergrad
+        // Requestor onboarding form by mistake. That form creates a
+        // role-5 'Pending Verification' row keyed on the same email the
+        // student signs in with, which — without this block — would
+        // shadow the normal OGOS student auto-registration below and lock
+        // them out until the row expired or an admin intervened (and even
+        // then the email stays burned, since rows are never deleted).
+        //
+        // The login is already IdP-authenticated and OGOS independently
+        // confirms the same email is a current student, which is exactly
+        // the trust the auto-registration branch below relies on — so the
+        // account is converted to a Student here instead of blocked.
+        //
+        // Runs AFTER the Deactivated/Rejected guards (an admin's explicit
+        // decision is never overridden) and BEFORE the expiry self-heal
+        // and the pending guard, so neither can pre-empt it. Fails closed:
+        // if OGOS is unreachable or does not know the person, nothing
+        // changes and the guards below behave exactly as before.
+        if ($existing && $this->isStalledUndergradRequestor($existing) && $this->isCurrentlyEnrolled($email)) {
+            $existing = $this->reclassifyAsStudent($existing, $profile, $request);
         }
 
         // BUG FIX (QA #11 — "Expired Status Not Auto-Tagged"): mirrors
@@ -414,6 +438,95 @@ class UserProvisioningService
 
             return new ProvisioningResult($user, $needsOnboarding);
         }));
+    }
+
+    /**
+     * An Undergrad Requestor that is not usable yet and has no human
+     * decision behind it: still awaiting review, or abandoned past the
+     * 14-day window. 'Rejected' (an explicit admin decision) and the
+     * approved path ('Pending Activation' / 'Activated') are deliberately
+     * excluded — reclassification must never override either.
+     */
+    private function isStalledUndergradRequestor(SystemUser $user): bool
+    {
+        return (int) $user->role_id === SystemUser::ROLE_UNDERGRAD_REQUESTOR
+            && in_array($user->status, ['Pending Verification', 'Expired'], true)
+            && !$user->undergradRequestorVerification?->isApproved();
+    }
+
+    /**
+     * Whether OGOS positively reports this email as a currently enrolled
+     * student. The lookup client never throws and distinguishes "OGOS does
+     * not know them" from "OGOS could not be asked", and only a performed,
+     * matching answer counts — an outage must never convert an account.
+     */
+    private function isCurrentlyEnrolled(string $email): bool
+    {
+        $result = $this->enrollmentLookup->lookup(null, $email);
+
+        return $result->performed && $result->matchFound;
+    }
+
+    /**
+     * Convert a stalled Undergrad Requestor into a normal Student and
+     * dispose of the mistaken submission.
+     *
+     * Runs in its own transaction with the row locked, so two concurrent
+     * logins (double-click, two tabs) cannot both convert, and a second
+     * caller that loses the race simply receives the already-converted
+     * row. The submission's profile (self-declared PII) and verification
+     * rows are DELETED rather than flagged: there is no further use for
+     * them, data minimisation (RA 10173) favours disposal, and the
+     * audit_logs entry written here is the permanent record. Deleting the
+     * rows also frees the account from the review queue and the
+     * rejected-PII purge, with no new verification status needed.
+     *
+     * Nothing beyond the Student shape is set: the profile itself is
+     * provisioned from OGOS by provisionProfile() later in provision(),
+     * exactly as for any other first-time student login.
+     */
+    private function reclassifyAsStudent(SystemUser $existing, array $profile, Request $request): SystemUser
+    {
+        return DB::transaction(function () use ($existing, $profile, $request) {
+            $locked = SystemUser::whereKey($existing->user_id)->lockForUpdate()->first();
+
+            // Gone, or already converted/decided by a concurrent request.
+            if (!$locked || !$this->isStalledUndergradRequestor($locked)) {
+                return $locked ?? $existing;
+            }
+
+            $previousStatus = $locked->status;
+
+            $locked->update([
+                'role_id'            => SystemUser::ROLE_STUDENT,
+                'status'             => 'Activated',
+                'idp_user_id'        => $profile['id'] ?? $locked->idp_user_id,
+                // Same shape SSO-created students get: an unusable random
+                // password, local auth off.
+                'password'           => bcrypt(Str::random(32)),
+                'local_auth_enabled' => 0,
+                'pending_expires_at' => null,
+            ]);
+
+            $locked->undergradRequestorProfile()->delete();
+            $locked->undergradRequestorVerification()->delete();
+
+            // A stale role-5 assignment would stop
+            // ensureBaselineRoleAssignment() from writing the Student one.
+            RoleAssignment::where('user_id', $locked->user_id)
+                ->where('role_id', SystemUser::ROLE_UNDERGRAD_REQUESTOR)
+                ->delete();
+
+            $this->auditLogger->log($request, $locked, AuditLog::ACTION_UNDERGRAD_REQUESTOR_RECLASSIFIED, [
+                'target_user_id'  => $locked->user_id,
+                'target_email'    => $locked->email,
+                'previous_status' => $previousStatus,
+                'role_id'         => SystemUser::ROLE_STUDENT,
+                'reason'          => 'ogos_currently_enrolled',
+            ]);
+
+            return $locked->unsetRelations();
+        });
     }
 
     /**

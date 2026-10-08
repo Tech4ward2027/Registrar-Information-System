@@ -44,6 +44,9 @@ const INITIAL_FORM_STATE = {
   present_address: "",
   reason_for_non_enrollment: "",
   phone: "",
+  // Client-side eligibility acknowledgement only — never sent to the API.
+  // The backend independently refuses currently enrolled emails (OGOS).
+  confirm_not_enrolled: false,
   data_privacy_consent: false,
 };
 
@@ -205,6 +208,10 @@ const UndergradRequestorRegisterPage = () => {
       fieldErrors.phone = ["Invalid phone number format."];
     }
 
+    if (!form.confirm_not_enrolled) {
+      fieldErrors.confirm_not_enrolled = ["Please confirm that you are not currently enrolled."];
+    }
+
     if (!form.data_privacy_consent) {
       fieldErrors.data_privacy_consent = ["You must accept the Data Privacy Notice to proceed."];
     }
@@ -234,6 +241,7 @@ const UndergradRequestorRegisterPage = () => {
         const hasSec1Error = sec1Fields.some((f) => clientErrors[f]);
         const hasSec2Error = sec2Fields.some((f) => clientErrors[f]);
         const hasSec3Error = sec3Fields.some((f) => clientErrors[f]);
+        const hasEligibilityError = Boolean(clientErrors.confirm_not_enrolled);
 
         const missingSections = [];
         if (hasSec1Error) missingSections.push("1. Personal & Contact Information");
@@ -241,10 +249,15 @@ const UndergradRequestorRegisterPage = () => {
 
         if (missingSections.length > 0) {
           let msg = `Please fill in all required fields in ${missingSections.join(" and ")}.`;
+          if (hasEligibilityError) {
+            msg += " Also, please confirm that you are not currently enrolled.";
+          }
           if (hasSec3Error) {
             msg += " Also, please accept the Data Privacy Notice & Consent.";
           }
           setGeneralError(msg);
+        } else if (hasEligibilityError) {
+          setGeneralError("Please confirm that you are not currently enrolled to proceed.");
         } else if (hasSec3Error) {
           setGeneralError("Please accept the Data Privacy Notice & Consent to proceed.");
         } else {
@@ -392,6 +405,52 @@ const UndergradRequestorRegisterPage = () => {
             </div>
 
             {generalError && <ErrorToast message={generalError} onClose={() => setGeneralError("")} />}
+
+            {/* Eligibility gate — read before filling anything in */}
+            <div
+              role="note"
+              className={`mb-6 p-4 sm:p-5 rounded-2xl border ${
+                isDark ? "bg-[#2a2415] border-amber-800/60 text-amber-100" : "bg-amber-50 border-amber-300 text-amber-950"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <InformationCircleIcon className="w-6 h-6 shrink-0 text-amber-600 mt-0.5" />
+                <div className="space-y-2 text-xs sm:text-sm leading-relaxed">
+                  <p className="font-bold text-sm sm:text-base">Read this before you register</p>
+                  <p>
+                    This form is <span className="font-bold">only for former undergraduate students who are no longer enrolled</span> and
+                    need to request documents.
+                  </p>
+                  <p>
+                    If you are <span className="font-bold">currently enrolled</span>, or you already have an OGOS/GUISIS account, do{" "}
+                    <span className="font-bold">not</span> register here. Go back to the home page and use{" "}
+                    <span className="font-bold">Log in with IDP</span> instead. Registering here with the same email can prevent you from
+                    logging in.
+                  </p>
+                  <p>
+                    Not sure how it works? Please read the guides or watch the tutorial videos on the home page first.{" "}
+                    <Link to="/" className="font-bold text-[#800000] underline underline-offset-2 hover:text-[#660000]">
+                      Back to home page
+                    </Link>
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-amber-300/70">
+                <CheckboxItem
+                  id="confirm_not_enrolled"
+                  name="confirm_not_enrolled"
+                  checked={form.confirm_not_enrolled}
+                  onChange={handleChange}
+                  isDark={isDark}
+                  textColor={isDark ? "text-amber-50" : "text-gray-900"}
+                  text="I confirm that I am not currently enrolled and I cannot log in with an OGOS/GUISIS account."
+                />
+                {errors.confirm_not_enrolled && (
+                  <p className="text-xs text-red-600 mt-1">{errors.confirm_not_enrolled[0]}</p>
+                )}
+              </div>
+            </div>
 
             <div className="flex flex-col gap-6 w-full">
               {/* Stepper Navigation Progress Header */}
