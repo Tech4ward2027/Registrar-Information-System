@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\SystemUserController;
 use App\Http\Controllers\StudentProfileController;
 use App\Http\Controllers\StudentAcademicRecordController;
+use App\Http\Controllers\AcademicRecordLookupController;
 use App\Http\Controllers\RequestStatusController;
 use App\Http\Controllers\DocumentTypeController;
 use App\Http\Controllers\CertificationTypeController;
@@ -527,7 +528,17 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::put('request-statuses/{id}',    [RequestStatusController::class, 'update']);
         Route::delete('request-statuses/{id}', [RequestStatusController::class, 'destroy']);
         Route::apiResource('students',         StudentProfileController::class);
-        Route::apiResource('academic-records', StudentAcademicRecordController::class);
+        // Student-specific certificate lookup (three-tier: enrolled -> alumni
+        // -> approved undergrad requester). MUST be registered before the
+        // apiResource below, or 'by-student' is captured as {academic_record}.
+        // Same gate as mark-certificates-generated (staff who can generate
+        // certificates); named throttle prefix so this counter isn't shared
+        // with the group's throttle:60,1 (see verify-or's comment).
+        Route::get('academic-records/by-student', AcademicRecordLookupController::class)
+            ->middleware(['module:dashboard,Process|Complete', 'throttle:30,1,academic-record-lookup']);
+        // No `index`: listing every academic record is deliberately not
+        // exposed — see AcademicRecordLookupController for the replacement.
+        Route::apiResource('academic-records', StudentAcademicRecordController::class)->except(['index']);
 
         Route::prefix('analytics')->middleware(['throttle:60,1', 'module:analytics'])->group(function () {
             Route::get('overview',         [AnalyticsController::class, 'overview']);
