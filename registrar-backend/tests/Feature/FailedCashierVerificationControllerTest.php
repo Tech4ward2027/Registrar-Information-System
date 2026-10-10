@@ -315,18 +315,27 @@ test('recheck regenerates candidates from the stored profile, never approves, an
         ->and(AuditLog::find($failed->id)->metadata['final_approved'])->toBeFalse();
 });
 
-test('recheck maps NOT_FOUND and API_ERROR outcomes', function () {
+// Two separate tests on purpose: the route (and its controller) is resolved once
+// per test application, so re-binding the cashier mock mid-test is ignored by a
+// second request. One fake per test keeps each outcome independent.
+test('recheck maps a NOT_FOUND lookup to the not_found outcome', function () {
     config(['services.cashier.api_key' => 'k']);
-    $student = fvStudent();
-    $a = fvFailure($student, '1');
-    $b = fvFailure($student, '2');
+    $failed = fvFailure(fvStudent(), '1');
     fvAdmin();
 
     fvFakeCashier(['valid' => false, 'reason' => 'NOT_FOUND', 'data' => null, 'matched_name' => null, 'attempts' => []]);
-    expect($this->postJson(FV_LIST . '/' . $a->id . '/recheck')->json('data.outcome'))->toBe('not_found');
+
+    expect($this->postJson(FV_LIST . '/' . $failed->id . '/recheck')->json('data.outcome'))->toBe('not_found');
+});
+
+test('recheck maps an API_ERROR lookup to the api_error outcome', function () {
+    config(['services.cashier.api_key' => 'k']);
+    $failed = fvFailure(fvStudent(), '2');
+    fvAdmin();
 
     fvFakeCashier(['valid' => false, 'reason' => 'API_ERROR', 'data' => null, 'matched_name' => null, 'attempts' => []]);
-    expect($this->postJson(FV_LIST . '/' . $b->id . '/recheck')->json('data.outcome'))->toBe('api_error');
+
+    expect($this->postJson(FV_LIST . '/' . $failed->id . '/recheck')->json('data.outcome'))->toBe('api_error');
 });
 
 test('recheck is unavailable in mock mode and makes no lookup', function () {
