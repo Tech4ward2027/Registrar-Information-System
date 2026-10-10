@@ -80,8 +80,41 @@
              can leak a real FEATURE_FREE_REQUEST_PAGE=false (or true)
              from the host .env into the run, same class of bug. -->
         <env name="FEATURE_FREE_REQUEST_PAGE" value="true" force="true"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
+        <!-- Cashier Reconciliation / System Health / AI label suggestions /
+             retired analytics AI: forced OFF so a host .env can never leak a
+             real value into the suite.
+             Both <env> and <server> are set on purpose. docker-compose's
+             `env_file: .env` puts these variables in the container's real
+             environment, which PHP exposes through $_SERVER; Laravel then
+             read the leaked "true" from $_SERVER even though <env force>
+             had overridden $_ENV/getenv(). (Observed: getenv()='' but
+             env()=true.) Overriding $_SERVER too closes that gap.
+             Value is "0", not "false": PHPUnit casts the literal strings
+             "true"/"false" to booleans, and false is stored as an empty
+             string, which is needlessly ambiguous. "0" is a plain string and
+             (bool)"0" === false in PHP.
+             Tests that need a flag on set it locally with
+             config(['features.<flag>' => true]). -->
+        <env name="FEATURE_AI_LABEL_SUGGESTIONS" value="0" force="true"/>
+        <env name="FEATURE_SYSTEM_HEALTH" value="0" force="true"/>
+        <env name="FEATURE_ANALYTICS_AI_LEGACY" value="0" force="true"/>
+        <server name="FEATURE_AI_LABEL_SUGGESTIONS" value="0" force="true"/>
+        <server name="FEATURE_SYSTEM_HEALTH" value="0" force="true"/>
+        <server name="FEATURE_ANALYTICS_AI_LEGACY" value="0" force="true"/>
+        <!-- Test database: forced to in-memory SQLite. Without force="true"
+             (and the <server> twins), docker-compose.local.yml's
+             `environment: DB_CONNECTION: mysql` wins, because PHPUnit never
+             overrides an already-set OS variable, and the suite runs
+             RefreshDatabase against the real local MySQL (ris_local):
+             slow, wipes dev data, and leaves rows behind that break
+             count-based assertions. Same leak class as the FEATURE_* flags
+             above. -->
+        <env name="DB_CONNECTION" value="sqlite" force="true"/>
+        <env name="DB_DATABASE" value=":memory:" force="true"/>
+        <env name="DB_URL" value="" force="true"/>
+        <server name="DB_CONNECTION" value="sqlite" force="true"/>
+        <server name="DB_DATABASE" value=":memory:" force="true"/>
+        <server name="DB_URL" value="" force="true"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

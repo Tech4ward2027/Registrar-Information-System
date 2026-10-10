@@ -39,6 +39,8 @@ use App\Http\Controllers\BusinessHoursController;
 use App\Http\Controllers\CalendarExceptionController;
 use App\Http\Controllers\CalendarOverrideController;
 use App\Http\Controllers\SuperAdminAnalyticsController;
+use App\Http\Controllers\FailedCashierVerificationController;
+use App\Http\Controllers\SystemHealthController;
 use App\Http\Controllers\SecurityEventController;
 use App\Http\Controllers\UndergradRequestorController;
 use App\Http\Controllers\UndergradRequestorVerificationController;
@@ -425,6 +427,45 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::post('cashier-overrides/{id}/revoke',  [CashierOrOverrideController::class, 'revoke']);
     });
 
+    // Cashier Reconciliation — unmatched cashier receipt labels, the
+    // admin review screen backing the naming-drift fix from
+    // CashierDocumentSuggester (see UnmatchedCashierItemController's
+    // class docblock). Previously these three routes sat in the bare
+    // 'role:3' group with NO module gate, so every registrar admin
+    // could call them regardless of policy. They now require the
+    // 'cashier_reconciliation' module; the
+    // 2026_10_05_000001_backfill_cashier_reconciliation_policy_access
+    // migration grants it to every existing non-zero-access policy so
+    // nobody loses access on deploy, and a super admin can narrow it
+    // afterwards. Super admin bypasses the module check as usual.
+    // Own throttle bucket ('unmatched-cashier-items') — see the
+    // verify-or route's comment for why an unprefixed throttle would
+    // share the outer group's counter. Writes get a tighter bucket.
+    Route::middleware(['role:3,4', 'module:cashier_reconciliation'])->group(function () {
+        Route::get('unmatched-cashier-items',               [UnmatchedCashierItemController::class, 'index'])
+            ->middleware('throttle:60,1,unmatched-cashier-items');
+        Route::post('unmatched-cashier-items/{id}/resolve', [UnmatchedCashierItemController::class, 'resolve'])
+            ->middleware('throttle:30,1,unmatched-cashier-items-write');
+        Route::post('unmatched-cashier-items/{id}/dismiss', [UnmatchedCashierItemController::class, 'dismiss'])
+            ->middleware('throttle:30,1,unmatched-cashier-items-write');
+
+        // Failed verifications (System Health Phase 5). Same module gate as
+        // the unmatched labels, plus the system_health flag (404 when off).
+        // Own named buckets; the re-check is the tightest. The feature
+        // check runs before throttling so a disabled route never spends the
+        // caller's rate limit.
+        Route::middleware('feature:system_health')->group(function () {
+            Route::get('failed-cashier-verifications', [FailedCashierVerificationController::class, 'index'])
+                ->middleware('throttle:60,1,failed-verifications');
+            Route::get('failed-cashier-verifications/{auditLogId}', [FailedCashierVerificationController::class, 'show'])
+                ->whereNumber('auditLogId')
+                ->middleware('throttle:60,1,failed-verification-detail');
+            Route::post('failed-cashier-verifications/{auditLogId}/recheck', [FailedCashierVerificationController::class, 'recheck'])
+                ->whereNumber('auditLogId')
+                ->middleware('throttle:10,1,failed-verification-recheck');
+        });
+    });
+
     // Free Document/Certificate Request (FESPEC-0008) — the admin
     // Free Request page. Staff on-behalf-of filing for the Free
     // Documents/Certificates Request Policy and the First Copy Free
@@ -549,15 +590,20 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::get('signature-turnaround', [AnalyticsController::class, 'signatureTurnaround']);
             Route::get('peak-hours',       [AnalyticsController::class, 'peakHours']);
             Route::get('by-purpose',       [AnalyticsController::class, 'byPurpose']);
+            // The two AI routes below are RETIRED behind
+            // 'feature:analytics_ai_legacy' (config/features.php, default
+            // false => 404). 'feature' is listed before 'throttle' so a
+            // disabled endpoint never consumes the caller's rate-limit
+            // budget. Code is kept until after the project defense.
             // Distinct prefixes below — see the verify-or route's comment
             // for why an unprefixed throttle stacked under the group's
             // throttle:60,1 shares its counter and trips at roughly half
             // its configured value.
             Route::post('ai-report', [AnalyticsController::class, 'aiReport'])
-                ->middleware('throttle:30,1,ai-report');
+                ->middleware(['feature:analytics_ai_legacy', 'throttle:30,1,ai-report']);
             // Phase 3 — Conversational NLQ
             Route::post('ai-query', [AiQueryController::class, 'query'])
-                ->middleware('throttle:30,1,ai-query');
+                ->middleware(['feature:analytics_ai_legacy', 'throttle:30,1,ai-query']);
         });
 
         Route::post('request-purposes',        [RequestPurposeController::class, 'store']);
@@ -571,13 +617,6 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::post('fulfillment-tracks',        [FulfillmentTrackController::class, 'store']);
         Route::put('fulfillment-tracks/{id}',    [FulfillmentTrackController::class, 'update']);
         Route::delete('fulfillment-tracks/{id}', [FulfillmentTrackController::class, 'destroy']);
-
-        // Unmatched cashier receipt labels — admin review screen backing
-        // the naming-drift fix from CashierDocumentSuggester. See
-        // UnmatchedCashierItemController's class docblock.
-        Route::get('unmatched-cashier-items',              [UnmatchedCashierItemController::class, 'index']);
-        Route::post('unmatched-cashier-items/{id}/resolve', [UnmatchedCashierItemController::class, 'resolve']);
-        Route::post('unmatched-cashier-items/{id}/dismiss', [UnmatchedCashierItemController::class, 'dismiss']);
 
         // Signatories (certificate signees) — admin-only end to end,
         // unlike document-types/certifications above whose GET is open to
@@ -641,6 +680,17 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::get('access-request-throughput',  [SuperAdminAnalyticsController::class, 'accessRequestThroughput']);
             Route::get('cashier-verification-health', [SuperAdminAnalyticsController::class, 'cashierVerificationHealth']);
             Route::get('scheduled-jobs-health',       [SuperAdminAnalyticsController::class, 'scheduledJobsHealth']);
+
+            // System Health (Phase 3): flag-gated. Reads rollups/alerts only.
+            // Acknowledge has its own named bucket and is audited.
+            Route::middleware('feature:system_health')->group(function () {
+                Route::get('cashier-trend',       [SystemHealthController::class, 'cashierTrend']);
+                Route::get('provisioning-health', [SystemHealthController::class, 'provisioningHealth']);
+                Route::get('alerts',              [SystemHealthController::class, 'alerts']);
+                Route::post('alerts/{alert}/acknowledge', [SystemHealthController::class, 'acknowledge'])
+                    ->whereNumber('alert')
+                    ->middleware('throttle:30,1,system-health-alert-ack');
+            });
         });
         Route::post('announcements',                      [AnnouncementController::class, 'store']);
         Route::put('announcements/{announcement}',        [AnnouncementController::class, 'update']);

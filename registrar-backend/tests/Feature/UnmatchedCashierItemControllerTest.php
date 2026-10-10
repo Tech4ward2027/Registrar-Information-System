@@ -3,6 +3,7 @@
 use App\Models\AuditLog;
 use App\Models\CertificationType;
 use App\Models\DocumentType;
+use App\Models\Policy;
 use App\Models\SystemUser;
 use App\Models\UnmatchedCashierItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -10,9 +11,48 @@ use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
 
+/**
+ * A registrar admin who HAS been granted the cashier_reconciliation
+ * module — the route group now requires it (previously these routes had
+ * no module gate at all). Use actingAsAdminWithoutReconciliation() for
+ * the negative cases.
+ */
 function actingAsAdmin(): SystemUser
 {
-    $admin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated']);
+    $policy = Policy::create([
+        'name'        => 'Reconciliation Staff ' . uniqid(),
+        'permissions' => ['cashier_reconciliation' => ['Access']],
+        'is_system'   => false,
+    ]);
+
+    $admin = SystemUser::factory()->create([
+        'role_id'   => SystemUser::ROLE_ADMIN,
+        'status'    => 'Activated',
+        'policy_id' => $policy->policy_id,
+    ]);
+    Sanctum::actingAs($admin);
+    return $admin;
+}
+
+function actingAsAdminWithoutReconciliation(?array $permissions = ['dashboard' => ['View', 'Process', 'Complete']]): SystemUser
+{
+    $policyId = null;
+
+    if ($permissions !== null) {
+        $policyId = Policy::create([
+            'name'        => 'Other Staff ' . uniqid(),
+            'permissions' => $permissions,
+            'is_system'   => false,
+        ])->policy_id;
+    }
+
+    // $permissions === null => no policy attached => falls back to the
+    // zero-access default policy (Policy::DEFAULT_NAME).
+    $admin = SystemUser::factory()->create([
+        'role_id'   => SystemUser::ROLE_ADMIN,
+        'status'    => 'Activated',
+        'policy_id' => $policyId,
+    ]);
     Sanctum::actingAs($admin);
     return $admin;
 }
@@ -47,6 +87,47 @@ test('a student cannot resolve an unmatched cashier item', function () {
     $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
         'document_type_id' => 1,
     ])->assertStatus(403);
+});
+
+test('an admin whose policy lacks cashier_reconciliation is forbidden from every unmatched-items route', function () {
+    $item = makeUnmatchedItem();
+    actingAsAdminWithoutReconciliation();
+
+    $this->getJson('/api/unmatched-cashier-items')->assertStatus(403);
+    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
+        'document_type_id' => 1,
+    ])->assertStatus(403);
+    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/dismiss")->assertStatus(403);
+
+    expect($item->fresh()->resolved_at)->toBeNull();
+});
+
+test('an admin with an explicitly empty cashier_reconciliation grant is forbidden', function () {
+    actingAsAdminWithoutReconciliation(['cashier_reconciliation' => []]);
+
+    $this->getJson('/api/unmatched-cashier-items')->assertStatus(403);
+});
+
+test('an admin with no policy attached falls back to zero access and is forbidden', function () {
+    actingAsAdminWithoutReconciliation(null);
+
+    $this->getJson('/api/unmatched-cashier-items')->assertStatus(403);
+});
+
+test('a super admin can list unmatched items without any policy (module bypass)', function () {
+    makeUnmatchedItem();
+    $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
+    Sanctum::actingAs($superAdmin);
+
+    $this->getJson('/api/unmatched-cashier-items')->assertOk();
+});
+
+test('the cashier_reconciliation grant is isolated from the cashier_overrides grant', function () {
+    // Holding the neighbouring Cashier OR Overrides module must not
+    // imply access to reconciliation, and vice versa.
+    actingAsAdminWithoutReconciliation(['cashier_overrides' => ['Access']]);
+
+    $this->getJson('/api/unmatched-cashier-items')->assertStatus(403);
 });
 
 // ═════════════════════════════════════════════════════════════════════════════

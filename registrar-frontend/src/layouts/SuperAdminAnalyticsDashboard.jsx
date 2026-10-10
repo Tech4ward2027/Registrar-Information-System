@@ -11,6 +11,9 @@ import {
   CreditCardIcon, InboxIcon, EllipsisHorizontalIcon,
 } from '@heroicons/react/24/outline';
 import DropdownGroup from '../components/DropDown';
+import {
+  useSystemHealthEnabled, AlertsFeed, CashierTrendPanel, RepeatFailurePanel, ProvisioningPanel,
+} from '../components/health/SystemHealthPanels';
 import { StatCardSkeleton, ChartCardSkeleton } from '../components/LoadingSkeleton';
 import {
   getAnalyticsOverview,
@@ -30,6 +33,26 @@ const RANGE_MAP = {
   'This Year':  'year',
   'All Time':   'all',
 };
+
+// System health tabs (?tab=). Same URL pattern the page already used.
+const TABS = [
+  { key: 'overview',     label: 'Overview',
+    title: 'System Health',
+    sub: 'System volume overview and access request throughput.' },
+  { key: 'cashier',      label: 'Cashier',
+    title: 'Cashier',
+    sub: 'Cashier verification health and the unresolved receipt-label backlog.' },
+  { key: 'provisioning', label: 'Sign-in & Provisioning',
+    title: 'Sign-in & Provisioning',
+    sub: 'OGOS / PUPTAPS provisioning health and sign-in outcomes.' },
+  { key: 'jobs',         label: 'Jobs',
+    title: 'Scheduled Jobs',
+    sub: 'Health of the scheduled background jobs.' },
+  { key: 'roster',       label: 'Roster',
+    title: 'Admin Roster Health',
+    sub: 'Live snapshot of admin role assignments, pending activations, and IDP sync failures.' },
+];
+const TAB_ALIASES = { analytics: 'overview' };
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '—';
@@ -62,10 +85,16 @@ const SuperAdminAnalyticsDashboard = () => {
   const { isDark } = useTheme();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  // System Health panels (alerts, trends) render only when FEATURE_SYSTEM_HEALTH
+  // is on; the endpoints also 404 server-side while it is off.
+  const healthEnabled = useSystemHealthEnabled();
 
-  const validTabs = ['analytics', 'roster'];
-  const tabFromUrl = searchParams.get('tab');
-  const activeTab = validTabs.includes(tabFromUrl) ? tabFromUrl : 'analytics';
+  // 'analytics' was the pre-split tab key; keep it as an alias so old
+  // bookmarks/links land on Overview instead of silently defaulting.
+  const rawTab = searchParams.get('tab');
+  const tabFromUrl = TAB_ALIASES[rawTab] ?? rawTab;
+  const activeTab = TABS.some((t) => t.key === tabFromUrl) ? tabFromUrl : 'overview';
+  const activeTabMeta = TABS.find((t) => t.key === activeTab) ?? TABS[0];
 
   const handleTabChange = (tabKey) => {
     setSearchParams({ tab: tabKey });
@@ -146,32 +175,22 @@ const SuperAdminAnalyticsDashboard = () => {
           ? 'bg-[#242526] border border-[#3e4042] shadow-[0_2px_8px_rgba(0,0,0,0.2)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.35)]'
           : 'bg-white border border-gray-200/80 shadow-[0_2px_8px_rgba(0,0,0,0.05)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.1)]'
           } gap-8 items-center`}>
-          <button
-            onClick={() => handleTabChange("analytics")}
-            className={`text-sm relative rounded-full flex items-center justify-center shrink-0 font-semibold transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer whitespace-nowrap ${activeTab === "analytics"
-              ? isDark
-                ? "text-yellow-400 font-bold"
-                : "text-pup-dark-maroon font-black"
-              : isDark
-                ? "text-[#b0b3b8] hover:text-white"
-                : "text-gray-500 hover:text-gray-900"
-              }`}
-          >
-            System Analytics
-          </button>
-          <button
-            onClick={() => handleTabChange("roster")}
-            className={`text-sm relative rounded-full flex items-center justify-center shrink-0 font-semibold transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer whitespace-nowrap ${activeTab === "roster"
-              ? isDark
-                ? "text-yellow-400 font-bold"
-                : "text-pup-dark-maroon font-black"
-              : isDark
-                ? "text-[#b0b3b8] hover:text-white"
-                : "text-gray-500 hover:text-gray-900"
-              }`}
-          >
-            Admin Roster Health
-          </button>
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => handleTabChange(tab.key)}
+              className={`text-sm relative rounded-full flex items-center justify-center shrink-0 font-semibold transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer whitespace-nowrap ${activeTab === tab.key
+                ? isDark
+                  ? "text-yellow-400 font-bold"
+                  : "text-pup-dark-maroon font-black"
+                : isDark
+                  ? "text-[#b0b3b8] hover:text-white"
+                  : "text-gray-500 hover:text-gray-900"
+                }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -182,16 +201,14 @@ const SuperAdminAnalyticsDashboard = () => {
         <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between gap-3 w-full">
           <div>
             <h1 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-              {activeTab === 'analytics' ? 'System Analytics' : 'Admin Roster Health'}
+              {activeTabMeta.title}
             </h1>
             <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-              {activeTab === 'analytics'
-                ? 'System volume overview, access request throughput, and cashier verification metrics.'
-                : 'Live snapshot of admin role assignments, pending activations, IDP sync failures, and scheduled jobs health.'}
+              {activeTabMeta.sub}
             </p>
           </div>
 
-          {activeTab === 'analytics' && (
+          {(activeTab === 'overview' || activeTab === 'cashier') && (
             <div className="w-full sm:w-44">
               <DropdownGroup
                 name="dateRange"
@@ -209,8 +226,10 @@ const SuperAdminAnalyticsDashboard = () => {
           </div>
         )}
 
-        {activeTab === 'analytics' ? (
+        {activeTab === 'overview' && (
           <>
+            {healthEnabled && <AlertsFeed isDark={isDark} />}
+
             {/* ── System volume (reuses existing /analytics endpoints) ── */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               {loading || !overview
@@ -366,6 +385,15 @@ const SuperAdminAnalyticsDashboard = () => {
                 )
               }
 
+            </div>
+          </>
+        )}
+
+        {/* ── Cashier tab ── */}
+        {activeTab === 'cashier' && (
+          <div className="space-y-6">
+          {healthEnabled && <CashierTrendPanel isDark={isDark} />}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
               {loading || !cashierHealth
                 ? <ChartCardSkeleton isDark={isDark} />
                 : (
@@ -496,7 +524,7 @@ const SuperAdminAnalyticsDashboard = () => {
                       {cashierHealth.unresolved_backlog > 0 && (
                         <div className="pt-2">
                           <Link
-                            to="/super-admin/documents?tab=unmatched-cashier"
+                            to="/super-admin/cashier-reconciliation?tab=unmatched"
                             className={`inline-flex items-center gap-1 text-xs font-bold ${
                               isDark ? 'text-amber-400 hover:text-amber-300' : 'text-[#800000] hover:text-maroon-700'
                             } hover:underline`}
@@ -509,10 +537,26 @@ const SuperAdminAnalyticsDashboard = () => {
                   </PanelCard>
                 )
               }
-            </div>
-          </>
-        ) : (
-          /* ── Admin roster health + Scheduled jobs health ── */
+          </div>
+          {healthEnabled && <RepeatFailurePanel isDark={isDark} />}
+          </div>
+        )}
+
+        {/* ── Sign-in & Provisioning tab (data arrives in a later phase) ── */}
+        {activeTab === 'provisioning' && (
+          healthEnabled
+            ? <ProvisioningPanel isDark={isDark} />
+            : (
+              <PanelCard isDark={isDark} title="Sign-in & Provisioning" icon={<ServerIcon className="w-5 h-5" />}>
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  OGOS and PUPTAPS provisioning health will appear here once System Health tracking is enabled for this environment.
+                </p>
+              </PanelCard>
+            )
+        )}
+
+        {/* ── Roster tab ── */}
+        {activeTab === 'roster' && (
           <div className="space-y-6">
             <div>
               <ChartHeader isDark={isDark} />
@@ -652,7 +696,12 @@ const SuperAdminAnalyticsDashboard = () => {
                 )
               }
             </div>
+          </div>
+        )}
 
+        {/* ── Jobs tab ── */}
+        {activeTab === 'jobs' && (
+          <div className="space-y-6">
             {/* ── Scheduled jobs health ── */}
             <div>
               <ChartHeader isDark={isDark} />

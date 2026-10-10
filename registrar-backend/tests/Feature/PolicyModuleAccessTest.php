@@ -332,3 +332,90 @@ test('Registrar Staff admin can reach document-requests counts', function () {
 
     $this->getJson('/api/document-requests/counts')->assertStatus(200);
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Cashier Reconciliation module (Phase 1)
+// ═════════════════════════════════════════════════════════════════════════════
+
+test('cashier_reconciliation is a registered single-token policy module', function () {
+    expect(Policy::MODULE_KEYS)->toContain('cashier_reconciliation')
+        ->and(Policy::actionsFor('cashier_reconciliation'))->toBe(['Access']);
+});
+
+test('admin with cashier_reconciliation Access passes the module check and one without does not', function () {
+    $granted = Policy::create([
+        'name' => 'Recon Granted', 'permissions' => ['cashier_reconciliation' => ['Access']], 'is_system' => false,
+    ]);
+    $denied = Policy::create([
+        'name' => 'Recon Denied', 'permissions' => ['cashier_reconciliation' => []], 'is_system' => false,
+    ]);
+
+    $a = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated', 'policy_id' => $granted->policy_id]);
+    $b = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated', 'policy_id' => $denied->policy_id]);
+
+    expect($a->hasModuleAccess('cashier_reconciliation'))->toBeTrue()
+        ->and($b->hasModuleAccess('cashier_reconciliation'))->toBeFalse();
+});
+
+test('a super admin can save a policy that grants cashier_reconciliation', function () {
+    $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN]);
+    Sanctum::actingAs($superAdmin);
+
+    $this->postJson('/api/policies', [
+        'name'        => 'Reconciliation Only',
+        'permissions' => ['cashier_reconciliation' => ['Access']],
+    ])->assertStatus(201);
+
+    expect(Policy::where('name', 'Reconciliation Only')->first()->permissions['cashier_reconciliation'])
+        ->toBe(['Access']);
+});
+
+function runReconciliationBackfill(string $direction = 'up'): void
+{
+    $migration = require database_path('migrations/2026_10_05_000001_backfill_cashier_reconciliation_policy_access.php');
+    $migration->{$direction}();
+}
+
+test('backfill grants cashier_reconciliation to existing policies but never to the zero-access default', function () {
+    $legacy = Policy::create([
+        'name' => 'Legacy Custom', 'permissions' => ['dashboard' => ['View']], 'is_system' => false,
+    ]);
+    $zero = seedZeroAccessDefaultPolicy();
+    $zero->update(['permissions' => ['dashboard' => []]]);
+
+    runReconciliationBackfill();
+
+    expect($legacy->fresh()->permissions['cashier_reconciliation'])->toBe(['Access'])
+        ->and($legacy->fresh()->permissions['dashboard'])->toBe(['View'])
+        ->and($zero->fresh()->permissions)->not->toHaveKey('cashier_reconciliation');
+});
+
+test('backfill is idempotent and never overwrites a deliberately narrowed grant', function () {
+    $narrowed = Policy::create([
+        'name' => 'Narrowed', 'permissions' => ['cashier_reconciliation' => []], 'is_system' => false,
+    ]);
+
+    runReconciliationBackfill();
+    runReconciliationBackfill();
+
+    expect($narrowed->fresh()->permissions['cashier_reconciliation'])->toBe([]);
+});
+
+test('backfill rollback removes the key from every policy', function () {
+    $policy = Policy::create([
+        'name' => 'To Roll Back', 'permissions' => ['cashier_reconciliation' => ['Access'], 'inbox' => ['Access']], 'is_system' => false,
+    ]);
+
+    runReconciliationBackfill('down');
+
+    expect($policy->fresh()->permissions)->not->toHaveKey('cashier_reconciliation')
+        ->and($policy->fresh()->permissions['inbox'])->toBe(['Access']);
+});
+
+test('the seeded Registrar Staff policy keeps access to reconciliation after the backfill', function () {
+    runReconciliationBackfill();
+
+    $registrar = Policy::where('name', 'Registrar Staff')->first();
+    expect($registrar)->not->toBeNull()
+        ->and($registrar->permissions['cashier_reconciliation'] ?? null)->toBe(['Access']);
+});

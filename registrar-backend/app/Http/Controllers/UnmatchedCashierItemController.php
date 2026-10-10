@@ -60,6 +60,15 @@ class UnmatchedCashierItemController extends Controller
             ->orderByDesc('last_seen_at')
             ->paginate($request->integer('per_page', 25));
 
+        // Suggestions ship with the ai_label_suggestions flag: with it off
+        // the screen behaves exactly as before, even if rows still carry
+        // suggestions computed while the flag was on.
+        if (!config('features.ai_label_suggestions', false)) {
+            $items->getCollection()->each->makeHidden([
+                'suggestions', 'suggestion_source', 'suggested_at', 'suggestion_accepted',
+            ]);
+        }
+
         return response()->json($items, 200);
     }
 
@@ -130,7 +139,16 @@ class UnmatchedCashierItemController extends Controller
             ], 422);
         }
 
-        DB::transaction(function () use ($item, $target, $actor) {
+        // Did the admin pick the top-ranked suggestion? Null when the row
+        // had no suggestions (feature off, job not run, nothing matched) so
+        // the acceptance rate is only ever measured over rows that had one.
+        $suggestionAccepted = $this->suggestionAccepted(
+            $item,
+            $isDocument ? 'document' : 'certificate',
+            (int) $target->getKey(),
+        );
+
+        DB::transaction(function () use ($item, $target, $actor, $suggestionAccepted) {
             $patterns = $target->cashier_document_patterns ?? [];
 
             $alreadyPresent = collect($patterns)->contains(
@@ -143,8 +161,9 @@ class UnmatchedCashierItemController extends Controller
             }
 
             $item->forceFill([
-                'resolved_at' => now(),
-                'resolved_by' => $actor->user_id,
+                'resolved_at'         => now(),
+                'resolved_by'         => $actor->user_id,
+                'suggestion_accepted' => $suggestionAccepted,
             ])->save();
         });
 
@@ -155,6 +174,9 @@ class UnmatchedCashierItemController extends Controller
             'attached_to_type'          => $isDocument ? 'document' : 'certificate',
             'attached_to_id'            => $target->getKey(),
             'attached_to_name'          => $target->document_name ?? $target->certificate_name,
+            // Catalogue metadata only — no personal data.
+            'suggestion_source'         => $item->suggestion_source,
+            'suggestion_accepted'       => $suggestionAccepted,
         ]);
 
         return response()->json($item->fresh(), 200);
@@ -195,5 +217,26 @@ class UnmatchedCashierItemController extends Controller
         ]);
 
         return response()->json($item->fresh(), 200);
+    }
+
+    /**
+     * Compare the admin's chosen target with the stored top suggestion.
+     *
+     * @param 'document'|'certificate' $kind
+     */
+    private function suggestionAccepted(UnmatchedCashierItem $item, string $kind, int $targetId): ?bool
+    {
+        $suggestions = $item->suggestions;
+
+        if (!is_array($suggestions) || $suggestions === []) {
+            return null;
+        }
+
+        $top = $suggestions[0] ?? null;
+        if (!is_array($top) || !isset($top['type'], $top['id'])) {
+            return null;
+        }
+
+        return $top['type'] === $kind && (int) $top['id'] === $targetId;
     }
 }

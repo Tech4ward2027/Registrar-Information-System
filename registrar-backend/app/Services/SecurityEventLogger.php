@@ -41,6 +41,17 @@ use Illuminate\Support\Facades\Log;
  */
 class SecurityEventLogger
 {
+    /**
+     * Provisioning-failure events held back while a caller's database
+     * transaction is open. See deferProvisioningFailures().
+     *
+     * @var array<int, array{reason:string,email:?string,httpStatus:?int}>
+     */
+    private array $deferredProvisioningFailures = [];
+
+    /** Nesting depth of deferProvisioningFailures() calls. */
+    private int $deferDepth = 0;
+
     public function __construct(
         private NotificationServiceInterface $notificationService,
     ) {}
@@ -209,6 +220,120 @@ class SecurityEventLogger
                 'bucket'          => $bucket,
                 'dedupe_minutes'  => $dedupeMinutes,
             ],
+        );
+    }
+
+    // -------------------------------------------------------
+    // Cashier Reconciliation / System Health — Phase 2a. An OGOS or
+    // PUPTAPS lookup failed during login provisioning.
+    //
+    // Best-effort by contract: this method never throws and never
+    // alters the caller's control flow. A logging failure must not
+    // break a login (see write()). Not burst-alerted here — alerting on
+    // provisioning health is Phase 3's detector, which reads these rows.
+    //
+    // PRIVACY: metadata is a fixed allow-list (system + HTTP status).
+    // The upstream exception MESSAGE is deliberately NOT stored: OGOS /
+    // PUPTAPS messages embed request paths and query strings that can
+    // contain an email or student number. $email goes only in the
+    // existing `email` column, same as every other event on this table.
+    //
+    // Works from HTTP and queue/console contexts alike: it resolves the
+    // current request (a blank one outside HTTP), so ip/user_agent are
+    // simply null when there is no request.
+    //
+    // @param string $reason  one of SecurityEvent::PROVISIONING_REASON_SYSTEM's keys
+    // -------------------------------------------------------
+    public function recordProvisioningFailed(
+        string  $reason,
+        ?string $email = null,
+        ?int    $httpStatus = null,
+    ): ?SecurityEvent {
+        $system = SecurityEvent::PROVISIONING_REASON_SYSTEM[$reason] ?? null;
+
+        if ($system === null) {
+            // A typo'd reason would create an event no rollup can group.
+            $this->safeLog('warning', '[SecurityEventLogger] unknown provisioning failure reason', [
+                'reason' => $reason,
+            ]);
+
+            return null;
+        }
+
+        // Inside deferProvisioningFailures(): hold the event in memory and
+        // write it once the caller's transaction has finished (see below).
+        if ($this->deferDepth > 0) {
+            $this->deferredProvisioningFailures[] = [
+                'reason'     => $reason,
+                'email'      => $email,
+                'httpStatus' => $httpStatus,
+            ];
+
+            return null;
+        }
+
+        return $this->writeProvisioningFailed($reason, $system, $email, $httpStatus);
+    }
+
+    // -------------------------------------------------------
+    // Run $callback with provisioning-failure events held in memory, then
+    // write them AFTER it returns or throws.
+    //
+    // WHY THIS EXISTS. UserProvisioningService runs its OGOS/PUPTAPS
+    // "is this person a student or alumnus?" lookups INSIDE a
+    // DB::transaction(), and a brand-new user who is then refused
+    // (UnregisteredAccountException) makes that transaction roll back.
+    // An event written inside it would be rolled back with it — and "a
+    // new student was turned away because OGOS was down" is exactly the
+    // case this signal exists to capture. Writing after the transaction
+    // has ended means the record survives the refusal.
+    //
+    // Scoped and bounded: events are buffered only for the duration of
+    // the callback and always flushed in `finally`, so nothing lingers
+    // in this singleton across requests or queue jobs. Re-entrant: only
+    // the outermost call flushes. Flushing never throws (write() is
+    // best-effort), so it can never replace the caller's own exception.
+    //
+    // @template T
+    // @param  callable(): T $callback
+    // @return T
+    // -------------------------------------------------------
+    public function deferProvisioningFailures(callable $callback): mixed
+    {
+        $this->deferDepth++;
+
+        try {
+            return $callback();
+        } finally {
+            $this->deferDepth--;
+
+            if ($this->deferDepth === 0) {
+                $pending = $this->deferredProvisioningFailures;
+                $this->deferredProvisioningFailures = [];
+
+                foreach ($pending as $failure) {
+                    $this->writeProvisioningFailed(
+                        $failure['reason'],
+                        SecurityEvent::PROVISIONING_REASON_SYSTEM[$failure['reason']],
+                        $failure['email'],
+                        $failure['httpStatus'],
+                    );
+                }
+            }
+        }
+    }
+
+    private function writeProvisioningFailed(string $reason, string $system, ?string $email, ?int $httpStatus): ?SecurityEvent
+    {
+        return $this->write(
+            eventType: SecurityEvent::EVENT_TYPE_PROVISIONING_FAILED,
+            email:     $email,
+            reason:    $reason,
+            request:   request(),
+            metadata:  array_filter([
+                'system'      => $system,
+                'http_status' => $httpStatus,
+            ], fn ($v) => $v !== null),
         );
     }
 
