@@ -112,7 +112,9 @@ export const searchGrantableUsers = (q) => api.get("/role-assignments/search-use
 // -------------------------------------------------------
 // ACADEMIC RECORDS
 // -------------------------------------------------------
-export const getAcademicRecords = ()         => api.get("/academic-records");
+// Single-record lookup (enrolled -> alumni -> undergrad requester). The
+// list-all endpoint was removed server-side.
+export const getAcademicRecordByStudent = (studentNum) => api.get("/academic-records/by-student", { params: { student_num: studentNum } });
 export const getAcademicRecord  = (id)       => api.get(`/academic-records/${id}`);
 
 // -------------------------------------------------------
