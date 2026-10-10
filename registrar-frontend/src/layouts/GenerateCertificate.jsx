@@ -3,7 +3,7 @@ import InputGroup from "../components/InputGroup.jsx";
 import { useTheme } from "../context/ThemeContext";
 import { useReferenceData } from "../context/ReferenceDataContext";
 import { PrinterIcon } from "@heroicons/react/24/solid";
-import { getAcademicRecords, getCertifications, getCertificationLayouts, markCertificatesGenerated } from "../services/api";
+import { getAcademicRecordByStudent, getCertifications, getCertificationLayouts, markCertificatesGenerated } from "../services/api";
 import { CertHeader, CertFooter, getTodayDate } from "../utils/helpers.jsx";
 import { CERT_CONFIG } from "../utils/Certification.jsx";
 import DropDown from "../components/DropDown.jsx";
@@ -355,32 +355,33 @@ useEffect(() => {
   useEffect(() => {
     if (formData.course && formData.studentNum) return;
     const studentNum = initialData?.studentNum;
-    const studentId  = initialData?.studentId;
+    if (!studentNum) return;
     const fetch = async () => {
       try {
         setLoading(true);
-        const res = await getAcademicRecords();
-        const records = Array.isArray(res?.data?.data) ? res.data.data : (Array.isArray(res?.data) ? res.data : []);
-        const record = records.find(
-          (r) => r.student_number === studentNum || r.student_id === studentId
-        );
+        const res = await getAcademicRecordByStudent(studentNum);
+        const record = res?.data?.data;
         if (record) {
           const educationLevel = ["Alumni", "Graduated"].includes(record.status) ? "Graduate" : "Undergraduate";
           setFormData((prev) => ({
             ...prev,
             course: record.course || prev.course,
             studentNum: record.student_number || prev.studentNum,
+            officialReceiptNum: prev.officialReceiptNum || record.or_number || prev.officialReceiptNum,
             educationLevel,
           }));
         }
       } catch (err) {
-        console.error("Error fetching course data:", err);
+        // 404 = no record on file; the form stays editable by hand.
+        if (err?.response?.status !== 404) {
+          console.error("Error fetching course data:", err);
+        }
       } finally {
         setLoading(false)
       }
     };
     fetch();
-  }, [initialData?.studentNum, initialData?.studentId]);
+  }, [initialData?.studentNum]);
 
   // Create display options (names) in the order of docTypeOptions
   const docTypeDisplayOptions = useMemo(() =>
