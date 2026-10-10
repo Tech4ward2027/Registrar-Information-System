@@ -265,6 +265,16 @@ test('a refused new user does not lose the outage events to the provisioning tra
     // alumni client is pointed at a closed local port (connection refused).
     config(['alumni.base_url' => 'http://127.0.0.1:9', 'alumni.token' => 'x']);
 
+    // The container picks the fake client when ALUMNI_MOCK is truthy (CI may
+    // set it), and the fake never records a failure. This test needs the REAL
+    // client, wired to the shared logger singleton so the deferral buffer is
+    // the same instance provision() uses. instance() overrides the provider's
+    // bind(), so the environment no longer matters.
+    $this->app->instance(
+        AlumniSystemClientInterface::class,
+        new AlumniSystemClient(app(SecurityEventLogger::class)),
+    );
+
     $ogosClient = Mockery::mock(OgosClient::class);
     $ogosClient->shouldReceive('getStudentByEmail')->once()->andThrow(new OgosException('connection error', 503));
 
