@@ -114,6 +114,9 @@ class AuditLog extends Model
     public const ACTION_CERTIFICATE_TYPE_CREATED  = 'certificate_type_created';
     public const ACTION_CERTIFICATE_TYPE_UPDATED  = 'certificate_type_updated';
     public const ACTION_CERTIFICATE_TYPE_DELETED  = 'certificate_type_deleted';
+    // One row per bulk layout save (PUT /certifications/layouts/bulk) — records
+    // every certificate_type_id touched and which layout fields changed.
+    public const ACTION_CERTIFICATE_LAYOUTS_BULK_UPDATED = 'certificate_layouts_bulk_updated';
 
     // Logbook category lookup table (see LogbookCategoryController) —
     // previously unaudited entirely, same gap as document/certificate
@@ -187,18 +190,6 @@ class AuditLog extends Model
     // Cashier System's own availability, not a name/OR mismatch worth
     // cross-checking against OGOS/the alumni system.
     public const ACTION_CASHIER_VERIFICATION_ENRICHED = 'cashier_verification_enriched';
-
-    // System Health — a Super Admin acknowledged a system alert. Metadata
-    // only (alert id/type/metric); no personal data.
-    public const ACTION_SYSTEM_ALERT_ACKNOWLEDGED = 'system_alert_acknowledged';
-
-    // Cashier Reconciliation > Failed verifications (System Health Phase 5).
-    // VIEWED: staff opened the detail of one failed OR verification (who
-    // looked at whose failure record). RECHECKED: staff re-ran the Cashier
-    // lookup for that stored failure. Metadata only: row id, outcome,
-    // counts. Never names, and never the OR number.
-    public const ACTION_FAILED_VERIFICATION_VIEWED    = 'failed_verification_viewed';
-    public const ACTION_FAILED_VERIFICATION_RECHECKED = 'failed_verification_rechecked';
 
     // Unmatched cashier receipt labels — admin resolution (see
     // UnmatchedCashierItem, CashierDocumentSuggester)

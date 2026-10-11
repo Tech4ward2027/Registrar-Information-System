@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\ArchivedCertificationTypesException;
 use App\Http\Requests\CertificationType\ArchiveCertificationTypeRequest;
+use App\Http\Requests\CertificationType\BulkUpdateCertificationLayoutsRequest;
 use App\Http\Requests\CertificationType\StoreCertificationTypeRequest;
 use App\Http\Requests\CertificationType\UpdateCertificationLayoutRequest;
 use App\Http\Requests\CertificationType\UpdateCertificationTypeRequest;
@@ -12,6 +14,7 @@ use App\Models\CertificationType;
 use App\Models\SystemUser;
 use App\Services\AuditLogger;
 use App\Services\CashierPatternSanitizer;
+use App\Services\CertificationLayoutService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +28,10 @@ use Illuminate\Support\Facades\Storage;
  */
 class CertificationTypeController extends Controller
 {
-    public function __construct(private AuditLogger $auditLogger) {}
+    public function __construct(
+        private AuditLogger $auditLogger,
+        private CertificationLayoutService $layoutService,
+    ) {}
 
     private function certColumns(): array
     {
@@ -337,6 +343,31 @@ class CertificationTypeController extends Controller
         return response()->json([
             'message' => 'Certification layout updated successfully',
             'data'    => $cert->fresh(),
+        ], 200);
+    }
+
+    /**
+     * PUT /certifications/layouts/bulk — update several layouts atomically.
+     * All-or-nothing: if any certificate is archived (423) nothing is saved.
+     */
+    public function bulkUpdateLayouts(BulkUpdateCertificationLayoutsRequest $request)
+    {
+        /** @var SystemUser $actor */
+        $actor = Auth::user();
+
+        try {
+            $updated = $this->layoutService->bulkUpdate($request, $actor, $request->validated('layouts'));
+        } catch (ArchivedCertificationTypesException $e) {
+            return response()->json([
+                'message' => 'One or more certificates are archived — their templates are read-only. Restore them or remove them from the request. No changes were saved.',
+                'archived_certificate_type_ids' => $e->certificateTypeIds,
+            ], 423); // 423 Locked, same as the single-item endpoint
+        }
+
+        return response()->json([
+            'message'       => 'Certification layouts updated successfully',
+            'updated_count' => $updated->count(),
+            'data'          => $updated,
         ], 200);
     }
 
