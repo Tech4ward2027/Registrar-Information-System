@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAlertToast } from "../context/AlertToastContext";
 import { useAuth } from "../context/AuthProvider";
 import { useTheme } from "../context/ThemeContext";
+import { useAccessibility } from "../context/AccessibilityContext";
 import useVoiceRecognition from "../utils/useVoiceRecognition";
 import { matchCommand, resolveVoiceRoute } from "../utils/voiceCommands";
 import ConfirmationModal from "./ConfirmationModal";
@@ -13,6 +14,7 @@ const FloatingActionMenu = () => {
   const { showError } = useAlertToast();
   const { user, logout } = useAuth();
   const { setTheme, toggleTheme } = useTheme();
+  const { toggleAccessibility } = useAccessibility();
   const navigate = useNavigate();
   const menuRef = useRef(null);
 
@@ -43,13 +45,7 @@ const FloatingActionMenu = () => {
   }, []);
 
   const handleAccessibilityClick = () => {
-    const siennaBtn = document.querySelector(".asw-menu-btn");
-    if (siennaBtn) {
-      siennaBtn.click();
-    } else {
-      console.warn("Sienna Accessibility widget launcher button (.asw-menu-btn) not found in the DOM.");
-      showError("The accessibility widget is still loading. Please try again in a moment.");
-    }
+    toggleAccessibility();
   };
 
   // -------------------------------------------------------
@@ -127,7 +123,7 @@ const FloatingActionMenu = () => {
       setIsOpen(false);
       navigate(path);
     }
-  }, [showError, navigate, user, setTheme, toggleTheme]);
+  }, [navigate, user, setTheme, toggleTheme, showError]);
 
   const handleVoiceError = useCallback(() => {
     showError("We couldn't access the microphone. Please check your browser permissions.");
