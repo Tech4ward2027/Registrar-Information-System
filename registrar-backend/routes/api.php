@@ -3,6 +3,8 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\SystemUserController;
 use App\Http\Controllers\StudentProfileController;
+use App\Http\Controllers\FailedCashierVerificationController;
+use App\Http\Controllers\SystemHealthController;
 use App\Http\Controllers\StudentAcademicRecordController;
 use App\Http\Controllers\AcademicRecordLookupController;
 use App\Http\Controllers\RequestStatusController;
@@ -562,11 +564,13 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             // for why an unprefixed throttle stacked under the group's
             // throttle:60,1 shares its counter and trips at roughly half
             // its configured value.
+            // 'feature:analytics_ai_legacy' — retired narrative card, fail
+            // closed (404) unless the flag is explicitly enabled.
             Route::post('ai-report', [AnalyticsController::class, 'aiReport'])
-                ->middleware('throttle:30,1,ai-report');
+                ->middleware(['feature:analytics_ai_legacy', 'throttle:30,1,ai-report']);
             // Phase 3 — Conversational NLQ
             Route::post('ai-query', [AiQueryController::class, 'query'])
-                ->middleware('throttle:30,1,ai-query');
+                ->middleware(['feature:analytics_ai_legacy', 'throttle:30,1,ai-query']);
         });
 
         Route::post('request-purposes',        [RequestPurposeController::class, 'store']);
@@ -584,9 +588,23 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         // Unmatched cashier receipt labels — admin review screen backing
         // the naming-drift fix from CashierDocumentSuggester. See
         // UnmatchedCashierItemController's class docblock.
-        Route::get('unmatched-cashier-items',              [UnmatchedCashierItemController::class, 'index']);
-        Route::post('unmatched-cashier-items/{id}/resolve', [UnmatchedCashierItemController::class, 'resolve']);
-        Route::post('unmatched-cashier-items/{id}/dismiss', [UnmatchedCashierItemController::class, 'dismiss']);
+        // Gated on the 'cashier_reconciliation' policy module (Super Admin
+        // bypasses it), independent of 'cashier_overrides'.
+        Route::middleware('module:cashier_reconciliation')->group(function () {
+            Route::get('unmatched-cashier-items',              [UnmatchedCashierItemController::class, 'index']);
+            Route::post('unmatched-cashier-items/{id}/resolve', [UnmatchedCashierItemController::class, 'resolve']);
+            Route::post('unmatched-cashier-items/{id}/dismiss', [UnmatchedCashierItemController::class, 'dismiss']);
+
+            // Failed cashier verifications (System Health). Dark (404) while
+            // the 'system_health' flag is off. See the controller docblock.
+            Route::prefix('failed-cashier-verifications')
+                ->middleware(['feature:system_health', 'throttle:60,1,failed-cashier-verifications'])
+                ->group(function () {
+                    Route::get('/',                       [FailedCashierVerificationController::class, 'index']);
+                    Route::get('{auditLogId}',            [FailedCashierVerificationController::class, 'show'])->whereNumber('auditLogId');
+                    Route::post('{auditLogId}/recheck',   [FailedCashierVerificationController::class, 'recheck'])->whereNumber('auditLogId');
+                });
+        });
 
         // Signatories (certificate signees) — admin-only end to end,
         // unlike document-types/certifications above whose GET is open to
@@ -650,6 +668,14 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::get('access-request-throughput',  [SuperAdminAnalyticsController::class, 'accessRequestThroughput']);
             Route::get('cashier-verification-health', [SuperAdminAnalyticsController::class, 'cashierVerificationHealth']);
             Route::get('scheduled-jobs-health',       [SuperAdminAnalyticsController::class, 'scheduledJobsHealth']);
+
+            // System Health — dark (404) while the 'system_health' flag is off.
+            Route::middleware('feature:system_health')->group(function () {
+                Route::get('cashier-trend',                  [SystemHealthController::class, 'cashierTrend']);
+                Route::get('provisioning-health',            [SystemHealthController::class, 'provisioningHealth']);
+                Route::get('alerts',                         [SystemHealthController::class, 'alerts']);
+                Route::post('alerts/{alert}/acknowledge',    [SystemHealthController::class, 'acknowledge'])->whereNumber('alert');
+            });
         });
         Route::post('announcements',                      [AnnouncementController::class, 'store']);
         Route::put('announcements/{announcement}',        [AnnouncementController::class, 'update']);

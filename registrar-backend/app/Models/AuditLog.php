@@ -296,6 +296,17 @@ class AuditLog extends Model
     public const ACTION_UNDERGRAD_REQUESTOR_PII_PURGED      = 'undergrad_requestor_pii_purged';
 
     // -------------------------------------------------------
+    // System Health (feature flag: system_health)
+    // -------------------------------------------------------
+    // A Super Admin acknowledged an open system alert.
+    public const ACTION_SYSTEM_ALERT_ACKNOWLEDGED       = 'system_alert_acknowledged';
+    // Staff opened a failed cashier verification's detail (access record —
+    // the detail view exposes OR/attempt data, so reads are audited).
+    public const ACTION_FAILED_VERIFICATION_VIEWED      = 'failed_verification_viewed';
+    // Staff re-ran a failed verification against the Cashier API.
+    public const ACTION_FAILED_VERIFICATION_RECHECKED   = 'failed_verification_rechecked';
+
+    // -------------------------------------------------------
     // Relationship back to the acting user (nullable — may be deleted)
     // -------------------------------------------------------
     public function user()
