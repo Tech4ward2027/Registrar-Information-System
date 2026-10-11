@@ -114,8 +114,8 @@ class AuditLog extends Model
     public const ACTION_CERTIFICATE_TYPE_CREATED  = 'certificate_type_created';
     public const ACTION_CERTIFICATE_TYPE_UPDATED  = 'certificate_type_updated';
     public const ACTION_CERTIFICATE_TYPE_DELETED  = 'certificate_type_deleted';
-    // One row per bulk layout save (PUT /certifications/layouts/bulk) — records
-    // every certificate_type_id touched and which layout fields changed.
+    // PUT /certifications/layouts/bulk — one entry per bulk save (not per row);
+    // metadata carries the certificate_type_ids touched. See CertificationLayoutService.
     public const ACTION_CERTIFICATE_LAYOUTS_BULK_UPDATED = 'certificate_layouts_bulk_updated';
 
     // Logbook category lookup table (see LogbookCategoryController) —
@@ -190,6 +190,18 @@ class AuditLog extends Model
     // Cashier System's own availability, not a name/OR mismatch worth
     // cross-checking against OGOS/the alumni system.
     public const ACTION_CASHIER_VERIFICATION_ENRICHED = 'cashier_verification_enriched';
+
+    // System Health — a Super Admin acknowledged a system alert. Metadata
+    // only (alert id/type/metric); no personal data.
+    public const ACTION_SYSTEM_ALERT_ACKNOWLEDGED = 'system_alert_acknowledged';
+
+    // Cashier Reconciliation > Failed verifications (System Health Phase 5).
+    // VIEWED: staff opened the detail of one failed OR verification (who
+    // looked at whose failure record). RECHECKED: staff re-ran the Cashier
+    // lookup for that stored failure. Metadata only: row id, outcome,
+    // counts. Never names, and never the OR number.
+    public const ACTION_FAILED_VERIFICATION_VIEWED    = 'failed_verification_viewed';
+    public const ACTION_FAILED_VERIFICATION_RECHECKED = 'failed_verification_rechecked';
 
     // Unmatched cashier receipt labels — admin resolution (see
     // UnmatchedCashierItem, CashierDocumentSuggester)
@@ -294,17 +306,6 @@ class AuditLog extends Model
     // shares the same hash chain as every interactive write, so a
     // retention action is exactly as tamper-evident as a decision.
     public const ACTION_UNDERGRAD_REQUESTOR_PII_PURGED      = 'undergrad_requestor_pii_purged';
-
-    // -------------------------------------------------------
-    // System Health (feature flag: system_health)
-    // -------------------------------------------------------
-    // A Super Admin acknowledged an open system alert.
-    public const ACTION_SYSTEM_ALERT_ACKNOWLEDGED       = 'system_alert_acknowledged';
-    // Staff opened a failed cashier verification's detail (access record —
-    // the detail view exposes OR/attempt data, so reads are audited).
-    public const ACTION_FAILED_VERIFICATION_VIEWED      = 'failed_verification_viewed';
-    // Staff re-ran a failed verification against the Cashier API.
-    public const ACTION_FAILED_VERIFICATION_RECHECKED   = 'failed_verification_rechecked';
 
     // -------------------------------------------------------
     // Relationship back to the acting user (nullable — may be deleted)
