@@ -188,6 +188,82 @@ export const uploadCertificationLayoutLogo = (id, formData) =>
   api.post(`/certifications/${id}/layout/logo`, formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+export const bulkUpdateCertificationLayouts = (layouts) =>
+  api.put("/certifications/layouts/bulk", { layouts });
+
+// -------------------------------------------------------
+// CERTIFICATE TEMPLATES (Phase 2) — Admin (role 3) only
+// Bodies live in object storage; the server versions every save.
+//   getCertificationTemplate -> { data: { source: "database"|"legacy", template } }
+//     "legacy" (template: null) means no DB template exists yet: keep using
+//     the built-in CERT_CONFIG wording.
+//   saveCertificationTemplate body: { content (required), paper_size?,
+//     orientation?, margin_top|right|bottom|left? (mm), required_fields?[],
+//     change_note? }. 201 = new version, 200 = identical to active (no-op).
+//     422 carries { message, errors } (bad merge tag / markup / required field).
+//   getCertificationTemplates -> active version metadata of every type (no bodies).
+// -------------------------------------------------------
+export const getCertificateMergeTags       = ()          => api.get("/certificate-merge-tags");
+export const getCertificationTemplates     = ()          => api.get("/certifications/templates");
+export const getCertificationTemplate      = (id)        => api.get(`/certifications/${id}/template`);
+export const getCertificationTemplateVersions = (id)     => api.get(`/certifications/${id}/template/versions`);
+export const saveCertificationTemplate     = (id, data)  => api.put(`/certifications/${id}/template`, data);
+export const activateCertificationTemplateVersion = (id, version) =>
+  api.post(`/certifications/${id}/template/versions/${version}/activate`);
+
+// -------------------------------------------------------
+// SERVER-SIDE CERTIFICATE GENERATION (Phase 3)
+// POST /certificates/generate — staff with dashboard Process|Complete.
+// Body: { certificate_type_id, student_num, request_id?,
+//         request_certificate_id? (needs request_id), signatory_id?,
+//         fields? } — `fields` may hold MANUAL merge tags only; anything the
+// server resolves (name, course, OR number...) is rejected if sent.
+//
+// Success: the PDF itself (responseType "blob"), never cached. Metadata is
+// in headers: X-Control-Number, X-Template-Version, X-Generation-Id.
+// Resolves to { blob, url, filename, controlNumber, templateVersion,
+// generationId }. `url` is an object URL — call URL.revokeObjectURL(url)
+// when done (preview closed / downloaded).
+//
+// Failure: rejects like any axios call, but because the request asks for a
+// blob, error.response.data is a Blob. This function parses it so callers
+// get the usual JSON in error.response.data: { message, code, errors?, ... }.
+// Codes: student_not_found, request_not_found, certificate_type_not_found,
+// template_not_configured (409, source "legacy" -> fall back to the old
+// print path), missing_required_fields (422, errors.fields[]),
+// template_invalid (422), certificate_type_archived (423),
+// template_storage_unavailable (503), generation_failed (500, the request
+// was NOT changed). 429 = throttled (20/min).
+// -------------------------------------------------------
+export const generateCertificate = async (payload) => {
+  try {
+    const res = await api.post("/certificates/generate", payload, {
+      responseType: "blob",
+      headers: { Accept: "application/pdf, application/json" },
+    });
+    const blob = res.data;
+    const disposition = res.headers["content-disposition"] ?? "";
+    const filename = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? "certificate.pdf";
+    return {
+      blob,
+      url: URL.createObjectURL(blob),
+      filename,
+      controlNumber: res.headers["x-control-number"] ?? null,
+      templateVersion: Number(res.headers["x-template-version"]) || null,
+      generationId: Number(res.headers["x-generation-id"]) || null,
+    };
+  } catch (err) {
+    // Error bodies arrive as a Blob when responseType is "blob".
+    if (err.response?.data instanceof Blob) {
+      try {
+        err.response.data = JSON.parse(await err.response.data.text());
+      } catch {
+        err.response.data = { message: "Certificate generation failed." };
+      }
+    }
+    throw err;
+  }
+};
 
 // -------------------------------------------------------
 // UNMATCHED CASHIER ITEMS (Admin+) — receipt labels

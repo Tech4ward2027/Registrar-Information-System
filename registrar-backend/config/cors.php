@@ -12,7 +12,10 @@ return [
     ],
     'allowed_origins_patterns' => [],
     'allowed_headers' => ['*'],
-    'exposed_headers' => [],
+    // Lets the browser read the certificate headers from the PDF response
+    // (CertificateGenerationController): the control number to display and the
+    // template version / generation id for support.
+    'exposed_headers' => ['X-Control-Number', 'X-Template-Version', 'X-Generation-Id', 'Content-Disposition'],
     'max_age' => 0,
     'supports_credentials' => true,
 ];
