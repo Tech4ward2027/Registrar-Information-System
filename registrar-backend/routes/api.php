@@ -8,6 +8,7 @@ use App\Http\Controllers\AcademicRecordLookupController;
 use App\Http\Controllers\RequestStatusController;
 use App\Http\Controllers\DocumentTypeController;
 use App\Http\Controllers\CertificationTypeController;
+use App\Http\Controllers\CertificateGenerationController;
 use App\Http\Controllers\CertificateTemplateController;
 use App\Http\Controllers\DocumentRequestController;
 use App\Http\Controllers\ItemClaimController;
@@ -605,6 +606,12 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         // No `index`: listing every academic record is deliberately not
         // exposed — see AcademicRecordLookupController for the replacement.
         Route::apiResource('academic-records', StudentAcademicRecordController::class)->except(['index']);
+        // Server-side certificate generation (Phase 3): returns the PDF itself.
+        // Same staff gate as mark-certificates-generated / the lookup above.
+        // Named throttle prefix (see verify-or) — each call renders a PDF, so
+        // this is deliberately tighter than the group's throttle:60,1.
+        Route::post('certificates/generate', CertificateGenerationController::class)
+            ->middleware(['module:dashboard,Process|Complete', 'throttle:20,1,certificate-generate']);
 
         Route::prefix('analytics')->middleware(['throttle:60,1', 'module:analytics'])->group(function () {
             Route::get('overview',         [AnalyticsController::class, 'overview']);

@@ -40,4 +40,33 @@ return [
     // Template bodies are immutable per version, so the cache key (id + sha256)
     // never needs invalidating. Seconds; 0 disables.
     'cache_ttl' => 300,
+
+    // ── Server-side generation (Phase 3) ────────────────────────────────────
+
+    // Control number: {prefix}-{year}-{sequence padded to `pad`}, e.g.
+    // PUP-CERT-2026-0042. The sequence restarts every calendar year (in the
+    // display timezone) and keeps growing past the padding (10000, 10001...).
+    'control_number' => [
+        'prefix' => env('CERTIFICATE_CONTROL_PREFIX', 'PUP-CERT'),
+        'pad'    => 4,
+    ],
+
+    // Keep the merge values used for each certificate on its generation
+    // record, so "what exactly was printed" can be answered later (the
+    // Registrar-entered fields are not recoverable from anywhere else). The
+    // snapshot is personal data: set to false to store none, and include the
+    // table in the data-retention/disposal schedule.
+    'store_payload_snapshot' => (bool) env('CERTIFICATE_STORE_PAYLOAD_SNAPSHOT', true),
+
+    'pdf' => [
+        // Bundled with dompdf, full Unicode coverage (Filipino names with ñ etc.).
+        'font'          => 'DejaVu Serif',
+        'font_size_pt'  => 12,
+        // dompdf scratch + font-cache directory (must be writable by the app).
+        'temp_dir'      => storage_path('framework/cache/dompdf'),
+        // Header/footer logos are read from the app's own disk and embedded;
+        // anything larger is skipped rather than slowing every certificate.
+        'max_logo_bytes' => 2_000_000,
+    ],
+
 ];

@@ -123,6 +123,13 @@ class AuditLog extends Model
     //   ACTIVATED       — an existing (older) version was made current again.
     public const ACTION_CERTIFICATE_TEMPLATE_VERSION_CREATED = 'certificate_template_version_created';
     public const ACTION_CERTIFICATE_TEMPLATE_ACTIVATED       = 'certificate_template_activated';
+    // Server-side certificate generation (Phase 3). Metadata carries the
+    // control number, template version and request ids — never the PDF or the
+    // merge values (those live on the certificate_generation record).
+    //   GENERATED         — a PDF was produced and returned.
+    //   GENERATION_FAILED — the attempt failed; the control number stays reserved.
+    public const ACTION_CERTIFICATE_GENERATED         = 'certificate_generated';
+    public const ACTION_CERTIFICATE_GENERATION_FAILED = 'certificate_generation_failed';
 
     // Logbook category lookup table (see LogbookCategoryController) —
     // previously unaudited entirely, same gap as document/certificate
