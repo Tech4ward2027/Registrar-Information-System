@@ -182,8 +182,6 @@ export const archiveCertification      = (id, reason)        => api.patch(`/cert
 export const restoreCertification      = (id)        => api.patch(`/certifications/${id}/restore`);
 export const getCertificationLayouts   = ()          => api.get("/certifications/layouts");
 export const updateCertificationLayout = (id, data)  => api.put(`/certifications/${id}/layout`, data);
-export const bulkUpdateCertificationLayouts = (layouts) =>
-  api.put("/certifications/layouts/bulk", { layouts });
 export const uploadCertificationLayoutLogo = (id, formData) =>
   api.post(`/certifications/${id}/layout/logo`, formData, {
     headers: { "Content-Type": "multipart/form-data" },

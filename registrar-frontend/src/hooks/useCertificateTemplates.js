@@ -451,6 +451,14 @@ export const useCertificateTemplates = () => {
       }, 2000);
     } catch (error) {
       console.error("Failed to save certification layout:", error);
+      const validationErrors = Object.values(error?.response?.data?.errors ?? {})
+        .flat()
+        .filter(Boolean);
+      setErrorMessage(
+        validationErrors.length > 0
+          ? validationErrors.join(" ")
+          : error?.response?.data?.message ?? "Failed to save certification layout."
+      );
     } finally {
       setSaving(false);
     }

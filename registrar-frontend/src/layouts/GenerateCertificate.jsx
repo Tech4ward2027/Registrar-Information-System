@@ -3,7 +3,13 @@ import InputGroup from "../components/InputGroup.jsx";
 import { useTheme } from "../context/ThemeContext";
 import { useReferenceData } from "../context/ReferenceDataContext";
 import { PrinterIcon } from "@heroicons/react/24/solid";
-import { getAcademicRecordByStudent, getCertifications, getCertificationLayouts, markCertificatesGenerated } from "../services/api";
+import {
+  getAcademicRecordByStudent,
+  getCertifications,
+  getCertificationLayouts,
+  getCertificationTemplate,
+  markCertificatesGenerated,
+} from "../services/api";
 import { CertHeader, CertFooter, getTodayDate } from "../utils/helpers.jsx";
 import { CERT_CONFIG } from "../utils/Certification.jsx";
 import DropDown from "../components/DropDown.jsx";
@@ -67,6 +73,48 @@ const DEFAULT_FORM = {
   signee: "", // Set once signatories load — see the effect below.
 };
 
+const TEMPLATE_TAG_PATTERN = /\{\{\s*([a-z][a-z0-9_]*)\s*(?:\|\s*([a-z]+)\s*)?\}\}/g;
+
+const buildTemplateData = (formData, academicRecord) => ({
+  full_name: formData.fullName || "",
+  student_number: academicRecord?.student_number || formData.studentNum || "",
+  course: academicRecord?.course || formData.course || "",
+  date_graduated: academicRecord?.graduation_date || formData.dateGraduated || "",
+  official_receipt_number: academicRecord?.or_number || formData.officialReceiptNum || "",
+  issue_date: formData.date || "",
+  signee_name: formData.signee || "",
+  education_level: formData.educationLevel || "",
+  major: formData.major || "",
+  gwa: formData.gwa || "",
+  units: formData.units || "",
+  latin_honors: formData.latinHonors || "",
+  semesters: formData.semesters || "",
+  semesters_num: formData.semestersNum || "",
+  last_semesters: formData.lastSemesters || "",
+  sy_admitted: formData.syAdmitted || "",
+  last_sy: formData.lastSy || "",
+  diploma_num: formData.diplomaNum || "",
+  ladderized_degree: formData.ladderizedDegree || "",
+  student_status: academicRecord?.status || formData.studentStatus || "",
+  eligibility_type: formData.eligibilityType || "",
+  cav_num: formData.cavNum || "",
+  cav_series: formData.cavSeries || "",
+  nstp_serial_num: formData.nstpSerialNum || "",
+  amount: formData.amount || "",
+  control_number: "[Generated on certificate issuance]",
+});
+
+const renderTemplatePreview = (content, data) => String(content || "").replace(
+  TEMPLATE_TAG_PATTERN,
+  (_, name, filter) => {
+    const value = data[name] || `[${name}]`;
+    if (filter === "upper") return value.toUpperCase();
+    if (filter === "lower") return value.toLowerCase();
+    if (filter === "title") return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
+    return value;
+  }
+);
+
 // ─── Field Config ─────
 // ComponentType: "input" | "dropdown"
 
@@ -99,10 +147,21 @@ const buildFieldConfig = (courseOptions) => [
 ];
 
 // ─── Memoized Certificate Preview ───
-  const CertificatePreview = React.memo(({ certConfig, activeLayout, debouncedFormData, isDark, pageDimensions, marginValue, margins }) => {
+  const CertificatePreview = React.memo(({
+    certConfig,
+    activeLayout,
+    debouncedFormData,
+    academicRecord,
+    databaseTemplate,
+    pageDimensions,
+    marginValue,
+  }) => {
     const pageSizeSpec = `${pageDimensions.widthInches}in ${pageDimensions.heightInches}in`;
 
     const fontScale = useMemo(() => 1.0, []);
+    const templateData = buildTemplateData(debouncedFormData, academicRecord);
+    const templateMarkup = renderTemplatePreview(databaseTemplate?.content, templateData);
+    const templateMargins = databaseTemplate?.margins;
 
     return (
       <div 
@@ -111,7 +170,9 @@ const buildFieldConfig = (courseOptions) => [
           "--print-margin": `${marginValue}in`,
           "--header-logo-size": `${activeLayout?.headerLogoSize ?? 120}px`,
           "--footer-logo-size": `${activeLayout?.footerLogoSize ?? 45}px`,
-          padding: "var(--print-margin)",
+          padding: templateMargins
+            ? `${templateMargins.top}mm ${templateMargins.right}mm ${templateMargins.bottom}mm ${templateMargins.left}mm`
+            : "var(--print-margin)",
           backgroundColor: "white",
           color: "black",
           width: `${pageDimensions.width}px`,
@@ -134,7 +195,11 @@ const buildFieldConfig = (courseOptions) => [
           className="flex-1 min-h-0 overflow-visible transition-all"
           style={{ fontSize: `${fontScale * 100}%` }}
         >
-          {certConfig?.renderBody(debouncedFormData, activeLayout)}
+          {databaseTemplate ? (
+            <div dangerouslySetInnerHTML={{ __html: templateMarkup }} />
+          ) : (
+            certConfig?.renderBody(debouncedFormData, activeLayout)
+          )}
         </div>
         
         {!certConfig?.hideHeaderFooter && <CertFooter layout={activeLayout} />}
@@ -176,10 +241,6 @@ const GenerateCertification = ({ initialData, onClose, onCertificatePrinted, onL
     return acc;
   }, {});
 
-  // Create a mapping from database certificate_type_id to CERT_CONFIG ID
-  // For now, assuming database IDs match CERT_CONFIG IDs
-  const certTypeIdToCertConfigId = (dbId) => dbId;
-
   const [loading, setLoading] = useState(false);
   const [academicRecord, setAcademicRecord] = useState(null);
   const [academicRecordError, setAcademicRecordError] = useState("");
@@ -187,8 +248,9 @@ const GenerateCertification = ({ initialData, onClose, onCertificatePrinted, onL
   const [printLoading, setPrintLoading] = useState(false);
   const [certifications, setCertifications] = useState([]);
   const [layoutsByCertId, setLayoutsByCertId] = useState({});
+  const [databaseTemplate, setDatabaseTemplate] = useState(null);
+  const [databaseTemplateError, setDatabaseTemplateError] = useState("");
   const [docTypeOptions, setDocTypeOptions] = useState(Object.keys(CERT_CONFIG).map(Number));
-  const [certNameById, setCertNameById] = useState(certIdToName);
   const [formData, setFormData] = useState({ ...DEFAULT_FORM, ...(initialData ?? {}) });
   const [savedData, setSavedData] = useState({ ...DEFAULT_FORM, ...(initialData ?? {}) });
 
@@ -266,7 +328,7 @@ useEffect(() => {
         if (lockDocTypeToRequest) {
           const requestedIdsFromNames = requestedCertNames
             .map((name) => {
-              return Object.entries(CERT_CONFIG).find(([_, config]) => {
+              return Object.entries(CERT_CONFIG).find(([, config]) => {
                 if (normalizeCertName(config.name) === name) return true;
                 if (Array.isArray(config.otherNames)) {
                   return config.otherNames.some((alias) => normalizeCertName(alias) === name);
@@ -478,6 +540,48 @@ useEffect(() => {
   const resolvedPreviewDocTypeId = resolveCertConfigId(savedData.docType);
 
   useEffect(() => {
+    if (!resolvedPreviewDocTypeId || !certifications.length) {
+      setDatabaseTemplate(null);
+      setDatabaseTemplateError("");
+      return undefined;
+    }
+
+    const selectedCertification = certifications.find((cert) => {
+      const certConfigId = resolveCertConfigId(cert?.certificate_name);
+      return Number(cert?.certificate_type_id) === Number(resolvedPreviewDocTypeId)
+        || certConfigId === Number(resolvedPreviewDocTypeId);
+    });
+
+    if (!selectedCertification) {
+      setDatabaseTemplate(null);
+      setDatabaseTemplateError("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setDatabaseTemplateError("");
+    getCertificationTemplate(selectedCertification.certificate_type_id)
+      .then((response) => {
+        if (cancelled) return;
+        const payload = response?.data?.data;
+        setDatabaseTemplate(payload?.source === "database" ? payload.template : null);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setDatabaseTemplate(null);
+        setDatabaseTemplateError(
+          error?.response?.status === 503
+            ? "The saved template is temporarily unavailable. Using the legacy certificate."
+            : "Unable to load the saved template. Using the legacy certificate."
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [certifications, resolveCertConfigId, resolvedPreviewDocTypeId]);
+
+  useEffect(() => {
     if (!resolvedPreviewDocTypeId) return;
     const config = CERT_CONFIG[resolvedPreviewDocTypeId];
     if (config) {
@@ -492,8 +596,6 @@ useEffect(() => {
   const shouldShow = useCallback((fieldName) => formCertConfig?.fields.includes(fieldName), [formCertConfig]);
   
   // Get the certificate name for display
-  const certDisplayName = previewCertConfig?.name || certIdToName[resolvedPreviewDocTypeId] || "Certificate";
-
   const activeLayout = useMemo(() => {
     // Look up the layout using the exact ID selected in the dropdown
     if (!resolvedPreviewDocTypeId) return DEFAULT_CERTIFICATE_LAYOUT;
@@ -504,20 +606,34 @@ useEffect(() => {
     return layoutsByCertId[id] ?? DEFAULT_CERTIFICATE_LAYOUT;
   }, [resolvedPreviewDocTypeId, layoutsByCertId]);
 
+  const effectivePaperSize = databaseTemplate?.paper_size === "LETTER"
+    ? "Letter"
+    : databaseTemplate?.paper_size === "LEGAL"
+      ? "Legal"
+      : databaseTemplate?.paper_size === "FOLIO"
+        ? "Folio"
+        : databaseTemplate?.paper_size === "A4"
+          ? "A4"
+          : paperSize;
+  const effectiveOrientation = databaseTemplate?.orientation === "landscape" ? "Landscape" : databaseTemplate?.orientation === "portrait" ? "Portrait" : orientation;
+
   const pageDimensions = useMemo(() => {
     let w = 8.5;
     let h = 11;
-    if (paperSize === "A4") {
+    if (effectivePaperSize === "A4") {
       w = 8.27;
       h = 11.69;
-    } else if (paperSize === "Legal") {
+    } else if (effectivePaperSize === "Legal") {
       w = 8.5;
       h = 14;
+    } else if (effectivePaperSize === "Folio") {
+      w = 8.5;
+      h = 13;
     }
-    return orientation === "Portrait"
+    return effectiveOrientation === "Portrait"
       ? { width: Math.round(w * 96), height: Math.round(h * 96), widthInches: w, heightInches: h }
       : { width: Math.round(h * 96), height: Math.round(w * 96), widthInches: h, heightInches: w };
-  }, [paperSize, orientation]);
+  }, [effectivePaperSize, effectiveOrientation]);
 
   const marginValue = useMemo(() => {
     if (margins.startsWith("Narrow")) return 0.25;
@@ -773,12 +889,26 @@ useEffect(() => {
             <h2 className={`text-sm font-extrabold uppercase tracking-tight ${isDark ? 'text-white' : 'text-gray-800'}`}>
               Certificate Preview
             </h2>
-            <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${
-              isDark ? 'border-[#3e4042] bg-[#1f1f1f] text-[#b0b3b8]' : 'border-gray-200 bg-gray-50 text-gray-600'
-            }`}>
-              Scale: {Math.round(scale * 100)}%
-            </span>
+            <div className="flex items-center gap-2">
+              {databaseTemplate && (
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${
+                  isDark ? 'border-emerald-800 bg-emerald-950/40 text-emerald-300' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                }`}>
+                  Template v{databaseTemplate.version}
+                </span>
+              )}
+              <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${
+                isDark ? 'border-[#3e4042] bg-[#1f1f1f] text-[#b0b3b8]' : 'border-gray-200 bg-gray-50 text-gray-600'
+              }`}>
+                Scale: {Math.round(scale * 100)}%
+              </span>
+            </div>
           </div>
+          {databaseTemplateError && (
+            <p className={`px-5 py-2 text-xs ${isDark ? 'bg-amber-950/30 text-amber-200' : 'bg-amber-50 text-amber-800'}`}>
+              {databaseTemplateError}
+            </p>
+          )}
           
           <div 
             ref={previewContainerRef}
@@ -809,7 +939,8 @@ useEffect(() => {
                   certConfig={previewCertConfig} 
                   activeLayout={activeLayout} 
                   debouncedFormData={debouncedFormData} 
-                  isDark={isDark} 
+                  academicRecord={academicRecord}
+                  databaseTemplate={databaseTemplate}
                   pageDimensions={pageDimensions}
                   marginValue={marginValue}
                   margins={margins}
