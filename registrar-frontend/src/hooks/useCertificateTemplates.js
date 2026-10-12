@@ -3,6 +3,7 @@ import {
   getCertifications,
   getCertificationLayouts,
   updateCertificationLayout,
+  bulkUpdateCertificationLayouts,
   uploadCertificationLayoutLogo,
 } from "../services/api";
 import {
@@ -184,6 +185,23 @@ export const useCertificateTemplates = () => {
     return response?.data?.data?.url;
   };
 
+  const refreshCertificateData = async () => {
+    const [certResult, layoutResult] = await Promise.all([
+      getCertifications(),
+      getCertificationLayouts(),
+    ]);
+    const certRows = toCertificateRows(certResult?.data);
+    const layoutRows = toCertificateRows(layoutResult?.data);
+    const layoutMap = {};
+    layoutRows.forEach((row) => {
+      layoutMap[row.certificate_type_id] = normalizeCertificateLayout(row);
+    });
+    setCertifications(certRows);
+    setLayoutsByCertId(layoutMap);
+    const refreshedLayout = layoutMap[selectedCertId] ?? layoutMap[Number(selectedCertId)];
+    if (refreshedLayout) setLayout(refreshedLayout);
+  };
+
   const updateMainLogo = async (files) => {
     const [file] = files;
     if (!file) return;
@@ -206,19 +224,16 @@ export const useCertificateTemplates = () => {
           setSaving(true);
           try {
             const otherCerts = dropdownCertifications.filter(c => String(c.certificate_type_id) !== selectedCertId);
-            const updatedLayouts = {};
-            for (const cert of otherCerts) {
+            const bulkLayouts = otherCerts.map((cert) => {
               const certId = cert.certificate_type_id;
               const currentLayout = layoutsByCertId[certId] ?? { ...DEFAULT_CERTIFICATE_LAYOUT };
               const updatedLayout = { ...currentLayout, headerLeftUrl: logoUrl };
-              const payload = toLayoutPayload(updatedLayout);
-              await updateCertificationLayout(certId, payload);
-              updatedLayouts[certId] = normalizeCertificateLayout(updatedLayout);
+              return { certificate_type_id: certId, ...toLayoutPayload(updatedLayout) };
+            });
+            if (bulkLayouts.length > 0) {
+              await bulkUpdateCertificationLayouts(bulkLayouts);
+              await refreshCertificateData();
             }
-            setLayoutsByCertId((prev) => ({
-              ...prev,
-              ...updatedLayouts,
-            }));
             setSaveSuccess(true);
             setSuccessMessage("Main logo applied to all templates successfully!");
             setTimeout(() => {
@@ -265,19 +280,16 @@ export const useCertificateTemplates = () => {
           setSaving(true);
           try {
             const otherCerts = dropdownCertifications.filter(c => String(c.certificate_type_id) !== selectedCertId);
-            const updatedLayouts = {};
-            for (const cert of otherCerts) {
+            const bulkLayouts = otherCerts.map((cert) => {
               const certId = cert.certificate_type_id;
               const currentLayout = layoutsByCertId[certId] ?? { ...DEFAULT_CERTIFICATE_LAYOUT };
               const updatedLayout = { ...currentLayout, headerRightUrl: logoUrl };
-              const payload = toLayoutPayload(updatedLayout);
-              await updateCertificationLayout(certId, payload);
-              updatedLayouts[certId] = normalizeCertificateLayout(updatedLayout);
+              return { certificate_type_id: certId, ...toLayoutPayload(updatedLayout) };
+            });
+            if (bulkLayouts.length > 0) {
+              await bulkUpdateCertificationLayouts(bulkLayouts);
+              await refreshCertificateData();
             }
-            setLayoutsByCertId((prev) => ({
-              ...prev,
-              ...updatedLayouts,
-            }));
             setSaveSuccess(true);
             setSuccessMessage("Right logo applied to all templates successfully!");
             setTimeout(() => {
@@ -343,19 +355,16 @@ export const useCertificateTemplates = () => {
           setSaving(true);
           try {
             const otherCerts = dropdownCertifications.filter(c => String(c.certificate_type_id) !== selectedCertId);
-            const updatedLayouts = {};
-            for (const cert of otherCerts) {
+            const bulkLayouts = otherCerts.map((cert) => {
               const certId = cert.certificate_type_id;
               const currentLayout = layoutsByCertId[certId] ?? { ...DEFAULT_CERTIFICATE_LAYOUT };
               const updatedLayout = { ...currentLayout, footerUrls: finalFooterUrls };
-              const payload = toLayoutPayload(updatedLayout);
-              await updateCertificationLayout(certId, payload);
-              updatedLayouts[certId] = normalizeCertificateLayout(updatedLayout);
+              return { certificate_type_id: certId, ...toLayoutPayload(updatedLayout) };
+            });
+            if (bulkLayouts.length > 0) {
+              await bulkUpdateCertificationLayouts(bulkLayouts);
+              await refreshCertificateData();
             }
-            setLayoutsByCertId((prev) => ({
-              ...prev,
-              ...updatedLayouts,
-            }));
             setSaveSuccess(true);
             setSuccessMessage("Footer logos applied to all templates successfully!");
             setTimeout(() => {

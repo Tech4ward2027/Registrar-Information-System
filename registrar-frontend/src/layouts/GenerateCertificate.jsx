@@ -181,6 +181,9 @@ const GenerateCertification = ({ initialData, onClose, onCertificatePrinted, onL
   const certTypeIdToCertConfigId = (dbId) => dbId;
 
   const [loading, setLoading] = useState(false);
+  const [academicRecord, setAcademicRecord] = useState(null);
+  const [academicRecordError, setAcademicRecordError] = useState("");
+  const [showAcademicRecord, setShowAcademicRecord] = useState(false);
   const [printLoading, setPrintLoading] = useState(false);
   const [certifications, setCertifications] = useState([]);
   const [layoutsByCertId, setLayoutsByCertId] = useState({});
@@ -353,34 +356,51 @@ useEffect(() => {
   }, [initialData?.or_number]);
 
   useEffect(() => {
-    if (formData.course && formData.studentNum) return;
-    const studentNum = initialData?.studentNum;
-    if (!studentNum) return;
-    const fetch = async () => {
+    const studentNum = String(initialData?.studentNum ?? "").trim();
+    if (!studentNum) {
+      setAcademicRecord(null);
+      setAcademicRecordError("");
+      return;
+    }
+
+    let cancelled = false;
+    const resolveAcademicRecord = async () => {
+      setLoading(true);
+      setAcademicRecord(null);
+      setAcademicRecordError("");
       try {
-        setLoading(true);
         const res = await getAcademicRecordByStudent(studentNum);
         const record = res?.data?.data;
-        if (record) {
-          const educationLevel = ["Alumni", "Graduated"].includes(record.status) ? "Graduate" : "Undergraduate";
-          setFormData((prev) => ({
-            ...prev,
-            course: record.course || prev.course,
-            studentNum: record.student_number || prev.studentNum,
-            officialReceiptNum: prev.officialReceiptNum || record.or_number || prev.officialReceiptNum,
-            educationLevel,
-          }));
-        }
+        if (!record) throw new Error("Empty academic record response.");
+        if (cancelled) return;
+
+        setAcademicRecord(record);
+        setFormData((prev) => ({
+          ...prev,
+          studentNum: record.student_number ?? prev.studentNum,
+          course: record.course ?? prev.course,
+          dateGraduated: record.graduation_date ?? prev.dateGraduated,
+          studentStatus: record.status ?? prev.studentStatus,
+          officialReceiptNum: record.or_number ?? prev.officialReceiptNum,
+          educationLevel: record.status === "Alumni" ? "Graduate" : "Undergraduate",
+        }));
       } catch (err) {
-        // 404 = no record on file; the form stays editable by hand.
-        if (err?.response?.status !== 404) {
-          console.error("Error fetching course data:", err);
-        }
+        if (cancelled) return;
+        setAcademicRecordError(
+          err?.response?.status === 404
+            ? "No academic record was found for this student number."
+            : err?.response?.data?.message || "Unable to resolve the academic record. Please try again."
+        );
+        console.error("Error resolving academic record:", err);
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false);
       }
     };
-    fetch();
+
+    resolveAcademicRecord();
+    return () => {
+      cancelled = true;
+    };
   }, [initialData?.studentNum]);
 
   // Create display options (names) in the order of docTypeOptions
@@ -648,6 +668,36 @@ useEffect(() => {
 
             <form className={`space-y-4 ${loading ? "opacity-50 pointer-events-none" : ""}`}>
               {loading && <p className="text-xs text-amber-500 animate-pulse">Loading academic record data...</p>}
+              {academicRecordError && (
+                <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {academicRecordError}
+                </p>
+              )}
+              {academicRecord && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 text-xs text-blue-900">
+                  <button
+                    type="button"
+                    onClick={() => setShowAcademicRecord((prev) => !prev)}
+                    aria-expanded={showAcademicRecord}
+                    aria-controls="resolved-student-information"
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left font-semibold"
+                  >
+                    <span>Resolved student information</span>
+                    <span aria-hidden="true" className="text-sm">
+                      {showAcademicRecord ? "−" : "+"}
+                    </span>
+                  </button>
+                  {showAcademicRecord && (
+                    <dl id="resolved-student-information" className="grid grid-cols-2 gap-x-3 gap-y-1 border-t border-blue-200 px-3 py-2">
+                      <dt>Student number</dt><dd className="font-medium">{academicRecord.student_number || "—"}</dd>
+                      <dt>Course</dt><dd className="font-medium">{academicRecord.course || "—"}</dd>
+                      <dt>Graduation date</dt><dd className="font-medium">{academicRecord.graduation_date || "—"}</dd>
+                      <dt>Status</dt><dd className="font-medium">{academicRecord.status || "—"}</dd>
+                      <dt>Requester type</dt><dd className="font-medium">{academicRecord.requester_type || "—"}</dd>
+                    </dl>
+                  )}
+                </div>
+              )}
 
               {FIELD_CONFIG.map(([name, type, label, props]) => {
                 if (!shouldShow(name)) return null;
