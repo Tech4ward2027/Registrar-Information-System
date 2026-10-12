@@ -8,6 +8,7 @@ use App\Http\Controllers\AcademicRecordLookupController;
 use App\Http\Controllers\RequestStatusController;
 use App\Http\Controllers\DocumentTypeController;
 use App\Http\Controllers\CertificationTypeController;
+use App\Http\Controllers\CertificateTemplateController;
 use App\Http\Controllers\DocumentRequestController;
 use App\Http\Controllers\ItemClaimController;
 use App\Http\Controllers\ItemTerminationController;
@@ -532,6 +533,10 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
     Route::get('document-types/{id}',        [DocumentTypeController::class, 'show']);
     Route::get('certifications',             [CertificationTypeController::class, 'index']);
     Route::get('certifications/layouts',     [CertificationTypeController::class, 'layouts']);
+    // Active template version of every certificate type (metadata only, no
+    // bodies). Static path: must stay ahead of 'certifications/{id}'.
+    Route::get('certifications/templates',   [CertificateTemplateController::class, 'summary'])
+        ->middleware('role:3');
     Route::get('certifications/{id}',        [CertificationTypeController::class, 'show']);
     Route::get('request-statuses',           [RequestStatusController::class, 'index']);
     Route::get('request-statuses/{id}',      [RequestStatusController::class, 'show']);
@@ -557,6 +562,22 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::patch('certifications/{id}/restore', [CertificationTypeController::class, 'restore']);
         // Static 'layouts/bulk' path — cannot collide with the {id} routes (different segment count).
         Route::put('certifications/layouts/bulk',         [CertificationTypeController::class, 'bulkUpdateLayouts']);
+
+        // Database-driven certificate templates (Phase 2). Bodies live in the
+        // private object store; see CertificateTemplateService. GET answers
+        // source "legacy" when a type has no template, so clients fall back
+        // to CERT_CONFIG. Writes get their own throttle bucket.
+        Route::get('certificate-merge-tags', [CertificateTemplateController::class, 'mergeTags']);
+        Route::get('certifications/{id}/template', [CertificateTemplateController::class, 'show'])
+            ->whereNumber('id');
+        Route::get('certifications/{id}/template/versions', [CertificateTemplateController::class, 'versions'])
+            ->whereNumber('id');
+        Route::put('certifications/{id}/template', [CertificateTemplateController::class, 'upsert'])
+            ->whereNumber('id')
+            ->middleware('throttle:20,1,certificate-template-write');
+        Route::post('certifications/{id}/template/versions/{version}/activate', [CertificateTemplateController::class, 'activate'])
+            ->whereNumber(['id', 'version'])
+            ->middleware('throttle:20,1,certificate-template-write');
         Route::put('certifications/{id}/layout',          [CertificationTypeController::class, 'updateLayout']);
         Route::post('certifications/{id}/layout/logo',    [CertificationTypeController::class, 'uploadLayoutLogo']);
         Route::post('request-statuses',        [RequestStatusController::class, 'store']);

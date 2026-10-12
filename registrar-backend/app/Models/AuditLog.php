@@ -117,6 +117,12 @@ class AuditLog extends Model
     // PUT /certifications/layouts/bulk — one entry per bulk save (not per row);
     // metadata carries the certificate_type_ids touched. See CertificationLayoutService.
     public const ACTION_CERTIFICATE_LAYOUTS_BULK_UPDATED = 'certificate_layouts_bulk_updated';
+    // Database-driven certificate templates (Phase 2). Metadata carries the
+    // template version (and the previous one) but never the template body.
+    //   VERSION_CREATED — content or render settings changed => a new version row.
+    //   ACTIVATED       — an existing (older) version was made current again.
+    public const ACTION_CERTIFICATE_TEMPLATE_VERSION_CREATED = 'certificate_template_version_created';
+    public const ACTION_CERTIFICATE_TEMPLATE_ACTIVATED       = 'certificate_template_activated';
 
     // Logbook category lookup table (see LogbookCategoryController) —
     // previously unaudited entirely, same gap as document/certificate
