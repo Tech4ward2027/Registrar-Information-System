@@ -18,6 +18,15 @@
         </include>
     </source>
     <php>
+        <!-- The suite has grown past PHP's default 128M CLI memory_limit: the
+             whole run is one process, and Laravel apps, Pest and the many
+             per-test exception traces accumulate memory across ~1,300 tests
+             (peak was already ~126M before the template tests were added).
+             Hitting it aborts the run mid-suite with "Allowed memory size
+             exhausted" and no summary, which looks like a random failure.
+             Raising it here, rather than in each CI workflow, keeps local
+             runs and every pipeline on the same limit. -->
+        <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing" force="true"/>
         <!-- Phase 6 (Undergrad Requestor PII encryption — App\Support\EncryptedPayload,
              App\Casts\EncryptedText/EncryptedDate) made Crypt::encryptString()/
