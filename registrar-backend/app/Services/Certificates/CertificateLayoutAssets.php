@@ -27,6 +27,10 @@ class CertificateLayoutAssets
         }
 
         try {
+            if (str_starts_with($storedUrl, 'certificate-default:')) {
+                return $this->publicAssetDataUri(substr($storedUrl, strlen('certificate-default:')));
+            }
+
             $diskName = config('filesystems.default', 'public');
             $disk     = Storage::disk($diskName);
             $path     = $this->pathOnDisk($storedUrl, rtrim((string) $disk->url(''), '/') . '/');
@@ -52,6 +56,26 @@ class CertificateLayoutAssets
 
             return null;
         }
+    }
+
+    private function publicAssetDataUri(string $filename): ?string
+    {
+        if ($filename === '' || basename($filename) !== $filename) {
+            return null;
+        }
+
+        $path = public_path('certificate-assets/' . $filename);
+        if (!is_file($path) || filesize($path) > (int) config('certificate_templates.pdf.max_logo_bytes', 2_000_000)) {
+            return null;
+        }
+
+        $bytes = @file_get_contents($path);
+        $info = is_string($bytes) ? @getimagesizefromstring($bytes) : false;
+        if ($info === false || !in_array($info['mime'] ?? '', self::ALLOWED_MIME, true)) {
+            return null;
+        }
+
+        return 'data:' . $info['mime'] . ';base64,' . base64_encode($bytes);
     }
 
     /** The disk-relative path for a URL under this disk's base URL, or a bare path; null for anything else. */

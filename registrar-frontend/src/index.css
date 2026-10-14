@@ -134,7 +134,15 @@
   .cert-footer,
   .cert-header *,
   .cert-footer * {
-    font-family: "Times New Roman", Times, serif !important;
+    font-family: "Lucida Fax", serif !important;
+  }
+
+  .cert-header {
+    border-bottom: 2px solid #e5e7eb;
+  }
+
+  .cert-footer {
+    border-top: 1px solid #e5e7eb;
   }
 
   .cert-editable-block {
@@ -215,7 +223,7 @@
     box-sizing: border-box !important;
     page-break-inside: avoid !important;
     margin: 0 !important;
-    padding: var(--print-margin, 0.5in) !important;
+    padding: 30mm var(--print-margin, 0.5in) !important;
     box-shadow: none !important;
     border: none !important;
     background: white !important;
