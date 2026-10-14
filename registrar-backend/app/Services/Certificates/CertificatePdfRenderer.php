@@ -102,15 +102,15 @@ class CertificatePdfRenderer
             . "@font-face { font-family: 'Lucida Fax'; font-style: italic; font-weight: 400; src: url('certificate-assets/fonts/Italic.ttf') format('truetype'); }"
             . "@font-face { font-family: 'Lucida Fax'; font-style: italic; font-weight: 700; src: url('certificate-assets/fonts/DemiboldItalic.ttf') format('truetype'); }"
             . 'table { border-collapse: collapse; } td, th { vertical-align: top; }'
-            . '.cert-header { width: 100%; margin-bottom: 14pt; padding-bottom: 12pt; text-align: center; border-bottom: 1.5pt solid #d1d5db; }'
-            . '.cert-header td { vertical-align: middle; }'
-            . ".cert-header-text { text-align: left; line-height: 1.1; font-family: 'Lucida Fax', serif; text-transform: uppercase; }"
-            . ".cert-header-text .main { font-weight: 700; }"
-            . ".cert-header-text .small { font-weight: 400; }"
-            . '.cert-footer { width: 100%; margin-top: 18pt; padding-top: 8pt; text-align: center; border-top: 1.5pt solid #d1d5db; }'
-            . '.cert-footer td { vertical-align: top; font-size: 8pt; line-height: 1.25; }'
-            . ".cert-footer-contact { text-align: left; font-family: 'Lucida Fax', serif; }"
-            . ".cert-footer-tagline { margin-top: 4pt; font-size: 10pt; font-weight: 700; text-transform: uppercase; }"
+            . '.cert-header { width: 100%; margin-bottom: 14pt; text-align: center; border-bottom: 1.5pt solid #d1d5db; }'
+            . '.cert-header td { vertical-align: middle; padding-bottom: 12pt; }'
+            . ".cert-header-text { text-align: left; font-family: 'Lucida Fax', serif; text-transform: uppercase; }"
+            . ".cert-header-text .main { font-weight: 700; line-height: 1.05; margin: 0; padding: 0; }"
+            . ".cert-header-text .small { font-weight: 400; line-height: 1.05; margin: 0; padding: 0; }"
+            . '.cert-footer { width: 100%; margin-top: 18pt; text-align: center; border-top: 1.5pt solid #d1d5db; }'
+            . '.cert-footer td { vertical-align: top; padding-top: 8pt; }'
+            . ".cert-footer-contact { text-align: left; font-family: Arial, Helvetica, sans-serif; font-size: 7.5pt; line-height: 1.15; color: #111; }"
+            . ".cert-footer-tagline { margin-top: 2pt; font-size: 10pt; font-weight: 700; text-transform: uppercase; font-family: 'Lucida Fax', serif; color: #000; line-height: 1.1; }"
             . '.cert-footer-logos { text-align: right; white-space: nowrap; }'
             . '</style></head><body>'
             . $this->header($type)
@@ -143,10 +143,18 @@ class CertificatePdfRenderer
                 . '</div>';
         }
 
+        $leftCell = $left !== ''
+            ? '<td style="width: 1%; white-space: nowrap; text-align: left; vertical-align: middle; padding-right: 12pt;">' . $left . '</td>'
+            : '';
+
+        $rightCell = $right !== ''
+            ? '<td style="width: 1%; white-space: nowrap; text-align: right; vertical-align: middle; padding-left: 12pt;">' . $right . '</td>'
+            : '';
+
         return '<table class="cert-header"><tr>'
-            . '<td style="width: 20%; text-align: left;">' . $left . '</td>'
-            . '<td class="cert-header-text" style="font-size: ' . $fontPt . 'pt;">' . $text . '</td>'
-            . '<td style="width: 20%; text-align: right;">' . $right . '</td>'
+            . $leftCell
+            . '<td class="cert-header-text" style="font-size: ' . $fontPt . 'pt; vertical-align: middle;">' . $text . '</td>'
+            . $rightCell
             . '</tr></table>';
     }
 

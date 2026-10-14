@@ -131,10 +131,15 @@
   }
 
   .cert-header,
-  .cert-footer,
   .cert-header *,
-  .cert-footer * {
+  .cert-footer-tagline {
     font-family: "Lucida Fax", serif !important;
+  }
+
+  .cert-footer-contact-lines,
+  .cert-footer-contact-lines * {
+    font-family: Arial, Helvetica, sans-serif !important;
+    line-height: 1.15;
   }
 
   .cert-header {
