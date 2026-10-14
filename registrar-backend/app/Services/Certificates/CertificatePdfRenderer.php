@@ -22,8 +22,17 @@ use RuntimeException;
  */
 class CertificatePdfRenderer
 {
-    private const DEFAULT_HEADER_FONT_PT = 11;
+    private const DEFAULT_HEADER_FONT_PT = 10.5;
     private const DEFAULT_LOGO_PX        = 70;
+    private const DEFAULT_HEADER_LEFT   = 'certificate-default:puplogoimage.png';
+    private const DEFAULT_HEADER_RIGHT  = 'certificate-default:Bagong_Pilipinas_logo.png';
+    private const DEFAULT_FOOTER        = 'certificate-default:certificate_footer.png';
+    private const DEFAULT_HEADER_LINES  = [
+        'REPUBLIC OF THE PHILIPPINES',
+        'Polytechnic University of the Philippines',
+        'OFFICE OF THE VICE PRESIDENT FOR CAMPUSES',
+        'TAGUIG CAMPUS',
+    ];
 
     public function __construct(private readonly CertificateLayoutAssets $assets) {}
 
@@ -60,7 +69,8 @@ class CertificatePdfRenderer
         $options->set('isJavascriptEnabled', false);
         $options->set('isHtml5ParserEnabled', true);
         $options->set('isFontSubsettingEnabled', true);
-        $options->set('chroot', [$temp]);
+        $options->set('chroot', [$temp, public_path()]);
+        $options->set('fontDir', $temp);
         $options->set('tempDir', $temp);
         $options->set('fontCache', $temp);
         $options->set('logOutputFile', '');
@@ -75,16 +85,33 @@ class CertificatePdfRenderer
         $font = $this->e((string) config('certificate_templates.pdf.font', 'DejaVu Serif'));
         $pt   = (int) config('certificate_templates.pdf.font_size_pt', 12);
 
-        $margin = sprintf('%smm %smm %smm %smm', $this->mm($m['top']), $this->mm($m['right']), $this->mm($m['bottom']), $this->mm($m['left']));
+        $margin = sprintf(
+            '%smm %smm %smm %smm',
+            $this->mm($m['top']),
+            $this->mm($m['right']),
+            $this->mm($m['bottom']),
+            $this->mm($m['left'])
+        );
 
         return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' . $this->e($title) . '</title>'
             . '<style>'
             . "@page { margin: {$margin}; }"
             . "body { font-family: '{$font}', serif; font-size: {$pt}pt; line-height: 1.45; color: #000; margin: 0; }"
+            . "@font-face { font-family: 'Lucida Fax'; font-style: normal; font-weight: 400; src: url('certificate-assets/fonts/Regular.ttf') format('truetype'); }"
+            . "@font-face { font-family: 'Lucida Fax'; font-style: normal; font-weight: 700; src: url('certificate-assets/fonts/Demibold.ttf') format('truetype'); }"
+            . "@font-face { font-family: 'Lucida Fax'; font-style: italic; font-weight: 400; src: url('certificate-assets/fonts/Italic.ttf') format('truetype'); }"
+            . "@font-face { font-family: 'Lucida Fax'; font-style: italic; font-weight: 700; src: url('certificate-assets/fonts/DemiboldItalic.ttf') format('truetype'); }"
             . 'table { border-collapse: collapse; } td, th { vertical-align: top; }'
-            . '.cert-header { width: 100%; margin-bottom: 14pt; text-align: center; }'
+            . '.cert-header { width: 100%; margin-bottom: 14pt; padding-bottom: 12pt; text-align: center; border-bottom: 1.5pt solid #d1d5db; }'
             . '.cert-header td { vertical-align: middle; }'
-            . '.cert-footer { width: 100%; margin-top: 18pt; text-align: center; }'
+            . ".cert-header-text { text-align: left; line-height: 1.1; font-family: 'Lucida Fax', serif; text-transform: uppercase; }"
+            . ".cert-header-text .main { font-weight: 700; }"
+            . ".cert-header-text .small { font-weight: 400; }"
+            . '.cert-footer { width: 100%; margin-top: 18pt; padding-top: 8pt; text-align: center; border-top: 1.5pt solid #d1d5db; }'
+            . '.cert-footer td { vertical-align: top; font-size: 8pt; line-height: 1.25; }'
+            . ".cert-footer-contact { text-align: left; font-family: 'Lucida Fax', serif; }"
+            . ".cert-footer-tagline { margin-top: 4pt; font-size: 10pt; font-weight: 700; text-transform: uppercase; }"
+            . '.cert-footer-logos { text-align: right; white-space: nowrap; }'
             . '</style></head><body>'
             . $this->header($type)
             . '<div class="cert-body">' . $bodyHtml . '</div>'
@@ -95,27 +122,30 @@ class CertificatePdfRenderer
     private function header(CertificationType $type): string
     {
         $size  = $this->logoPx($type->layout_header_logo_size);
-        $left  = $this->logo($type->layout_header_left_url, $size);
-        $right = $this->logo($type->layout_header_right_url, $size);
+        $left  = $this->logo($type->layout_header_left_url ?: self::DEFAULT_HEADER_LEFT, $size);
+        $right = $this->logo($type->layout_header_right_url ?: self::DEFAULT_HEADER_RIGHT, $size);
 
         $lines = array_values(array_filter(
-            array_map(fn ($line) => is_string($line) ? trim($line) : '', $type->layout_header_lines ?? []),
+            array_map(fn ($line) => is_string($line) ? trim($line) : '', $type->layout_header_lines ?: self::DEFAULT_HEADER_LINES),
             fn (string $line) => $line !== ''
         ));
 
-        if ($left === '' && $right === '' && $lines === []) {
-            return '';
-        }
-
         $fontPt = $type->layout_header_font_size
-            ? max(6, min(36, (int) $type->layout_header_font_size))
+            ? max(6, min(27, (int) $type->layout_header_font_size * 0.75))
             : self::DEFAULT_HEADER_FONT_PT;
 
-        $text = implode('<br>', array_map(fn (string $line) => $this->e($line), $lines));
+        $text = '';
+        foreach ($lines as $index => $line) {
+            $isMain = ($index % 2) === 1;
+            $class = $isMain ? 'main' : 'small';
+            $text .= '<div class="' . $class . '" style="font-size: ' . rtrim(rtrim(number_format($fontPt, 2, '.', ''), '0'), '.') . 'pt;">'
+                . $this->e($line)
+                . '</div>';
+        }
 
         return '<table class="cert-header"><tr>'
             . '<td style="width: 20%; text-align: left;">' . $left . '</td>'
-            . '<td style="text-align: center; font-size: ' . $fontPt . 'pt;">' . $text . '</td>'
+            . '<td class="cert-header-text" style="font-size: ' . $fontPt . 'pt;">' . $text . '</td>'
             . '<td style="width: 20%; text-align: right;">' . $right . '</td>'
             . '</tr></table>';
     }
@@ -127,8 +157,19 @@ class CertificatePdfRenderer
         foreach ((array) ($type->layout_footer_urls ?? []) as $url) {
             $imgs .= $this->logo(is_string($url) ? $url : null, $size) . ' ';
         }
+        if (trim($imgs) === '') {
+            $imgs = $this->logo(self::DEFAULT_FOOTER, $size);
+        }
 
-        return trim($imgs) === '' ? '' : '<div class="cert-footer">' . $imgs . '</div>';
+        return '<table class="cert-footer"><tr>'
+            . '<td class="cert-footer-contact">'
+            . 'General Santos Avenue, Lower Bicutan, Taguig City, Philippines 1632<br>'
+            . 'Direct Line: (02) 8837 5858 to 60 | Email: taguig@pup.edu.ph<br>'
+            . 'Website: www.pup.edu.ph | Inquiries: https://bit.ly/PUPSINTA'
+            . '<div class="cert-footer-tagline">THE COUNTRY\'S 1st POLYTECHNIC</div>'
+            . '</td>'
+            . '<td class="cert-footer-logos">' . trim($imgs) . '</td>'
+            . '</tr></table>';
     }
 
     private function logo(?string $storedUrl, int $heightPx): string

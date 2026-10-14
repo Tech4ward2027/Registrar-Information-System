@@ -66,7 +66,7 @@ return [
         'temp_dir'      => storage_path('framework/cache/dompdf'),
         // Header/footer logos are read from the app's own disk and embedded;
         // anything larger is skipped rather than slowing every certificate.
-        'max_logo_bytes' => 2_000_000,
+        'max_logo_bytes' => 3_000_000,
     ],
 
 ];

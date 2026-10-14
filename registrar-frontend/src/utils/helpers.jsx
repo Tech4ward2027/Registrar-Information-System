@@ -153,12 +153,11 @@ export const CertHeader = ({ layout }) => {
           <div className="cert-header-text pt-0.5 leading-tight text-black uppercase font-lucida min-w-0">
             {headerLines.map((line, idx) => {
               const isMain = idx % 2 !== 0; // lines 1, 3, etc. are main lines (bold)
-              const fontSize = isMain ? baseFontSize : Math.max(7, Math.round(baseFontSize * 0.68));
               return (
                 <p
                   key={`header-line-${idx}`}
                   className={`tracking-tight truncate ${isMain ? "font-bold" : "font-normal"}`}
-                  style={{ fontSize: `${fontSize}px`, lineHeight: "1.2" }}
+                  style={{ fontSize: `${baseFontSize}px`, lineHeight: "1.2" }}
                 >
                   {line}
                 </p>

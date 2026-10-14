@@ -98,6 +98,7 @@ const CertificateTemplateManagement = () => {
   });
   const [templateLoading, setTemplateLoading] = useState(false);
   const [templateSaving, setTemplateSaving] = useState(false);
+  const [templateUploadProgress, setTemplateUploadProgress] = useState(null);
   const [templateFileName, setTemplateFileName] = useState("");
   const [templateMessage, setTemplateMessage] = useState("");
   const [templateError, setTemplateError] = useState("");
@@ -243,13 +244,20 @@ const CertificateTemplateManagement = () => {
       return;
     }
     setTemplateSaving(true);
+    setTemplateUploadProgress(0);
     setTemplateError("");
     setTemplateMessage("");
     try {
       const response = await saveCertificationTemplate(selectedCertId, {
         content: toTemplateMarkup(templateContent, mergeTags),
         ...templateSettings,
+      }, {
+        onUploadProgress: (event) => {
+          if (!event.total) return;
+          setTemplateUploadProgress(Math.min(100, Math.round((event.loaded * 100) / event.total)));
+        },
       });
+      setTemplateUploadProgress(100);
       const saved = responseData(response);
       const refreshed = await getCertificationTemplate(selectedCertId);
       const refreshedTemplate = responseData(refreshed)?.template ?? null;
@@ -275,6 +283,7 @@ const CertificateTemplateManagement = () => {
       );
     } finally {
       setTemplateSaving(false);
+      setTemplateUploadProgress(null);
     }
   };
 
@@ -534,6 +543,25 @@ const CertificateTemplateManagement = () => {
                 </section>
 
                 <input value={templateSettings.change_note} onChange={(e) => setTemplateSettings((s) => ({ ...s, change_note: e.target.value }))} placeholder="Version change note (optional)" aria-label="Version change note" className={`w-full rounded-md border-0 p-2 text-sm shadow-sm ring-1 ring-inset focus:outline-none focus:ring-2 ${isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] ring-[#3e4042] placeholder:text-[#8f949d] focus:ring-[#5a5a60]' : 'bg-white text-gray-800 ring-gray-200 placeholder:text-gray-400 focus:ring-gray-300'}`} />
+                {templateUploadProgress !== null && (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    aria-label={`Uploading template ${templateUploadProgress}%`}
+                    className={`space-y-1 rounded-md border px-3 py-2 text-xs ${isDark ? 'border-[#3e4042] bg-[#1f1f1f] text-[#b0b3b8]' : 'border-gray-200 bg-gray-50 text-gray-600'}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span>{templateUploadProgress >= 100 ? "Template uploaded. Saving version..." : "Uploading template..."}</span>
+                      <span className="font-semibold">{templateUploadProgress}%</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-gray-200" aria-hidden="true">
+                      <div
+                        className="h-full rounded-full bg-[#800000] transition-[width] duration-150"
+                        style={{ width: `${templateUploadProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
                 <button type="button" onClick={saveTemplate} disabled={templateSaving || templateLoading || !selectedCertId || isLockedCertification || !templateContent.trim()} className="w-full rounded-md bg-[#800000] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
                   {templateSaving ? "Saving..." : "Save as New Version"}
                 </button>

@@ -205,7 +205,8 @@ export const getCertificateMergeTags       = ()          => api.get("/certificat
 export const getCertificationTemplates     = ()          => api.get("/certifications/templates");
 export const getCertificationTemplate      = (id)        => api.get(`/certifications/${id}/template`);
 export const getCertificationTemplateVersions = (id)     => api.get(`/certifications/${id}/template/versions`);
-export const saveCertificationTemplate     = (id, data)  => api.put(`/certifications/${id}/template`, data);
+export const saveCertificationTemplate     = (id, data, config = {}) =>
+  api.put(`/certifications/${id}/template`, data, config);
 export const activateCertificationTemplateVersion = (id, version) =>
   api.post(`/certifications/${id}/template/versions/${version}/activate`);
 

@@ -538,6 +538,12 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
     // bodies). Static path: must stay ahead of 'certifications/{id}'.
     Route::get('certifications/templates',   [CertificateTemplateController::class, 'summary'])
         ->middleware('role:3');
+    // Certificate generation staff need to read the active template for the
+    // preview and server-generation flow. Editing and version management stay
+    // restricted to the admin routes below.
+    Route::get('certifications/{id}/template', [CertificateTemplateController::class, 'show'])
+        ->whereNumber('id')
+        ->middleware('role:3,4');
     Route::get('certifications/{id}',        [CertificationTypeController::class, 'show']);
     Route::get('request-statuses',           [RequestStatusController::class, 'index']);
     Route::get('request-statuses/{id}',      [RequestStatusController::class, 'show']);
@@ -569,8 +575,6 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         // source "legacy" when a type has no template, so clients fall back
         // to CERT_CONFIG. Writes get their own throttle bucket.
         Route::get('certificate-merge-tags', [CertificateTemplateController::class, 'mergeTags']);
-        Route::get('certifications/{id}/template', [CertificateTemplateController::class, 'show'])
-            ->whereNumber('id');
         Route::get('certifications/{id}/template/versions', [CertificateTemplateController::class, 'versions'])
             ->whereNumber('id');
         Route::put('certifications/{id}/template', [CertificateTemplateController::class, 'upsert'])
