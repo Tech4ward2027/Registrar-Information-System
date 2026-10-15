@@ -55,8 +55,6 @@ export const getGender = (row) => {
     row.sex_at_birth ||
     p?.sex_at_birth ||
     p?.gender ||
-    row.undergrad_requestor_verification?.matched_student_profile?.sex_at_birth ||
-    row.undergradRequestorVerification?.matchedStudentProfile?.sex_at_birth ||
     '---'
   );
 };
@@ -128,10 +126,6 @@ export const getCourse = (row) => {
     row.user?.undergradRequestorProfile?.program ||
     row.user?.undergradRequestorProfile?.course ||
     row.program ||
-    row.undergrad_requestor_verification?.matched_student_profile?.academic_records?.[0]?.course ||
-    row.undergrad_requestor_verification?.matched_student_profile?.course ||
-    row.undergradRequestorVerification?.matchedStudentProfile?.academicRecords?.[0]?.course ||
-    row.undergradRequestorVerification?.matchedStudentProfile?.course ||
     row.student_profile?.academic_records?.[0]?.course ||
     row.student_profile?.course ||
     row.studentProfile?.academicRecords?.[0]?.course ||
@@ -145,140 +139,75 @@ export const getCourse = (row) => {
   return typeof val === 'string' && val.trim() ? val.trim() : '---';
 };
 
-/** Extract the email from a request row */
+/**
+ * The e-mail to show for a request row.
+ *
+ * The logbook endpoint resolves `email` on the server (Alumni profile owner,
+ * then Student profile owner, then the filing account). The nested reads below
+ * are only a fallback for a payload from an older backend build, so an Alumni
+ * requester is still found even then.
+ */
 export const getEmail = (row) =>
-  row.user?.email || row.student_profile?.email || '---';
+  row?.email ||
+  row?.alumni_profile?.alumni?.user?.email ||
+  row?.student_profile?.user?.email ||
+  row?.user?.email ||
+  '---';
 
 // ---------------------------------------------------------------------------
-// History helpers — work with embedded history (row.history[]) or a
-// historyByRequestId lookup map (legacy; kept for backward-compatibility).
+// Processing time — read from the server, never computed in the browser.
 // ---------------------------------------------------------------------------
+// GET /document-requests/logbook returns, per row, the official figures from
+// ProcessingTimeService (the single source of truth for the processing-time
+// rule, shared with the OPCR report):
+//   row.processing        { minutes, processed_at, end_status_id, claimed_at }
+//   row.items_processing  [{ type: 'document'|'certificate', id, ...same }]
+// `minutes` is null when a record cannot be measured; it is shown as "---",
+// never replaced by a wall-clock estimate.
 
-/** Return sorted history entries for a row (most recent first), filtered by item if provided */
-export const getHistoryRows = (row, historyByRequestId = {}, item = null) => {
-  const fromMap = historyByRequestId?.[row?.request_id];
-  const base = Array.isArray(fromMap)
-    ? fromMap
-    : Array.isArray(row?.history)
-    ? row.history
-    : [];
+const EMPTY_PROCESSING = Object.freeze({
+  minutes: null,
+  processed_at: null,
+  end_status_id: null,
+  claimed_at: null,
+});
 
-  let filtered = base;
+/**
+ * The processing figures for a row: for one document/certificate line when
+ * `item` is given (the logbook is filtered to one category), otherwise for the
+ * whole request. Falls back to the whole-request figure when the line has no
+ * entry of its own.
+ */
+export const getProcessing = (row, item = null) => {
+  if (!row) return EMPTY_PROCESSING;
+
   if (item) {
-    const docId = item.request_document_id || item.rawItem?.request_document_id;
-    const certId = item.request_certificate_id || item.rawItem?.request_certificate_id;
+    const docId = item.request_document_id ?? item.rawItem?.request_document_id ?? null;
+    const certId = item.request_certificate_id ?? item.rawItem?.request_certificate_id ?? null;
+    const entries = Array.isArray(row.items_processing) ? row.items_processing : [];
 
-    if (docId) {
-      const itemSpecific = base.filter(
-        (h) => Number(h.request_document_id) === Number(docId)
-      );
-      if (itemSpecific.length > 0) filtered = itemSpecific;
-    } else if (certId) {
-      const itemSpecific = base.filter(
-        (h) => Number(h.request_certificate_id) === Number(certId)
-      );
-      if (itemSpecific.length > 0) filtered = itemSpecific;
-    }
+    const match = entries.find(
+      (entry) =>
+        (docId !== null && entry?.type === 'document' && Number(entry.id) === Number(docId)) ||
+        (certId !== null && entry?.type === 'certificate' && Number(entry.id) === Number(certId))
+    );
+    if (match) return match;
   }
 
-  return [...filtered].sort(
-    (a, b) =>
-      new Date(b?.changed_at || 0).getTime() - new Date(a?.changed_at || 0).getTime()
-  );
+  return row.processing ?? EMPTY_PROCESSING;
 };
 
-/** changed_at from the ReadyToClaim (new_status_id=2) history entry.
- *  This is the true "processed" timestamp — not the most-recent entry,
- *  which for a completed request is the Completed transition.
- *  Fix applied by migration FE-1.
- */
-export const getProcessedAt = (row, historyByRequestId = {}, item = null) => {
-  const history = getHistoryRows(row, historyByRequestId, item);
-  const entry = history.find((h) => h.new_status_id === 2  /* ReadyToClaim — migration FE-1 */);
-  return entry?.changed_at || null;
+/** When processing finished: Pending Signature, or Ready to Claim when no signature was needed. */
+export const getProcessedAt = (row, item = null) => getProcessing(row, item).processed_at ?? null;
+
+/** Official processing minutes (office hours, Processing only), or null. */
+export const getProcessingMinutes = (row, item = null) => {
+  const minutes = getProcessing(row, item).minutes;
+  return minutes === undefined ? null : minutes;
 };
 
-/**
- * Raw cumulative wall-clock minutes (minutes_processed) from the ReadyToClaim
- * entry. Kept for backward compatibility and as the fallback source when a
- * request predates business_minutes (see getBusinessMinutesProcessed below).
- * Do not use this directly for a "processing time" figure shown to staff —
- * it counts weekends/holidays/after-hours as elapsed time. Use
- * getProcessingDuration() instead, which prefers the business-hours-aware
- * figure and only falls back to this.
- */
-export const getMinutesProcessed = (row, historyByRequestId = {}, item = null) => {
-  const history = getHistoryRows(row, historyByRequestId, item);
-  const entry = history.find((h) => h.new_status_id === 2);
-  return entry?.minutes_processed ?? null;
-};
-
-/**
- * Cumulative, calendar-aware processing time (minutes) from the request
- * being filed through its ReadyToClaim transition — i.e. the office-hours
- * counterpart of getMinutesProcessed() above.
- *
- * WHY THIS ISN'T A SIMPLE FIELD SWAP:
- * Each request_history row's `business_minutes` is a PER-SEGMENT duration —
- * the calendar-aware time elapsed since the PREVIOUS status change, not
- * since the request was filed (see BusinessCalendarService and the
- * business_minutes column comment on migration
- * 2026_08_15_000000_add_pending_signature_status on the backend). A request
- * that went Processing -> Pending Signature -> Ready to Claim has its
- * total office-hours processing time split across two separate history
- * rows. Reading business_minutes off only the ReadyToClaim row — mirroring
- * how getMinutesProcessed() reads minutes_processed off that single row —
- * would silently drop every earlier segment.
- *
- * This walks the request's full history chronologically and sums
- * business_minutes for every segment up to and including the ReadyToClaim
- * transition, which is the calendar-aware equivalent of "cumulative time
- * since requested_at" that minutes_processed represents.
- *
- * Returns null (never a partial/incorrect number) when:
- *   - there's no ReadyToClaim entry for this row, or
- *   - any segment in that span predates the business_minutes column and is
- *     therefore null — callers should fall back to getMinutesProcessed()
- *     for those older records rather than mixing business-hours and
- *     wall-clock minutes into one total.
- */
-export const getBusinessMinutesProcessed = (row, historyByRequestId = {}, item = null) => {
-  const history = getHistoryRows(row, historyByRequestId, item); // newest first
-  const readyIndex = history.findIndex((h) => h.new_status_id === 2);
-  if (readyIndex === -1) return null;
-
-  // Every segment from the earliest history row through the ReadyToClaim
-  // transition (inclusive) — getHistoryRows() sorts newest-first, so that's
-  // everything from readyIndex to the end of the array.
-  const segments = history.slice(readyIndex);
-
-  let total = 0;
-  for (const segment of segments) {
-    const minutes = segment?.business_minutes;
-    if (minutes === null || minutes === undefined) return null; // incomplete data — let the caller fall back
-    total += Number(minutes) || 0;
-  }
-
-  return total;
-};
-
-/**
- * The processing-time figure that should be shown/exported to staff:
- * business-hours-aware when available, transparently falling back to the
- * raw cumulative figure for requests that predate the business_minutes
- * column so older records still display something rather than "---".
- */
-export const getProcessingDuration = (row, historyByRequestId = {}, item = null) => {
-  const businessMinutes = getBusinessMinutesProcessed(row, historyByRequestId, item);
-  return businessMinutes ?? getMinutesProcessed(row, historyByRequestId, item);
-};
-
-/** Timestamp when the request was claimed (new_status_id === 3) */
-export const getClaimedAt = (row, historyByRequestId = {}, item = null) => {
-  const history = getHistoryRows(row, historyByRequestId, item);
-  const entry = history.find((h) => h.new_status_id === 3);
-  return entry?.changed_at || null;
-};
+/** When the request/line was claimed. Never part of the processing minutes. */
+export const getClaimedAt = (row, item = null) => getProcessing(row, item).claimed_at ?? null;
 
 /** Extract document type names from a request row */
 export const getDocumentNames = (row) =>
@@ -349,16 +278,7 @@ export const getCertificationNames = (row) =>
  * @returns {string} Always a non-empty, trimmed string.
  */
 export const resolveLogbookLabel = (categoryId, ownName, categoryNameById) => {
-  let fallback = String(ownName ?? '').trim() || 'Unspecified';
-
-  const lower = fallback.toLowerCase();
-  if (lower.includes('transcript') || lower.includes('tor')) {
-    fallback = 'Transcript of Records';
-  } else if (lower.includes('completion') || lower.includes('incomplete') || lower.includes('correction of entry')) {
-    fallback = 'Completion Fee';
-  } else if (lower.includes('certified true copy') || lower.includes('ctc')) {
-    fallback = 'Certified True Copy of Records';
-  }
+  const fallback = String(ownName ?? '').trim() || 'Unspecified';
 
   if (categoryId === null || categoryId === undefined || categoryId === '') {
     return fallback;
@@ -413,25 +333,25 @@ export const getCertificationLogbookLabels = (row, categoryNameById) =>
     .filter(Boolean);
 
 /**
- * Find the specific document or certificate item inside a request row matching a target logbook category/title.
+ * Find the specific document or certificate item inside a request row whose
+ * resolved logbook label equals the target (case-insensitive, exact). Matching
+ * is on the label only (category name, else the type's own name), never on a
+ * substring of the name, so unrelated types cannot be mistaken for a category.
  */
 export const findMatchingItem = (row, categoryOrTitle, categoryNameById) => {
   if (!row || !categoryOrTitle) return null;
   const target = String(categoryOrTitle).trim().toLowerCase();
   if (!target || target === 'all document' || target === 'all certification') return null;
 
+  const labelOf = (categoryId, ownName) =>
+    resolveLogbookLabel(categoryId, ownName, categoryNameById).toLowerCase();
+
   if (Array.isArray(row.documents)) {
     const doc = row.documents.find((d) => {
       const type = d?.documentType ?? d?.document_type;
       const categoryId = type?.logbook_category_id ?? d?.logbook_category_id ?? null;
-      const ownName = type?.document_name ?? d?.document_name ?? '';
-      const label = resolveLogbookLabel(categoryId, ownName, categoryNameById).toLowerCase();
-      if (label === target) return true;
-      const name = String(ownName || d?.name || '').toLowerCase();
-      if (target === 'completion fee') return name.includes('completion') || name.includes('incomplete') || name.includes('correction of entry');
-      if (target === 'transcript of records') return name.includes('transcript') || name.includes('tor');
-      if (target === 'certified true copy of records') return name.includes('certified true copy') || name.includes('ctc');
-      return name === target;
+      const ownName = type?.document_name ?? d?.document_name ?? d?.name ?? '';
+      return labelOf(categoryId, ownName) === target;
     });
     if (doc) return doc;
   }
@@ -441,11 +361,19 @@ export const findMatchingItem = (row, categoryOrTitle, categoryNameById) => {
       const type = c?.certificationType ?? c?.certification_type;
       const categoryId = type?.logbook_category_id ?? c?.logbook_category_id ?? null;
       const ownName = type?.certificate_name ?? c?.certificate_name ?? c?.name ?? '';
-      const label = resolveLogbookLabel(categoryId, ownName, categoryNameById).toLowerCase();
-      return label === target;
+      return labelOf(categoryId, ownName) === target;
     });
     if (cert) return cert;
   }
 
   return null;
+};
+
+/**
+ * Whether a row has a document (or certificate) line logged under `label`.
+ * Used to group rows into sections for the DOCX export.
+ */
+export const rowHasLabel = (labels, label) => {
+  const target = String(label ?? '').trim().toLowerCase();
+  return labels.some((l) => String(l).trim().toLowerCase() === target);
 };

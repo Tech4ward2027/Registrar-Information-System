@@ -9,9 +9,8 @@ import {
   getCourse,
   getGender,
   getEmail,
-  getHistoryRows,
   getProcessedAt,
-  getProcessingDuration,
+  getProcessingMinutes,
   getClaimedAt,
   findMatchingItem,
 } from './logbookHelpers.js';
@@ -214,7 +213,7 @@ const buildFooter = async () => {
   });
 };
 
-export const logbookDocx = async (sectionsOrRows, pupLogoSrc = null, bpLogoSrc = null, historyByRequestId = {}, dateRangeLabel = null, logbookCategoryNameById = null) => {
+export const logbookDocx = async (sectionsOrRows, pupLogoSrc = null, bpLogoSrc = null, dateRangeLabel = null, logbookCategoryNameById = null) => {
   const header = await buildHeader(pupLogoSrc, bpLogoSrc);
   const footer = await buildFooter();
 
@@ -306,9 +305,9 @@ export const logbookDocx = async (sectionsOrRows, pupLogoSrc = null, bpLogoSrc =
           cell(getCourse(row), { width: colWidths[2], align: AlignmentType.LEFT, size: DEFAULT_TEXT_SIZE }),
           cell(getGender(row), { width: colWidths[3], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
           cell(getEmail(row), { width: colWidths[4], align: AlignmentType.LEFT, size: DEFAULT_TEXT_SIZE }),
-          cell(formatDateLong(getProcessedAt(row, historyByRequestId, targetItem), true) || '---', { width: colWidths[5], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
-          cell(formatMinutesDuration(getProcessingDuration(row, historyByRequestId, targetItem)), { width: colWidths[6], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
-          cell(formatDateLong(getClaimedAt(row, historyByRequestId, targetItem)) || 'Pending', { width: colWidths[7], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
+          cell(formatDateLong(getProcessedAt(row, targetItem), true) || '---', { width: colWidths[5], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
+          cell(formatMinutesDuration(getProcessingMinutes(row, targetItem)), { width: colWidths[6], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
+          cell(formatDateLong(getClaimedAt(row, targetItem)) || 'Pending', { width: colWidths[7], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
         ],
       });
     });

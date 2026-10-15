@@ -15,6 +15,7 @@ use App\Http\Requests\DocumentRequest\BulkRequestIdsRequest;
 use App\Http\Requests\DocumentRequest\ClaimDocumentRequestRequest;
 use App\Http\Requests\DocumentRequest\CloseRequestUnableToProcessRequest;
 use App\Http\Requests\DocumentRequest\IndexDocumentRequestsRequest;
+use App\Http\Requests\DocumentRequest\LogbookIndexRequest;
 use App\Http\Requests\DocumentRequest\StoreDocumentRequestRequest;
 use App\Http\Requests\DocumentRequest\UpdateDocumentRequestRequest;
 use App\Http\Requests\DocumentRequest\VerifyOfficialReceiptRequest;
@@ -23,6 +24,7 @@ use App\Http\Requests\RequestItem\UpdateRequestCertificateStatusRequest;
 use App\Http\Requests\RequestItem\UpdateRequestDocumentStatusRequest;
 use App\Http\Resources\DocumentRequestListResource;
 use App\Services\DocumentRequestService;
+use App\Services\LogbookQueryService;
 use App\Services\ProcessingTimeService;
 use App\Services\RequestItemStatusService;
 use App\Services\AuditLogger;
@@ -249,59 +251,54 @@ class DocumentRequestController extends Controller
     // frontend previously performed.
     // Staff/superadmin only (enforced by route middleware role:3,4).
     // -------------------------------------------------------------------------
-    // BE-1 migration: added from/to/doc_type filters
-    // Accepts optional query params:
-    //   ?from=YYYY-MM-DD    filter requests on or after this date
-    //   ?to=YYYY-MM-DD      filter requests on or before this date
-    //   ?doc_type=string    filter by document_name (partial, case-insensitive)
-    //   ?per_page=int       page size, default 25, capped at 100
-    //   ?page=int           page number, default 1 (standard Laravel paginator)
+    // Query params (all optional; validated by LogbookIndexRequest):
+    //   from, to        YYYY-MM-DD, on/after and on/before requested_at
+    //   search          requester name, student number, claim code, request id,
+    //                   OR number or account e-mail (prefix match)
+    //   mode            'documents' (default) | 'certifications'
+    //   categories[]    documents mode: logbook labels to keep; empty or
+    //                   'All Document' = no restriction
+    //   certification   certifications mode: one label; empty or
+    //                   'All Certification' = any request with a certificate
+    //   doc_type        legacy partial document name
+    //   per_page, page  default 25, capped at 100
     //
-    // BE-2: was ->get() with no limit — every completed request, forever,
-    // in one response. Switched to paginate(); page size is capped server
-    // -side so a client can't force an unbounded query by passing a huge
-    // per_page. requested_at already has an index (dr_requested_at_idx
-    // from the base schema migration) so ordering + the from/to filters
-    // stay index-backed.
-    public function logbook(Request $request)
+    // Filtering is done in SQL by LogbookQueryService (single place for the
+    // exact-label category rule), so the screen loads one page at a time and
+    // the record total is the paginator's `total`.
+    //
+    // BE-2: page size is capped server-side so a client can't force an
+    // unbounded query. requested_at already has an index (dr_requested_at_idx).
+    public function logbook(LogbookIndexRequest $request, LogbookQueryService $logbookQuery)
     {
-        $query = DocumentRequest::with(array_merge(self::listRelations(), ['history']))
-            ->whereHas('status', fn ($q) => $q->where('status_name', 'Completed'));
+        $query = DocumentRequest::with(array_merge(
+            self::listRelations(),
+            LogbookQueryService::EMAIL_RELATIONS,
+            ['history']
+        ));
 
-        if ($from = $request->query('from')) {
-            $query->whereDate('requested_at', '>=', $from);
-        }
-
-        if ($to = $request->query('to')) {
-            $query->whereDate('requested_at', '<=', $to);
-        }
-
-        if ($docType = $request->query('doc_type')) {
-            $query->whereHas('documents.documentType', function ($q) use ($docType) {
-                $q->where('document_name', 'like', '%' . $docType . '%');
-            });
-        }
-
-        $perPage = (int) $request->query('per_page', 25);
-        $perPage = max(1, min($perPage, 100));
+        $logbookQuery->apply($query, $request);
 
         // Same privacy treatment as index(): no decrypted undergrad PII in
         // a list row, plus display_name / student_number / requester_type.
         //
-        // Each row also carries the official processing time, computed once
-        // here by ProcessingTimeService (the single source of truth for the
-        // COMPUTATION RULE — see that class) so the screen, the DOCX export
-        // and the OPCR report cannot disagree:
+        // Each row also carries:
+        //   email             the requester's account e-mail (Alumni profile
+        //                     owner, Student profile owner, then the filing
+        //                     account) resolved once on the server;
         //   processing        { minutes, processed_at, end_status_id, claimed_at }
-        //                     for the whole request;
+        //                     for the whole request, computed by
+        //                     ProcessingTimeService (the single source of truth
+        //                     for the COMPUTATION RULE);
         //   items_processing  the same, per document/certificate line, for
         //                     when the logbook is filtered to one category.
         // `minutes` is null (never a wall-clock guess) when the record cannot
         // be measured. The raw `history` rows are still returned unchanged.
         $page = $query->orderByDesc('requested_at')->orderByDesc('request_id')
-            ->paginate($perPage)
+            ->paginate($request->perPage())
             ->through(fn (DocumentRequest $row) => array_merge(
                 (new DocumentRequestListResource($row))->resolve(),
+                ['email' => $logbookQuery->resolveEmail($row)],
                 $this->processingTime->summaryFor($row)
             ));
 

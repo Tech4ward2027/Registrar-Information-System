@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/solid';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthProvider';
 import { hasModuleAction } from '../utils/policy';
-import { getAllLogbookData, getDocumentTypes, getCertifications, getLogbookCategories, recordLogbookExport } from '../services/api'; // FE-3 migration: uses getLogbookData() from API; now pages through via getAllLogbookData() since the backend endpoint is paginated
+import { getLogbookData, getAllLogbookData, getDocumentTypes, getCertifications, getLogbookCategories, recordLogbookExport } from '../services/api'; // The table loads one server-filtered page at a time; getAllLogbookData() is used only for the DOCX export.
 import {
   formatMinutesDuration,
   getProcessedAt,
-  getProcessingDuration,
+  getProcessingMinutes,
   getFullName,
   getCourse,
   getGender,
@@ -16,8 +16,10 @@ import {
   getCertificationLogbookLabels,
   resolveLogbookLabel,
   formatDateLong,
+  formatDateTimeLong,
   getClaimedAt,
   findMatchingItem,
+  rowHasLabel,
 } from '../utils/logbookHelpers.js';
 
 import DropDown from '../components/DropDown';
@@ -37,6 +39,9 @@ const toRows = (raw) => {
   return [];
 };
 
+// Wait this long after the last keystroke before asking the server to search.
+const SEARCH_DEBOUNCE_MS = 350;
+
 const LogbookRecords = () => {
   const { isDark } = useTheme();
   const { user } = useAuth();
@@ -50,19 +55,23 @@ const LogbookRecords = () => {
   // consistency/defense-in-depth, not because export itself discloses
   // anything View didn't.
   const canExport = hasModuleAction(user, 'logbook', 'Export');
-  const [data, setData] = useState([]);
+  // One server-filtered page of logbook rows, plus the total across all pages.
+  const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
   const [dbDocTypes, setDbDocTypes] = useState([]);
   const [availableCertifications, setAvailableCertifications] = useState([]);
   const [logbookCategories, setLogbookCategories] = useState([]);
-  const [historyByRequestId, setHistoryByRequestId] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // first load of the lookup lists
+  const requestSeq = useRef(0); // discards responses that arrive after a newer request
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedDocCategories, setSelectedDocCategories] = useState([]);
   const [selectedCertificationLabel, setSelectedCertificationLabel] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [tableLoading, setTableLoading] = useState(false);
   const [toastSuccess, setToastSuccess] = useState('');
   const [toastError, setToastError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [activePreset, setActivePreset] = useState('');
@@ -77,43 +86,42 @@ const LogbookRecords = () => {
     setIsDateModalOpen(false);
   };
 
-  // Load logbook data on mount
+  // Load the lookup lists on mount. The rows themselves are fetched below,
+  // one page at a time, with the active filters applied by the server.
   useEffect(() => {
-    const fetchLogbookData = async () => {
+    const fetchLookups = async () => {
       setLoading(true);
       try {
-        const [logbookRows, typesRes, certRes, categoriesRes] = await Promise.all([
-          getAllLogbookData(),
+        const [typesRes, certRes, categoriesRes] = await Promise.all([
           getDocumentTypes(),
           getCertifications(),
           getLogbookCategories(),
         ]);
 
-        const requests = toRows(logbookRows);
-        const types = toRows(typesRes.data);
-        const certifications = toRows(certRes.data);
-        const categories = toRows(categoriesRes.data);
-
-        setData(requests);
-        setDbDocTypes(types);
-        setAvailableCertifications(certifications);
-        setLogbookCategories(categories);
-        setHistoryByRequestId({});
-        setCurrentPage(1);
+        setDbDocTypes(toRows(typesRes.data));
+        setAvailableCertifications(toRows(certRes.data));
+        setLogbookCategories(toRows(categoriesRes.data));
       } catch (error) {
         console.error('Error loading logbook records:', error);
-        setData([]);
         setDbDocTypes([]);
         setAvailableCertifications([]);
         setLogbookCategories([]);
-        setHistoryByRequestId({});
         setToastError((error && (error.message || error.toString())) || 'Error loading logbook records.');
       } finally {
         setLoading(false);
       }
     };
-    fetchLogbookData();
+    fetchLookups();
   }, []);
+
+  // Debounce the search box; a new search always returns to page 1.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearch(searchTerm.trim());
+      setCurrentPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [searchTerm]);
 
   // Map of document type id -> document's own name (pre-rollup), used only
   // for the "is this catalog's magic 'Certification' row present" check
@@ -172,9 +180,8 @@ const LogbookRecords = () => {
   }, [availableCertifications, logbookCategoryNameById]);
 
   // Build document filter dropdown options — one entry per distinct
-  // Build document filter dropdown options — one entry per distinct
-  // logbook label (post-rollup), plus mandatory logbook category options
-  // ("Completion Fee", "Transcript of Records", "Certified True Copy of Records").
+  // logbook label (post-rollup): every logbook category, then every type that
+  // has no category under its own name.
   const docOptions = useMemo(() => {
     const options = ['All Document'];
     const seen = new Set(['all document']);
@@ -196,20 +203,6 @@ const LogbookRecords = () => {
       if (seen.has(key)) return;
       seen.add(key);
       options.push(normalized);
-    });
-
-    const requiredCategories = [
-      'Completion Fee',
-      'Transcript of Records',
-      'Certified True Copy of Records',
-    ];
-
-    requiredCategories.forEach((cat) => {
-      const key = cat.toLowerCase();
-      if (!seen.has(key)) {
-        seen.add(key);
-        options.push(cat);
-      }
     });
 
     // Structural marker, unrelated to logbook_category rollup: a document
@@ -271,154 +264,116 @@ const LogbookRecords = () => {
     }
   }, [isCertificationMode, certificationOptions]);
 
-  // Filter data
-  const filteredData = useMemo(() => {
-    const from = dateFrom ? new Date(dateFrom + 'T00:00:00') : null;
-    const to = dateTo ? new Date(dateTo + 'T23:59:59') : null;
-    const search = searchTerm.trim().toLowerCase();
+  // The one category/certification the screen is narrowed to, if any. With
+  // exactly one selected, each row shows the figures for that line item only.
+  const targetCategory = useMemo(() => {
+    if (selectedDocCategories && selectedDocCategories.length === 1 && selectedDocCategories[0] !== 'All Document') {
+      return selectedDocCategories[0];
+    }
+    if (isCertificationMode && selectedCertificationLabel && selectedCertificationLabel !== 'All Certification') {
+      return selectedCertificationLabel;
+    }
+    return null;
+  }, [selectedDocCategories, isCertificationMode, selectedCertificationLabel]);
 
-    const completedOnly = data.filter(item => {
-      if (from || to) {
-        const req = item.requested_at ? new Date(item.requested_at) : null;
-        if (!req) return false;
-        if (from && req < from) return false;
-        if (to && req > to) return false;
-      }
-
-      if (search) {
-        const name = getFullName(item).toLowerCase();
-        const email = getEmail(item).toLowerCase();
-        const course = getCourse(item).toLowerCase();
-        const claimCode = (item.claim_code || '').toLowerCase();
-        const orNum = (item.or_number || '').toLowerCase();
-        const studentNum = (
-          item.student_profile?.student_number ||
-          item.user?.student_profile?.student_number ||
-          item.alumni_profile?.student_number ||
-          ''
-        ).toLowerCase();
-
-        const matchesSearch =
-          name.includes(search) ||
-          email.includes(search) ||
-          course.includes(search) ||
-          claimCode.includes(search) ||
-          orNum.includes(search) ||
-          studentNum.includes(search);
-
-        if (!matchesSearch) return false;
-      }
-
-      return true;
-    });
+  // Filters sent to the server (search, category, certification, dates).
+  const filterParams = useMemo(() => {
+    const params = {};
+    if (dateFrom) params.from = dateFrom;
+    if (dateTo) params.to = dateTo;
+    if (debouncedSearch) params.search = debouncedSearch;
 
     if (isCertificationMode) {
-      const targetCertification = String(selectedCertificationLabel || 'All Certification').trim().toLowerCase();
-      return completedOnly.filter((item) => {
-        const certLabels = getCertificationLogbookLabels(item, logbookCategoryNameById)
-          .map((label) => label.trim().toLowerCase());
-        if (targetCertification === 'all certification') return certLabels.length > 0;
-        return certLabels.includes(targetCertification);
-      });
-    }
-
-    if (!selectedDocCategories || selectedDocCategories.length === 0 || selectedDocCategories.includes('All Document')) {
-      return completedOnly;
-    }
-
-    const selectedKeys = selectedDocCategories.map((c) => c.trim().toLowerCase());
-
-    return completedOnly.filter((item) => {
-      const labels = getDocumentLogbookLabels(item, logbookCategoryNameById).map((l) => l.trim().toLowerCase());
-      if (labels.some((label) => selectedKeys.includes(label))) {
-        return true;
+      params.mode = 'certifications';
+      if (selectedCertificationLabel && selectedCertificationLabel !== 'All Certification') {
+        params.certification = selectedCertificationLabel;
       }
-      const docs = Array.isArray(item.documents) ? item.documents : [];
-      return docs.some((doc) => {
-        const name = String(doc?.documentType?.document_name || doc?.document_name || doc?.name || '').toLowerCase();
-        return selectedKeys.some((targetLabel) => {
-          if (targetLabel === 'completion fee') {
-            return name.includes('completion') || name.includes('incomplete') || name.includes('correction of entry');
-          }
-          if (targetLabel === 'transcript of records') {
-            return name.includes('transcript') || name.includes('tor');
-          }
-          if (targetLabel === 'certified true copy of records') {
-            return name.includes('certified true copy') || name.includes('ctc');
-          }
-          return name === targetLabel;
-        });
-      });
-    });
-  }, [selectedDocCategories, data, isCertificationMode, selectedCertificationLabel, logbookCategoryNameById, dateFrom, dateTo, searchTerm]);
+    } else if (selectedDocCategories && selectedDocCategories.length > 0 && !selectedDocCategories.includes('All Document')) {
+      params.categories = selectedDocCategories;
+    }
 
-  // Sort filtered data by request timestamp (most recent first)
-  const sortedData = useMemo(() => {
-    return [...filteredData].sort((a, b) => {
-      const aRequestedAt = new Date(a.requested_at || 0).getTime();
-      const bRequestedAt = new Date(b.requested_at || 0).getTime();
-      return bRequestedAt - aRequestedAt;
-    });
-  }, [filteredData]);
+    return params;
+  }, [dateFrom, dateTo, debouncedSearch, isCertificationMode, selectedCertificationLabel, selectedDocCategories]);
 
-  const totalPages = Math.ceil(sortedData.length / rowsPerPage) || 1;
+  // Fetch the current page whenever the filters or the page change.
+  useEffect(() => {
+    if (loading) return undefined;
+
+    const seq = ++requestSeq.current;
+
+    const fetchPage = async () => {
+      setTableLoading(true);
+      try {
+        const res = await getLogbookData({ ...filterParams, page: currentPage, per_page: rowsPerPage });
+        if (seq !== requestSeq.current) return; // a newer request superseded this one
+
+        const body = res.data;
+        const pageRows = toRows(body);
+        const lastPage = Number(body?.last_page ?? 1);
+
+        setRows(pageRows);
+        setTotal(Number(body?.total ?? pageRows.length));
+
+        // The filtered result shrank below the page we were on.
+        if (lastPage >= 1 && currentPage > lastPage) setCurrentPage(lastPage);
+      } catch (error) {
+        if (seq !== requestSeq.current) return;
+        console.error('Error loading logbook records:', error);
+        setRows([]);
+        setTotal(0);
+        setToastError((error && (error.message || error.toString())) || 'Error loading logbook records.');
+      } finally {
+        if (seq === requestSeq.current) setTableLoading(false);
+      }
+    };
+
+    fetchPage();
+    return undefined;
+  }, [loading, filterParams, currentPage]);
+
+  const totalPages = Math.max(1, Math.ceil(total / rowsPerPage));
   const indexOfFirstItem = (currentPage - 1) * rowsPerPage;
   const indexOfLastItem = currentPage * rowsPerPage;
 
-  const currentData = useMemo(() => {
-    return sortedData.slice(indexOfFirstItem, indexOfLastItem);
-  }, [indexOfFirstItem, indexOfLastItem, sortedData]);
-
-  // Build sections for DOCX export. Section titles/grouping are the
-  // resolved logbook label (post-rollup) so the exported document groups
-  // requests exactly the way the on-screen filter/dropdown does — never
-  // the raw, pre-rollup document/certificate type name.
-  const getExportSections = () => {
+  // Build sections for DOCX export from the FULL filtered result (every page,
+  // not just the one on screen). Section titles/grouping are the resolved
+  // logbook label (post-rollup) so the exported document groups requests
+  // exactly the way the on-screen filter/dropdown does, never the raw,
+  // pre-rollup document/certificate type name.
+  const getExportSections = (exportRows) => {
     if (isCertificationMode) {
       if (selectedCertificationLabel && selectedCertificationLabel !== 'All Certification') {
-        return [{ title: selectedCertificationLabel, rows: sortedData }];
+        return [{ title: selectedCertificationLabel, rows: exportRows }];
       }
-      const certLabels = certificationOptions.filter(n => String(n || '').trim().toLowerCase() !== 'all certification');
-      return certLabels.map((label) => ({
-        title: label,
-        rows: sortedData.filter((row) =>
-          getCertificationLogbookLabels(row, logbookCategoryNameById)
-            .map(x => x.toLowerCase())
-            .includes(String(label).trim().toLowerCase())
-        ),
-      }));
+      return certificationOptions
+        .filter((label) => String(label || '').trim().toLowerCase() !== 'all certification')
+        .map((label) => ({
+          title: label,
+          rows: exportRows.filter((row) =>
+            rowHasLabel(getCertificationLogbookLabels(row, logbookCategoryNameById), label)
+          ),
+        }));
     }
 
     if (selectedDocCategories && selectedDocCategories.length > 0 && !selectedDocCategories.includes('All Document')) {
-      return selectedDocCategories.map((catName) => {
-        const targetLabel = catName.trim().toLowerCase();
-        return {
+      return selectedDocCategories
+        .map((catName) => ({
           title: catName,
-          rows: sortedData.filter((item) => {
-            const labels = getDocumentLogbookLabels(item, logbookCategoryNameById).map((l) => l.trim().toLowerCase());
-            if (labels.includes(targetLabel)) return true;
-            const docs = Array.isArray(item.documents) ? item.documents : [];
-            return docs.some((doc) => {
-              const name = String(doc?.documentType?.document_name || doc?.document_name || doc?.name || '').toLowerCase();
-              if (targetLabel === 'completion fee') return name.includes('completion') || name.includes('incomplete') || name.includes('correction of entry');
-              if (targetLabel === 'transcript of records') return name.includes('transcript') || name.includes('tor');
-              if (targetLabel === 'certified true copy of records') return name.includes('certified true copy') || name.includes('ctc');
-              return name === targetLabel;
-            });
-          }),
-        };
-      }).filter((sec) => sec.rows.length > 0);
+          rows: exportRows.filter((row) =>
+            rowHasLabel(getDocumentLogbookLabels(row, logbookCategoryNameById), catName)
+          ),
+        }))
+        .filter((sec) => sec.rows.length > 0);
     }
 
-    const docLabels = Object.values(docLogbookLabelById).map(n => String(n || '').trim()).filter(Boolean);
-    const uniqueDocLabels = Array.from(new Set(docLabels));
+    const uniqueDocLabels = Array.from(
+      new Set(Object.values(docLogbookLabelById).map((n) => String(n || '').trim()).filter(Boolean))
+    );
 
     return uniqueDocLabels.map((label) => ({
       title: label,
-      rows: sortedData.filter((row) =>
-        getDocumentLogbookLabels(row, logbookCategoryNameById)
-          .map(x => x.toLowerCase())
-          .includes(String(label).trim().toLowerCase())
+      rows: exportRows.filter((row) =>
+        rowHasLabel(getDocumentLogbookLabels(row, logbookCategoryNameById), label)
       ),
     }));
   };
@@ -431,7 +386,17 @@ const LogbookRecords = () => {
       const rangeLabel = (dateFrom && dateTo)
         ? `${dateFrom}_to_${dateTo}`
         : (dateFrom ? `from_${dateFrom}` : (dateTo ? `to_${dateTo}` : null));
-      const sections = getExportSections();
+
+      // Export what the search box shows right now, even if the debounce has
+      // not fired yet.
+      const exportParams = { ...filterParams };
+      const liveSearch = searchTerm.trim();
+      if (liveSearch) exportParams.search = liveSearch;
+      else delete exportParams.search;
+
+      const exportRows = await getAllLogbookData(exportParams);
+      const sections = getExportSections(exportRows);
+
       // Audit FIRST (fail closed): the file is built in the browser, so this
       // call is the only server-side record of the export. If it fails, the
       // export does not run. Metadata only: no row contents.
@@ -443,7 +408,7 @@ const LogbookRecords = () => {
         row_count: sections.reduce((n, sec) => n + sec.rows.length, 0),
         section_count: sections.length,
       });
-      await logbookDocx(sections, pupLogoSrc, bpLogoSrc, historyByRequestId, rangeLabel, logbookCategoryNameById);
+      await logbookDocx(sections, pupLogoSrc, bpLogoSrc, rangeLabel, logbookCategoryNameById);
       setToastSuccess('Exporting Report completed.');
     } catch (e) {
       console.error('Export to DOCX failed', e);
@@ -453,6 +418,10 @@ const LogbookRecords = () => {
     }
   };
 
+  // Always call the latest handler (it closes over the current filters).
+  const exportHandlerRef = useRef(handleExportDocx);
+  exportHandlerRef.current = handleExportDocx;
+
   // Listen for voice command to export documents
   useEffect(() => {
     const handleVoiceExport = () => {
@@ -461,41 +430,12 @@ const LogbookRecords = () => {
       // this, a Student Staff account could still trigger an export
       // by voice even with the button hidden.
       if (!loading && !exporting && canExport) {
-        handleExportDocx();
+        exportHandlerRef.current();
       }
     };
     window.addEventListener('voice-command-export', handleVoiceExport);
     return () => window.removeEventListener('voice-command-export', handleVoiceExport);
   }, [loading, exporting, canExport]);
-
-  // Convert text to Proper Case while preserving roman numerals and hyphenated parts
-  const toProperCase = (value = '') => {
-    return value
-      .toString()
-      .trim()
-      .split(/\s+/)
-      .map((token) => {
-        if (/^[IVXLCDM]+$/i.test(token)) return token.toUpperCase();
-        return token
-          .toLowerCase()
-          .replace(/(^|[-'])([a-z])/g, (_, separator, letter) => `${separator}${letter.toUpperCase()}`);
-      })
-      .join(' ');
-  };
-
-  // Format an ISO datetime value into long date + 24-hour time
-  const formatDateTimeLong = (value) => {
-    const datePart = formatDateLong(value);
-    if (!datePart) return null;
-
-    const timePart = new Date(value).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-
-    return `${datePart} ${timePart}`;
-  };
 
   if (loading) return <LogbookSkeleton isDark={isDark} />;
 
@@ -518,10 +458,7 @@ const LogbookRecords = () => {
                 </label>
                 <VoiceSearchInput
                   value={searchTerm}
-                  onChange={(val) => {
-                    setSearchTerm(val);
-                    setCurrentPage(1);
-                  }}
+                  onChange={setSearchTerm}
                   placeholder="Search name, email..."
                 />
               </div>
@@ -598,7 +535,7 @@ const LogbookRecords = () => {
                   <button
                     data-voice-action="export"
                     onClick={handleExportDocx}
-                    disabled={loading || exporting || sortedData.length === 0}
+                    disabled={loading || exporting || total === 0}
                     className={`w-full flex items-center justify-center px-4 py-3 min-h-11.5
                       rounded-lg text-xs font-black uppercase tracking-wider shadow-xs 
                       transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
@@ -619,7 +556,7 @@ const LogbookRecords = () => {
               Processing of Application for <br className="sm:hidden" /> {selectedDocLabel}
             </h2>
             <p className={`text-xs mt-1 font-medium ${isDark ? 'text-[#9a9a9a]' : 'text-gray-400'}`}>
-              {sortedData.length} record{sortedData.length !== 1 ? 's' : ''}
+              {total} record{total !== 1 ? 's' : ''}
               {(dateFrom || dateTo) && (
                 <span> &mdash; {dateFrom && `from ${dateFrom}`}{dateFrom && dateTo && ' '}{dateTo && `to ${dateTo}`}</span>
               )}
@@ -644,16 +581,11 @@ const LogbookRecords = () => {
               </tr>
             </thead>
             <tbody>
-              {currentData.map((row) => (
+              {rows.map((row) => (
                 (() => {
-                  const targetCategory = (selectedDocCategories && selectedDocCategories.length === 1 && selectedDocCategories[0] !== 'All Document')
-                    ? selectedDocCategories[0]
-                    : (isCertificationMode && selectedCertificationLabel && selectedCertificationLabel !== 'All Certification')
-                    ? selectedCertificationLabel
-                    : null;
                   const targetItem = targetCategory ? findMatchingItem(row, targetCategory, logbookCategoryNameById) : null;
-                  const processedAt = getProcessedAt(row, historyByRequestId, targetItem);
-                  const claimedAt = getClaimedAt(row, historyByRequestId, targetItem);
+                  const processedAt = getProcessedAt(row, targetItem);
+                  const claimedAt = getClaimedAt(row, targetItem);
 
                   return (
                     <tr key={row.request_id || row.id} className={`border-b text-[11px] sm:text-[12px] transition-colors 
@@ -685,7 +617,7 @@ const LogbookRecords = () => {
                       </td>
 
                       <td className="p-3 sm:p-4 text-center whitespace-nowrap">
-                        {formatMinutesDuration(getProcessingDuration(row, historyByRequestId, targetItem))}
+                        {formatMinutesDuration(getProcessingMinutes(row, targetItem))}
                       </td>
 
                       <td className="p-3 sm:p-4 text-center italic text-gray-400 whitespace-nowrap">
@@ -697,7 +629,7 @@ const LogbookRecords = () => {
                 })()
               ))}
 
-              {!loading && Array.from({ length: Math.max(0, rowsPerPage - currentData.length) }).map((_, i) => (
+              {!loading && Array.from({ length: Math.max(0, rowsPerPage - rows.length) }).map((_, i) => (
                 <tr key={`empty-${i}`} className="h-11.25 sm:h-13.25 border-b border-gray-100">
                   <td colSpan="8"></td>
                 </tr>
@@ -708,21 +640,16 @@ const LogbookRecords = () => {
 
         {/* Mobile Card View (visible on mobile, hidden md and up) */}
         <div className="block md:hidden flex-1 px-4 py-2 space-y-3">
-          {currentData.length === 0 && !loading && (
+          {rows.length === 0 && !loading && !tableLoading && (
             <div className={`text-center py-8 text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
               No logbook records found for this period.
             </div>
           )}
 
-          {currentData.map((row) => {
-            const targetCategory = (selectedDocCategories && selectedDocCategories.length === 1 && selectedDocCategories[0] !== 'All Document')
-              ? selectedDocCategories[0]
-              : (isCertificationMode && selectedCertificationLabel && selectedCertificationLabel !== 'All Certification')
-              ? selectedCertificationLabel
-              : null;
+          {rows.map((row) => {
             const targetItem = targetCategory ? findMatchingItem(row, targetCategory, logbookCategoryNameById) : null;
-            const processedAt = getProcessedAt(row, historyByRequestId, targetItem);
-            const claimedAt = getClaimedAt(row, historyByRequestId, targetItem);
+            const processedAt = getProcessedAt(row, targetItem);
+            const claimedAt = getClaimedAt(row, targetItem);
 
             return (
               <div
@@ -789,7 +716,7 @@ const LogbookRecords = () => {
                       Business Minutes
                     </span>
                     <span className={`font-bold ${isDark ? 'text-[#f5c542]' : 'text-[#800000]'}`}>
-                      {formatMinutesDuration(getProcessingDuration(row, historyByRequestId, targetItem))}
+                      {formatMinutesDuration(getProcessingMinutes(row, targetItem))}
                     </span>
                   </div>
 
@@ -810,13 +737,14 @@ const LogbookRecords = () => {
           items-center gap-4 print:hidden border-t ${isDark ? 'bg-[#242526] text-[#9a9a9a] border-[#3e4042]' 
           : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
           <span className="text-center sm:text-left">
-            Showing {sortedData.length > 0 ? indexOfFirstItem + 1 : 0} to{" "}
-            {Math.min(indexOfLastItem, sortedData.length)} of {sortedData.length} results
+            Showing {total > 0 ? indexOfFirstItem + 1 : 0} to{" "}
+            {Math.min(indexOfLastItem, total)} of {total} results
           </span>
 
           <div className="flex gap-4 items-center">
             <button
               onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+              aria-label="Previous page"
               disabled={currentPage === 1}
               className={`p-1 rounded transition-colors ${currentPage === 1 ? 
                 (isDark ? 'text-[#4e4f50] cursor-not-allowed' : 'text-gray-300 cursor-not-allowed') 
@@ -831,6 +759,7 @@ const LogbookRecords = () => {
 
             <button
               onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+              aria-label="Next page"
               disabled={currentPage === totalPages || totalPages === 0}
               className={`p-1 rounded transition-colors ${(currentPage === totalPages || totalPages === 0) 
                 ? (isDark ? 'text-[#4e4f50] cursor-not-allowed' : 'text-gray-300 cursor-not-allowed') 
