@@ -26,6 +26,7 @@ use App\Http\Controllers\AiQueryController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\RequestPurposeController;
 use App\Http\Controllers\LogbookCategoryController;
+use App\Http\Controllers\LogbookExportAuditController;
 use App\Http\Controllers\OpcrPerformanceController;
 use App\Http\Controllers\FulfillmentTrackController;
 use App\Http\Controllers\UnmatchedCashierItemController;
@@ -225,6 +226,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
     Route::prefix('document-requests')->group(function () {
         Route::get('/',                           [DocumentRequestController::class, 'index'])->middleware('module:dashboard,View');
         Route::get('logbook',                     [DocumentRequestController::class, 'logbook'])->middleware(['role:3,4', 'module:logbook,View']);
+        // Audit record for a client-side logbook export. Gated on the Export
+        // action (previously enforced only in the UI), throttled per user.
+        Route::post('logbook/export-audit',       [LogbookExportAuditController::class, 'store'])->middleware(['role:3,4', 'module:logbook,Export', 'throttle:20,1,logbook-export-audit']);
         Route::get('counts',                      [DocumentRequestController::class, 'counts'])->middleware(['role:3,4', 'module:dashboard,View']);
         // One row per document/certificate (staff dashboard). Registered before
         // the '{documentRequest}' wildcard so "items" is never read as an id.

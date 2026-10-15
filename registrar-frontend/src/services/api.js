@@ -518,6 +518,13 @@ export const getLogbookData       = (params = {}) => api.get("/document-requests
 // Read-only; needs the logbook View permission.
 export const getOpcrPerformance   = (params = {}) => api.get("/opcr/performance", { params });
 
+// Records a logbook export in the audit log. The DOCX is built in the browser,
+// so this is the server's only signal that an export happened. Call it BEFORE
+// generating the file and abort the export if it rejects (fail closed).
+// payload: { format:'docx', mode:'documents'|'certifications', date_from?, date_to?,
+// row_count, section_count }. Needs the logbook Export permission.
+export const recordLogbookExport  = (payload) => api.post("/document-requests/logbook/export-audit", payload);
+
 // BE-2 backend fix paginated /document-requests/logbook (previously an
 // unbounded ->get() of every completed request ever). Logbook.jsx and
 // analyticsMonthlyExport.js both filter/group across the FULL completed-

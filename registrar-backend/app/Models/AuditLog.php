@@ -138,6 +138,11 @@ class AuditLog extends Model
     public const ACTION_LOGBOOK_CATEGORY_UPDATED = 'logbook_category_updated';
     public const ACTION_LOGBOOK_CATEGORY_DELETED = 'logbook_category_deleted';
 
+    // Logbook DOCX export. The file is built in the browser, so the frontend
+    // reports each export here (POST document-requests/logbook/export-audit)
+    // before generating it. Metadata only: range, mode, row/section counts.
+    public const ACTION_LOGBOOK_EXPORTED = 'logbook_exported';
+
     // Fulfillment track lookup table (see FulfillmentTrackController) —
     // new admin screen; audited from the start rather than repeating
     // the gap the two lookup tables above had.

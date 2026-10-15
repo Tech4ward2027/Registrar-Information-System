@@ -3,7 +3,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/solid';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthProvider';
 import { hasModuleAction } from '../utils/policy';
-import { getAllLogbookData, getDocumentTypes, getCertifications, getLogbookCategories } from '../services/api'; // FE-3 migration: uses getLogbookData() from API; now pages through via getAllLogbookData() since the backend endpoint is paginated
+import { getAllLogbookData, getDocumentTypes, getCertifications, getLogbookCategories, recordLogbookExport } from '../services/api'; // FE-3 migration: uses getLogbookData() from API; now pages through via getAllLogbookData() since the backend endpoint is paginated
 import {
   formatMinutesDuration,
   getProcessedAt,
@@ -431,7 +431,19 @@ const LogbookRecords = () => {
       const rangeLabel = (dateFrom && dateTo)
         ? `${dateFrom}_to_${dateTo}`
         : (dateFrom ? `from_${dateFrom}` : (dateTo ? `to_${dateTo}` : null));
-      await logbookDocx(getExportSections(), pupLogoSrc, bpLogoSrc, historyByRequestId, rangeLabel, logbookCategoryNameById);
+      const sections = getExportSections();
+      // Audit FIRST (fail closed): the file is built in the browser, so this
+      // call is the only server-side record of the export. If it fails, the
+      // export does not run. Metadata only: no row contents.
+      await recordLogbookExport({
+        format: 'docx',
+        mode: isCertificationMode ? 'certifications' : 'documents',
+        date_from: dateFrom || null,
+        date_to: dateTo || null,
+        row_count: sections.reduce((n, sec) => n + sec.rows.length, 0),
+        section_count: sections.length,
+      });
+      await logbookDocx(sections, pupLogoSrc, bpLogoSrc, historyByRequestId, rangeLabel, logbookCategoryNameById);
       setToastSuccess('Exporting Report completed.');
     } catch (e) {
       console.error('Export to DOCX failed', e);
