@@ -26,6 +26,7 @@ use App\Http\Controllers\AiQueryController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\RequestPurposeController;
 use App\Http\Controllers\LogbookCategoryController;
+use App\Http\Controllers\OpcrPerformanceController;
 use App\Http\Controllers\FulfillmentTrackController;
 use App\Http\Controllers\UnmatchedCashierItemController;
 use App\Http\Controllers\CashierOrOverrideController;
@@ -528,6 +529,16 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::get('/',    [RequestHistoryController::class, 'index']);
         Route::get('{id}', [RequestHistoryController::class, 'show']);
     });
+
+    // OPCR Timeliness report — average processing time per service category
+    // for a rating period. READ ONLY, same access gate as the logbook it is
+    // computed from. Aggregates every Completed request in the range, so it
+    // is throttled harder than the group default.
+    Route::middleware(['role:3,4', 'module:logbook,View', 'throttle:6,1,opcr-performance'])
+        ->prefix('opcr')
+        ->group(function () {
+            Route::get('performance', [OpcrPerformanceController::class, 'index']);
+        });
 
     // Read-only reference data — all authenticated roles
     Route::get('document-types',             [DocumentTypeController::class, 'index']);

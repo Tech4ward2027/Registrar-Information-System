@@ -23,6 +23,7 @@ use App\Http\Requests\RequestItem\UpdateRequestCertificateStatusRequest;
 use App\Http\Requests\RequestItem\UpdateRequestDocumentStatusRequest;
 use App\Http\Resources\DocumentRequestListResource;
 use App\Services\DocumentRequestService;
+use App\Services\ProcessingTimeService;
 use App\Services\RequestItemStatusService;
 use App\Services\AuditLogger;
 use Illuminate\Http\Request;
@@ -129,6 +130,7 @@ class DocumentRequestController extends Controller
         private AuditLogger                     $auditLogger,
         private NameMatcher                     $nameMatcher,
         private RequestItemStatusService        $itemStatusService,
+        private ProcessingTimeService           $processingTime,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -285,9 +287,23 @@ class DocumentRequestController extends Controller
 
         // Same privacy treatment as index(): no decrypted undergrad PII in
         // a list row, plus display_name / student_number / requester_type.
+        //
+        // Each row also carries the official processing time, computed once
+        // here by ProcessingTimeService (the single source of truth for the
+        // COMPUTATION RULE — see that class) so the screen, the DOCX export
+        // and the OPCR report cannot disagree:
+        //   processing        { minutes, processed_at, end_status_id, claimed_at }
+        //                     for the whole request;
+        //   items_processing  the same, per document/certificate line, for
+        //                     when the logbook is filtered to one category.
+        // `minutes` is null (never a wall-clock guess) when the record cannot
+        // be measured. The raw `history` rows are still returned unchanged.
         $page = $query->orderByDesc('requested_at')->orderByDesc('request_id')
             ->paginate($perPage)
-            ->through(fn (DocumentRequest $row) => (new DocumentRequestListResource($row))->resolve());
+            ->through(fn (DocumentRequest $row) => array_merge(
+                (new DocumentRequestListResource($row))->resolve(),
+                $this->processingTime->summaryFor($row)
+            ));
 
         return response()->json($page, 200);
     }

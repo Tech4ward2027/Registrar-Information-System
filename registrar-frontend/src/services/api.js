@@ -509,6 +509,15 @@ export const getDocumentRequestCounts = () => api.get("/document-requests/counts
 export const getDocumentRequestItems = (params = {}) => api.get("/document-requests/items", { params });
 export const getLogbookData       = (params = {}) => api.get("/document-requests/logbook", { params });
 
+// OPCR Timeliness report: average processing time per service category for a
+// rating period. params: { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD',
+// include_archived?: boolean }. Returns { period, working_day_minutes,
+// categories: [{ group_key, kind, label, total_minutes (ΣM),
+// processed_transactions (ΣR), mean_minutes (T̄ₖ), target_minutes,
+// meets_target, target_labels, unmeasured_transactions }], totals }.
+// Read-only; needs the logbook View permission.
+export const getOpcrPerformance   = (params = {}) => api.get("/opcr/performance", { params });
+
 // BE-2 backend fix paginated /document-requests/logbook (previously an
 // unbounded ->get() of every completed request ever). Logbook.jsx and
 // analyticsMonthlyExport.js both filter/group across the FULL completed-

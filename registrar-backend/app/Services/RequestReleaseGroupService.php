@@ -251,9 +251,10 @@ class RequestReleaseGroupService
     ): void {
         $minutesProcessed = (int) $documentRequest->requested_at->diffInMinutes(now());
 
+        // Same timeline as the row being written (see
+        // RequestHistory::scopeInTimeline()).
         $segmentStart = RequestHistory::where('request_id', $documentRequest->request_id)
-            ->when($requestDocumentId, fn ($q) => $q->where('request_document_id', $requestDocumentId))
-            ->when($requestCertificateId, fn ($q) => $q->where('request_certificate_id', $requestCertificateId))
+            ->inTimeline($requestDocumentId, $requestCertificateId)
             ->orderByDesc('changed_at')
             ->orderByDesc('request_history_id')
             ->value('changed_at');
