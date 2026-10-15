@@ -104,7 +104,7 @@ function lgbIds(\Illuminate\Testing\TestResponse $response): array
 test('a category selects its types by exact label and never by a substring', function () {
     lgbStaff();
 
-    $torCategory = LogbookCategory::create(['name' => 'Transcript of Records']);
+    $torCategory = LogbookCategory::firstOrCreate(['name' => 'Transcript of Records']);
     $tor         = lgbRequest(lgbDocType('Transcript of Records (Regular)', $torCategory));
     $doctor      = lgbRequest(lgbDocType('Doctor Visit Form'));   // contains "tor", must not match
     $factor      = lgbRequest(lgbDocType('Factor Analysis Sheet')); // contains "tor", must not match
