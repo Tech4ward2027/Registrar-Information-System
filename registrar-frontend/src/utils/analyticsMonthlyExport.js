@@ -4,41 +4,10 @@ import puplogoimage from '../assets/puplogoimage.png';
 import bagongPilipinasLogo from '../assets/Bagong_Pilipinas_logo.png';
 import certificateFooterImg from '../assets/certificate_footer.png';
 import { getDocumentTypes, getAllLogbookData, getCertifications } from '../services/api';
+import { getProcessing } from './logbookHelpers';
 // FE-4 migration: replaced getDocumentRequests+getRequestHistory with getLogbookData();
 // now uses getAllLogbookData() since the backend endpoint is paginated and this
 // export groups records across the full completed-request history.
-
-/**
- * Cumulative, calendar-aware processing minutes for a request, computed
- * from its full request_history array.
- *
- * request_history.business_minutes (see BusinessCalendarService on the
- * backend) is a PER-SEGMENT duration — time elapsed since the previous
- * status change only, counting office hours alone. Below, `historyRows` is
- * a request's entire history, and the "most recent" entry in it is always
- * whichever transition the caller is measuring through (e.g. the Completed
- * transition). Since nothing in the array is more recent than that entry,
- * summing business_minutes across the WHOLE array gives the cumulative
- * office-hours duration from the request being filed through that
- * transition — the calendar-aware equivalent of the cumulative
- * minutes_processed figure this file used to read directly.
- *
- * Returns null (rather than a partial total) when any segment predates the
- * business_minutes column, so callers can fall back to minutes_processed
- * for older records instead of mixing business-hours and wall-clock
- * minutes into one figure.
- */
-const cumulativeBusinessMinutes = (historyRows) => {
-  if (!Array.isArray(historyRows) || historyRows.length === 0) return null;
-
-  let total = 0;
-  for (const row of historyRows) {
-    const minutes = row?.business_minutes;
-    if (minutes === null || minutes === undefined) return null;
-    total += Number(minutes) || 0;
-  }
-  return total;
-};
 
 const noBorder = {
   top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
@@ -652,28 +621,20 @@ export const exportMonthlyDocx = async (startYM, endYM, docType = 'ALL', certTyp
       return docNames.includes(target) || certNames.includes(target);
     });
 
+    // The document/certificate lines of a request that belong to this
+    // section (matched by exact type name, as the section itself is).
+    const sectionTarget = String(docName).trim().toLowerCase();
+    const getTargetItems = (request) => {
+      const docs = Array.isArray(request?.documents) ? request.documents : [];
+      const certs = Array.isArray(request?.certificates) ? request.certificates : [];
+      const docLines = docs.filter((doc) => (doc?.documentType?.document_name ?? doc?.document_type?.document_name ?? doc?.document_name ?? '').toString().trim().toLowerCase() === sectionTarget);
+      const certLines = certs.filter((c) => (c.certification_type?.certificate_name ?? c.certificate_name ?? c.name ?? '').toString().trim().toLowerCase() === sectionTarget);
+      return [...docLines, ...certLines];
+    };
+
     const aggregatedRows = monthRows.map((mRow) => {
       const start = mRow.startDate;
       const end = mRow.endDate;
-
-      const parseRequestDates = (request) => {
-        const requestedDate = toDate(request?.requested_at ?? request?.date_requested ?? request?.requestedOn);
-        const historyRows = Array.isArray(latestHistoryByRequestId[request?.request_id])
-          ? [...latestHistoryByRequestId[request?.request_id]].sort((a, b) => {
-              const aTime = new Date(a?.changed_at || 0).getTime();
-              const bTime = new Date(b?.changed_at || 0).getTime();
-              return bTime - aTime;
-            })
-          : [];
-        const history = historyRows[0] || null;
-        const processedDate = toDate(history?.changed_at ?? request?.processed_at ?? request?.date_processed);
-        // Prefer the calendar-aware (business-hours-only) cumulative total;
-        // fall back to the raw wall-clock figure for pre-business_minutes
-        // records so older requests still report something.
-        const minutesProcessed = cumulativeBusinessMinutes(historyRows)
-          ?? Number(history?.minutes_processed ?? request?.minutes_processed ?? request?.minutes ?? request?.number_of_minutes_processed);
-        return { requestedDate, processedDate, minutesProcessed, historyRows, history };
-      };
 
       const isCompleted = (request) => {
         const histRows = Array.isArray(latestHistoryByRequestId[request?.request_id]) ? latestHistoryByRequestId[request?.request_id] : [];
@@ -682,54 +643,32 @@ export const exportMonthlyDocx = async (startYM, endYM, docType = 'ALL', certTyp
         return statusName === 'completed' || statusName === 'complete' || statusName === 'completed.';
       };
 
-      const processedInRange = matchingRequests.filter((request) => {
-        const { processedDate } = parseRequestDates(request);
-        return processedDate && processedDate >= start && processedDate <= end;
+      // Each document/certificate LINE of a Completed request is one
+      // transaction (the same rule as the OPCR report), measured on its own
+      // by the server (ProcessingTimeService) — never recomputed from the
+      // history in the browser. A line belongs to the month in which its
+      // processing finished (Pending Signature, or Ready to Claim when no
+      // signature was needed), which is what "Date Processed" means. Lines the
+      // server could not measure (minutes null) are left out of both the count
+      // and the minutes, so minutes / count stays a true average and no
+      // wall-clock guess is ever mixed in.
+      const processedLines = [];
+      matchingRequests.forEach((request) => {
+        if (!isCompleted(request)) return;
+
+        getTargetItems(request).forEach((item) => {
+          const processing = getProcessing(request, item);
+          if (processing.minutes === null || processing.minutes === undefined) return;
+
+          const processedAt = toDate(processing.processed_at);
+          if (!processedAt || processedAt < start || processedAt > end) return;
+
+          processedLines.push(processing);
+        });
       });
 
-      const completedProcessedInRange = processedInRange.filter(isCompleted);
-
-      const requestHasTarget = (request) => {
-        const target = String(docName).trim().toLowerCase();
-        const docs = Array.isArray(request?.documents) ? request.documents : [];
-        const certs = Array.isArray(request?.certificates) ? request.certificates : [];
-
-        const docMatch = docs.some((doc) => {
-          const name = (doc?.documentType?.document_name ?? doc?.document_type?.document_name ?? doc?.document_name ?? '').toString().trim().toLowerCase();
-          return name === target;
-        });
-
-        const certMatch = certs.some((c) => {
-          const name = (c.certification_type?.certificate_name ?? c.certificate_name ?? c.name ?? '').toString().trim().toLowerCase();
-          return name === target;
-        });
-
-        return docMatch || certMatch;
-      };
-
-      const totalRequests = completedProcessedInRange.filter(requestHasTarget).length;
-      let totalMinutes = 0;
-      const debugRequestIds = [];
-
-      completedProcessedInRange.forEach((request) => {
-        if (!requestHasTarget(request)) return;
-
-        const historyRows = Array.isArray(latestHistoryByRequestId[request?.request_id]) ? latestHistoryByRequestId[request?.request_id] : [];
-        const history = [...historyRows].sort((a, b) => {
-          const aTime = new Date(a?.changed_at || 0).getTime();
-          const bTime = new Date(b?.changed_at || 0).getTime();
-          return bTime - aTime;
-        })[0] || null;
-        // Same business-hours-first, wall-clock-fallback preference as
-        // parseRequestDates() above — see cumulativeBusinessMinutes() doc
-        // block for why this can't be read off a single history row.
-        const businessMinutes = cumulativeBusinessMinutes(historyRows);
-        const minutesFromHistory = businessMinutes ?? Number(history?.minutes_processed ?? NaN);
-        if (Number.isFinite(minutesFromHistory) && minutesFromHistory >= 0) {
-          totalMinutes += Number(minutesFromHistory);
-          debugRequestIds.push(request?.request_id);
-        }
-      });
+      const totalRequests = processedLines.length;
+      const totalMinutes = processedLines.reduce((sum, line) => sum + Number(line.minutes), 0);
 
       const lowerName = String(docName).trim().toLowerCase();
       const estimatedProcess = docProcessMapByName[lowerName] || certProcessMapByName[lowerName] || '';

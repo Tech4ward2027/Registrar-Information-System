@@ -25,6 +25,13 @@ final class ProcessingTimeResult
         public readonly ?int $endStatusId,
         /** When the request/item was claimed (Completed), if it has been. Never affects `minutes`. */
         public readonly ?CarbonInterface $claimedAt,
+        /**
+         * user_id of whoever moved the request/item into the stopping status
+         * (null for system transitions or when unmeasured). Used to attribute
+         * the figure to a staff member in analytics; deliberately NOT part of
+         * toArray(), so it never leaks into the logbook / OPCR payloads.
+         */
+        public readonly ?int $endedByUserId = null,
     ) {}
 
     public function isMeasured(): bool

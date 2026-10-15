@@ -182,7 +182,7 @@ class ProcessingTimeService
         }
 
         try {
-            [$minutes, $endedAt, $endStatusId] = $this->walk($request->requested_at, $timeline);
+            [$minutes, $endedAt, $endStatusId, $endedBy] = $this->walk($request->requested_at, $timeline);
         } catch (RuntimeException $e) {
             // A missing default calendar or an absurd timestamp (see
             // BusinessCalendarService::MAX_DAYS) must not take the whole
@@ -195,11 +195,11 @@ class ProcessingTimeService
             return new ProcessingTimeResult(null, null, null, $claimedAt);
         }
 
-        return new ProcessingTimeResult($minutes, $endedAt, $endStatusId, $claimedAt);
+        return new ProcessingTimeResult($minutes, $endedAt, $endStatusId, $claimedAt, $endedBy);
     }
 
     /**
-     * @return array{0: ?int, 1: ?CarbonInterface, 2: ?int}  [minutes, stopped at, stopping status]
+     * @return array{0: ?int, 1: ?CarbonInterface, 2: ?int, 3: ?int}  [minutes, stopped at, stopping status, user who stopped it]
      */
     private function walk(CarbonInterface $requestedAt, Collection $timeline): array
     {
@@ -226,7 +226,7 @@ class ProcessingTimeService
             }
 
             if ($this->stopsClock($new)) {
-                return [$counted, $at, $new];
+                return [$counted, $at, $new, $row->changed_by !== null ? (int) $row->changed_by : null];
             }
 
             if ($at->greaterThan($cursor)) {
@@ -236,7 +236,7 @@ class ProcessingTimeService
             $previousNew = $new;
         }
 
-        return [null, null, null];
+        return [null, null, null, null];
     }
 
     /**
