@@ -315,6 +315,8 @@ test('signatureTurnaroundTime excludes archived requests', function () {
             'number_of_copies' => 1,
         ]);
         aexHistory($fixtures, $request->request_id, RequestStatusEnum::Processing->value, RequestStatusEnum::PendingSignature->value, $filed->copy()->addMinutes($officeMinutes), 9999);
+        // Signed 25 office minutes later for the active request, 200 for the archived one.
+        aexHistory($fixtures, $request->request_id, RequestStatusEnum::PendingSignature->value, RequestStatusEnum::ReadyToClaim->value, $filed->copy()->addMinutes($officeMinutes + ($archived ? 200 : 25)), 9999);
 
         if ($archived) {
             DB::table('document_request')
@@ -328,6 +330,10 @@ test('signatureTurnaroundTime excludes archived requests', function () {
     expect($result['registrar_time'])->toHaveCount(1);
     expect($result['registrar_time'][0]['avg_minutes'])->toBe(15.0);
     expect($result['registrar_time'][0]['sample_count'])->toBe(1);
+
+    expect($result['signature_time'])->toHaveCount(1);
+    expect($result['signature_time'][0]['avg_minutes'])->toBe(25.0);
+    expect($result['signature_time'][0]['sample_count'])->toBe(1);
 });
 
 test('overview avg_processing_minutes excludes archived requests and ignores stored minutes', function () {

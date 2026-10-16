@@ -188,9 +188,9 @@ test('processingTime by_document_type and by_admin exclude Withdrawn requests', 
 test('signatureTurnaroundTime excludes Withdrawn requests from both SLA clocks', function () {
     $fixtures = seedWithdrawnAnalyticsFixtures();
 
-    // Kept: still waiting on a signature (12 registrar minutes, no signature
-    // wait yet) and one that was signed and claimed (12 registrar minutes,
-    // 18 stored signature-wait minutes).
+    // Kept: still waiting on a signature (12 registrar minutes, no finished
+    // signature wait yet) and one that was signed and claimed (12 registrar
+    // minutes, a 40-minute signature wait; the stored value of 18 is junk).
     awxRequest($fixtures, RequestStatusEnum::PendingSignature->value, 12);
     awxRequest($fixtures, RequestStatusEnum::Completed->value, 12, [[AWX_PS, AWX_DONE, 40, 18]]);
 
@@ -204,9 +204,11 @@ test('signatureTurnaroundTime excludes Withdrawn requests from both SLA clocks',
     expect($result['registrar_time'][0]['avg_minutes'])->toBe(12.0);
     expect($result['registrar_time'][0]['sample_count'])->toBe(2);
 
-    // signature_time still averages the stored segments leaving Pending Signature.
+    // signature_time is derived from the timestamps (40 office minutes in
+    // Pending Signature); the stored 18 and the withdrawn request's 40/950 never count.
     expect($result['signature_time'])->toHaveCount(1);
-    expect((float) $result['signature_time'][0]->avg_minutes)->toBe(18.0);
+    expect($result['signature_time'][0]['avg_minutes'])->toBe(40.0);
+    expect($result['signature_time'][0]['sample_count'])->toBe(1);
 });
 
 // ═════════════════════════════════════════════════════════════════════════════

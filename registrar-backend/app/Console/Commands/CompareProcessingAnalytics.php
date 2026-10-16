@@ -19,6 +19,10 @@ use Illuminate\Support\Facades\DB;
  * member, with the difference. Run it against production-like data before the
  * change is released so nobody is surprised by the moved numbers.
  *
+ * The signing-office wait (the dashboard's signature_time) is compared the same
+ * way: old = mean of stored segments leaving Pending Signature, new = the
+ * per-document office time spent in Pending Signature, derived from timestamps.
+ *
  * Nothing is written. The legacy queries live here, not in AnalyticsService,
  * because the service no longer uses them; delete this command once the
  * numbers have been signed off.
@@ -131,6 +135,40 @@ class CompareProcessingAnalytics extends Command
         $this->newLine();
         $this->line('By staff member (old credits anyone who touched a request; new credits whoever finished the registrar\'s part)');
         $this->table(['Staff', 'Old avg', 'Old requests', 'New avg', 'New requests', 'Change'], $adminRows);
+
+        // ── Signing-office wait ─────────────────────────────────────────────
+        $oldSigning = $this->legacy(
+            DB::table('request_history as rh')
+                ->join('request_document as rd', 'rh.request_id', '=', 'rd.request_id')
+                ->join('document_type as dt', 'rd.document_type_id', '=', 'dt.document_type_id')
+                ->leftJoin('logbook_category as lc', 'dt.logbook_category_id', '=', 'lc.logbook_category_id')
+                ->join('document_request as dr', 'rh.request_id', '=', 'dr.request_id'),
+            $range
+        )
+            ->where('rh.old_status_id', RequestStatusEnum::PendingSignature->value)
+            ->select(DB::raw('COALESCE(MAX(lc.name), MAX(dt.document_name)) as label'), DB::raw('AVG(rh.business_minutes) as avg_minutes'), DB::raw('COUNT(*) as samples'))
+            ->groupBy(DB::raw('COALESCE(dt.logbook_category_id, -dt.document_type_id)'))
+            ->get()
+            ->keyBy(fn ($row) => mb_strtolower((string) $row->label));
+
+        $newSigning = collect($analytics->signatureTurnaroundTime($range)['signature_time'])
+            ->keyBy(fn ($row) => mb_strtolower((string) $row['document_name']));
+
+        $signingRows = $oldSigning->keys()->merge($newSigning->keys())->unique()->sort()->map(function ($key) use ($oldSigning, $newSigning) {
+            $old = $oldSigning->get($key);
+            $new = $newSigning->get($key);
+
+            return [
+                $new['document_name'] ?? $old->label,
+                $this->fmt($old->avg_minutes ?? null), (int) ($old->samples ?? 0),
+                $this->fmt($new['avg_minutes'] ?? null), (int) ($new['sample_count'] ?? 0),
+                $this->delta($old->avg_minutes ?? null, $new['avg_minutes'] ?? null),
+            ];
+        })->values()->all();
+
+        $this->newLine();
+        $this->line('Signing-office wait by category / document type (old counts stored segments, once per request x document row; new counts finished waits per document)');
+        $this->table(['Category', 'Old avg', 'Old n', 'New avg', 'New n', 'Change'], $signingRows);
 
         return self::SUCCESS;
     }

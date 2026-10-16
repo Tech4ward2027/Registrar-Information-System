@@ -75,66 +75,6 @@ class AnalyticsService
             ->whereNull("{$alias}.deleted_at");
     }
 
-    /**
-     * Deficiency Notice & Withdrawn Status — Phase 5 ("Analytics/report
-     * exclusion"). Excludes every request_history row belonging to a
-     * WITHDRAWN request from average-processing-time metrics, on top of
-     * the archive/soft-delete exclusion above.
-     *
-     * Applies only to "how long does processing take" figures (the
-     * processing-time averages and the signing-office wait) — NOT plain
-     * request-count queries like overview()'s total/pending/completed
-     * buckets or byStatus(), where a Withdrawn request legitimately
-     * belongs in the count (it was a real submission that consumed
-     * intake) even though it never belongs in a "how fast do we complete
-     * work" average. A Withdrawn request never completed, so blending
-     * its interim segments — some reflecting a mistake caught quickly,
-     * others a stalled request finally being closed out — into a
-     * completion-time average would skew the number for no analytical
-     * benefit, in either direction depending on which cases happen to
-     * dominate a given date range.
-     *
-     * NOTE — Forfeited requests are deliberately NOT excluded here: this
-     * method's job is the Withdrawn-specific exit criterion this
-     * feature's Phase 5 calls for, not a general audit of every terminal
-     * status's inclusion in these averages. On inspection, Forfeited
-     * requests are not currently excluded from any of these same
-     * averages either (a Forfeited request's ReadyToClaim segment — time
-     * spent sitting unclaimed before expiring — still contributes to
-     * processingTime()'s and overview()'s numbers today). That is a
-     * pre-existing gap, not something introduced or fixed by this
-     * change; flagged here for visibility rather than silently expanding
-     * this method's scope to also cover it without an explicit decision
-     * to do so.
-     *
-     * ClosedUnableToProcess (Data Retention & Disposal Policy §3.4) is
-     * excluded for the identical reason as Withdrawn above: it is a
-     * terminal status a request reaches WITHOUT ever completing, so
-     * blending its interim segments into a completion-time average is
-     * the same category of distortion Withdrawn's exclusion already
-     * addresses. Grouped into this same method (rather than a second,
-     * near-duplicate exclusion method) since both statuses share the
-     * exact same "terminal, never completed, still counts as real
-     * volume" characteristics that justify excluding them from this
-     * specific class of query and no other.
-     *
-     * UPDATE (analytics alignment): overview(), byDocumentType(),
-     * processingTime() and signatureTurnaroundTime()'s registrar_time no longer
-     * run SQL over request_history.business_minutes; they read
-     * AnalyticsProcessingMetrics, which applies this same Withdrawn /
-     * ClosedUnableToProcess exclusion per request and per line item. Only the
-     * signature_time query below still uses this method.
-     *
-     * @param  \Illuminate\Database\Query\Builder  $query
-     * @param  string  $alias  Alias of a joined document_request table.
-     */
-    private function excludeFromProcessingTimeMetrics(\Illuminate\Database\Query\Builder $query, string $alias = 'document_request'): \Illuminate\Database\Query\Builder
-    {
-        return $this->excludeArchived($query, $alias)
-            ->where("{$alias}.status_id", '!=', RequestStatusEnum::Withdrawn->value)
-            ->where("{$alias}.status_id", '!=', RequestStatusEnum::ClosedUnableToProcess->value);
-    }
-
     // -------------------------------------------------------------------------
     // Logbook-category reporting rollup
     // -------------------------------------------------------------------------
@@ -469,81 +409,42 @@ class AnalyticsService
     }
 
     /**
-     * UPDATE (analytics alignment): registrar_time now comes from the shared
-     * per-transaction processing measurement (same rule and same numbers as
-     * processingTime()'s by_document_type), so the two panels agree.
-     * signature_time is unchanged and still averages the stored per-segment
-     * business_minutes of rows leaving Pending Signature; for rows written
-     * before the segment-start fix those stored values can be inaccurate.
-     *
      * Splits elapsed time into the two SLA clocks introduced alongside the
-     * PendingSignature status (RequestStatusEnum::PendingSignature):
+     * PendingSignature status (RequestStatusEnum::PendingSignature). Both are
+     * derived per document/certificate line from the history TIMESTAMPS by
+     * ProcessingTimeService (office hours only: weekends, holidays, Monday WFH
+     * and closures excluded) and grouped by logbook category, falling back to
+     * the type's own name. The stored request_history.business_minutes column
+     * is not read, so old rows with inaccurate stored values are measured
+     * correctly with no backfill.
      *
-     *   - registrar_time: business-hours-aware duration of segments where
-     *     old_status_id = Processing — i.e. time the Registrar itself
-     *     controlled, ending the moment they moved a request to either
-     *     ReadyToClaim directly or PendingSignature. This is the fair
-     *     number for the Registrar's own performance report; it no longer
-     *     includes time spent waiting on an external signatory.
+     *   - registrar_time: the time the Registrar itself controlled, from filing
+     *     to Pending Signature (or Ready to Claim when no signature is needed),
+     *     with Awaiting Submission paused. Identical to processingTime()'s
+     *     by_document_type, so the two panels always agree. Counted in the
+     *     period in which the registrar's part finished.
      *
-     *   - signature_time: business-hours-aware duration of segments where
-     *     old_status_id = PendingSignature — i.e. time an external signing
-     *     office (dean, department head, etc.) held the request before it
-     *     moved to ReadyToClaim. Grouped by document type only for now;
-     *     once individual signing offices are tracked as their own entity
-     *     (see the calendar-per-office note in DocumentRequestService::
+     *   - signature_time: the time an external signing office (dean,
+     *     department head, etc.) held the document in Pending Signature, for
+     *     documents that needed a signature. Counted in the period in which the
+     *     wait finished (the document left Pending Signature). A document still
+     *     waiting for its signature has no finished wait yet and is not
+     *     averaged. Grouped by document type only for now; once individual
+     *     signing offices are tracked as their own entity (see the
+     *     calendar-per-office note in DocumentRequestService::
      *     recordStatusHistory()), this can be grouped by office too.
      *
-     * Both use business_minutes (calendar-aware: office hours only,
-     * weekends/holidays excluded), not minutes_processed (raw wall-clock,
-     * cumulative since requested_at) — see the doc block on migration
-     * 2026_08_15_000000_add_pending_signature_status for why the two
-     * columns mean different things and aren't interchangeable here.
-     *
-     * Requests that never went through PendingSignature simply have zero
-     * matching rows in signature_time — this method doesn't assume every
-     * request needs a signature, only reports on the ones that did.
+     * Archived, soft-deleted, Withdrawn and Closed-Unable-To-Process requests
+     * and line items are excluded from both (see AnalyticsProcessingMetrics).
+     * Forfeited requests stay in.
      */
     public function signatureTurnaroundTime(array $range): array
     {
-        [$from, $to] = $range;
-
-        // registrar_time: the shared per-transaction measurement, grouped by
-        // logbook category (or the type's own name) like every other panel.
-        // signature_time (query below) joins document_request so
-        // excludeArchived() has a table to filter on, and is grouped the same
-        // way — see logbookGroupKeyExpression()'s docblock and byDocumentType().
-        $groupKey = self::logbookGroupKeyExpression('dt');
-
-        $registrarTime = $this->processingAggregate($range)['by_group'];
-
-        $signatureTimeQuery = DB::table('request_history as rh')
-            ->join('request_document as rd', 'rh.request_id', '=', 'rd.request_id')
-            ->join('document_type as dt', 'rd.document_type_id', '=', 'dt.document_type_id')
-            ->leftJoin('logbook_category as lc', 'dt.logbook_category_id', '=', 'lc.logbook_category_id')
-            ->join('document_request as dr', 'rh.request_id', '=', 'dr.request_id')
-            ->where('rh.old_status_id', RequestStatusEnum::PendingSignature->value)
-            ->whereBetween('rh.changed_at', [$from, $to])
-            ->whereNotNull('rh.business_minutes');
-
-        $signatureTime = $this->excludeFromProcessingTimeMetrics($signatureTimeQuery, 'dr')
-            ->select(
-                DB::raw('MIN(dt.document_type_id) as document_type_id'),
-                'dt.logbook_category_id',
-                DB::raw('COALESCE(MAX(lc.name), MAX(dt.document_name)) as document_name'),
-                DB::raw('COUNT(DISTINCT dt.document_type_id) as document_type_count'),
-                DB::raw('ROUND(MIN(rh.business_minutes), 1) as min_minutes'),
-                DB::raw('ROUND(AVG(rh.business_minutes), 1) as avg_minutes'),
-                DB::raw('ROUND(MAX(rh.business_minutes), 1) as max_minutes'),
-                DB::raw('COUNT(*) as sample_count')
-            )
-            ->groupBy(DB::raw($groupKey), 'dt.logbook_category_id')
-            ->orderBy('avg_minutes')
-            ->get();
+        $aggregate = $this->processingAggregate($range);
 
         return [
-            'registrar_time' => $registrarTime,
-            'signature_time' => $signatureTime,
+            'registrar_time' => $aggregate['by_group'],
+            'signature_time' => $aggregate['signature_by_group'],
         ];
     }
 

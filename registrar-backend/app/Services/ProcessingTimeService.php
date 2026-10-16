@@ -6,6 +6,7 @@ use App\Enums\RequestStatusEnum;
 use App\Models\DocumentRequest;
 use App\Models\RequestHistory;
 use App\Support\ProcessingTimeResult;
+use App\Support\SigningWaitResult;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -85,6 +86,25 @@ class ProcessingTimeService
         $history = $sortedHistory ?? $this->sortedHistory($request);
 
         return $this->measure($request, $this->itemTimeline($history, 'request_certificate_id', $requestCertificateId));
+    }
+
+    /**
+     * Signing wait of one document line: the office-hours time it spent in
+     * Pending Signature. Same timelines, calendar and null-over-guess policy
+     * as the processing figure; see walkSigning() for the exact rule.
+     */
+    public function signingWaitForDocument(DocumentRequest $request, int $requestDocumentId, ?Collection $sortedHistory = null): SigningWaitResult
+    {
+        $history = $sortedHistory ?? $this->sortedHistory($request);
+
+        return $this->measureSigning($request, $this->itemTimeline($history, 'request_document_id', $requestDocumentId));
+    }
+
+    public function signingWaitForCertificate(DocumentRequest $request, int $requestCertificateId, ?Collection $sortedHistory = null): SigningWaitResult
+    {
+        $history = $sortedHistory ?? $this->sortedHistory($request);
+
+        return $this->measureSigning($request, $this->itemTimeline($history, 'request_certificate_id', $requestCertificateId));
     }
 
     /**
@@ -237,6 +257,76 @@ class ProcessingTimeService
         }
 
         return [null, null, null, null];
+    }
+
+    private function measureSigning(DocumentRequest $request, Collection $timeline): SigningWaitResult
+    {
+        try {
+            [$minutes, $finishedAt, $nextStatusId] = $this->walkSigning($timeline);
+        } catch (RuntimeException $e) {
+            Log::warning('ProcessingTimeService could not measure a signing wait.', [
+                'request_id' => $request->request_id,
+                'error'      => $e->getMessage(),
+            ]);
+
+            return new SigningWaitResult(null, null, null);
+        }
+
+        return new SigningWaitResult($minutes, $finishedAt, $nextStatusId);
+    }
+
+    /**
+     * SIGNING WAIT RULE. Sums the office-hours minutes between each entry into
+     * Pending Signature and the matching exit. A document sent back for a
+     * re-signature contributes every span it spent there; the wait is
+     * "finished" at the last exit. While the document is still waiting for a
+     * signature the wait is not final, so nothing is reported, and a document
+     * that never needed a signature has nothing to report either.
+     *
+     * Like walk(), spans are derived from the row timestamps only (the stored
+     * business_minutes is never read), and a missing old_status_id inherits the
+     * previous row's new status.
+     *
+     * @return array{0: ?int, 1: ?CarbonInterface, 2: ?int}  [minutes, wait ended at, status moved to]
+     */
+    private function walkSigning(Collection $timeline): array
+    {
+        $signing = RequestStatusEnum::PendingSignature->value;
+
+        $enteredAt   = null;
+        $counted     = 0;
+        $finishedAt  = null;
+        $nextStatus  = null;
+        $previousNew = null;
+
+        /** @var RequestHistory $row */
+        foreach ($timeline as $row) {
+            $at  = $row->changed_at;
+            $new = (int) $row->new_status_id;
+            $old = $row->old_status_id !== null
+                ? (int) $row->old_status_id
+                : ($previousNew ?? RequestStatusEnum::Processing->value);
+
+            if ($new === $signing && $old !== $signing && $enteredAt === null) {
+                $enteredAt = $at;
+            } elseif ($old === $signing && $new !== $signing && $enteredAt !== null) {
+                if ($at->greaterThan($enteredAt)) {
+                    $counted += $this->businessCalendar->minutesBetween($enteredAt, $at);
+                }
+
+                $finishedAt = $at;
+                $nextStatus = $new;
+                $enteredAt  = null;
+            }
+
+            $previousNew = $new;
+        }
+
+        if ($enteredAt !== null || $finishedAt === null) {
+            return [null, null, null];
+        }
+
+        return [$counted, $finishedAt, $nextStatus];
     }
 
     /**

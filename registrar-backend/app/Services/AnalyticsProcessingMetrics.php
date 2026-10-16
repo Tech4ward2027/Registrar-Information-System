@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\RequestStatusEnum;
 use App\Models\DocumentRequest;
 use App\Support\ProcessingTimeResult;
+use App\Support\SigningWaitResult;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +36,14 @@ use Illuminate\Support\Facades\DB;
  * it into the stopping status ("who finished the registrar's part"). System
  * transitions credit nobody.
  *
+ * SIGNING WAIT. The same pass also measures, per transaction, the office-hours
+ * time spent in Pending Signature (ProcessingTimeService::signingWaitFor*()),
+ * grouped exactly like the processing figure. A transaction belongs to the
+ * period in which its signing wait finished (it left Pending Signature). A
+ * document still waiting for a signature, or one that never needed one, has no
+ * finished wait and is left out. Nothing here reads the stored
+ * request_history.business_minutes column.
+ *
  * EFFICIENCY. Requests are loaded in chunks with their history, lines and
  * categories eager-loaded, and folded into running totals, so memory stays
  * flat and there is no per-request query regardless of the range size.
@@ -50,6 +59,7 @@ class AnalyticsProcessingMetrics
      * @return array{
      *     overall: array{count: int, total_minutes: int, avg_minutes: ?float},
      *     by_group: list<array<string, mixed>>,
+     *     signature_by_group: list<array<string, mixed>>,
      *     by_admin: list<array<string, mixed>>
      * }
      */
@@ -57,14 +67,19 @@ class AnalyticsProcessingMetrics
     {
         [$from, $to] = $range;
 
-        $state = ['overall' => ['count' => 0, 'total' => 0], 'groups' => [], 'admins' => []];
+        $state = ['overall' => ['count' => 0, 'total' => 0], 'groups' => [], 'signing_groups' => [], 'admins' => []];
 
         DocumentRequest::query()
             ->whereNotIn('status_id', $this->excludedStatusIds())
             ->whereIn('request_id', function ($query) use ($from, $to) {
+                // Candidates: a row that ended the registrar's work, or one
+                // that left Pending Signature (a signing wait that finished).
+                // The exact period test happens per transaction below.
                 $query->select('request_id')
                     ->from('request_history')
-                    ->whereIn('new_status_id', $this->stopStatusIds())
+                    ->where(fn ($rows) => $rows
+                        ->whereIn('new_status_id', $this->stopStatusIds())
+                        ->orWhere('old_status_id', RequestStatusEnum::PendingSignature->value))
                     ->whereBetween('changed_at', [$from, $to]);
             })
             ->with([
@@ -94,6 +109,7 @@ class AnalyticsProcessingMetrics
                     : null,
             ],
             'by_group' => $this->presentGroups($state['groups']),
+            'signature_by_group' => $this->presentGroups($state['signing_groups']),
             'by_admin' => $this->presentAdmins($state['admins']),
         ];
     }
@@ -113,17 +129,19 @@ class AnalyticsProcessingMetrics
 
             $type       = $document->documentType;
             $categoryId = $type?->logbook_category_id;
+            $lineId     = (int) $document->request_document_id;
 
-            $this->foldTransaction(
-                $state, $request, $from, $to,
-                $this->processingTime->forDocument($request, (int) $document->request_document_id, $history),
-                $categoryId !== null ? 'category:' . $categoryId : ($type ? 'document:' . $type->document_type_id : 'unclassified'),
-                $categoryId !== null ? 'category' : 'document',
-                $type?->logbookLabel() ?? 'Unclassified',
-                $categoryId,
-                $type ? 'd' . $type->document_type_id : null,
-                $type ? (int) $type->document_type_id : null
-            );
+            $group = [
+                'key'              => $categoryId !== null ? 'category:' . $categoryId : ($type ? 'document:' . $type->document_type_id : 'unclassified'),
+                'kind'             => $categoryId !== null ? 'category' : 'document',
+                'label'            => $type?->logbookLabel() ?? 'Unclassified',
+                'category_id'      => $categoryId,
+                'type_token'       => $type ? 'd' . $type->document_type_id : null,
+                'document_type_id' => $type ? (int) $type->document_type_id : null,
+            ];
+
+            $this->foldProcessing($state, $request, $from, $to, $this->processingTime->forDocument($request, $lineId, $history), $group);
+            $this->foldSigning($state, $from, $to, $this->processingTime->signingWaitForDocument($request, $lineId, $history), $group);
         }
 
         foreach ($request->certificates as $certificate) {
@@ -133,32 +151,32 @@ class AnalyticsProcessingMetrics
 
             $type       = $certificate->certificationType;
             $categoryId = $type?->logbook_category_id;
+            $lineId     = (int) $certificate->request_certificate_id;
 
-            $this->foldTransaction(
-                $state, $request, $from, $to,
-                $this->processingTime->forCertificate($request, (int) $certificate->request_certificate_id, $history),
-                $categoryId !== null ? 'category:' . $categoryId : ($type ? 'certificate:' . $type->certificate_type_id : 'unclassified'),
-                $categoryId !== null ? 'category' : 'certificate',
-                $type?->logbookLabel() ?? 'Unclassified',
-                $categoryId,
-                $type ? 'c' . $type->certificate_type_id : null,
-                null
-            );
+            $group = [
+                'key'              => $categoryId !== null ? 'category:' . $categoryId : ($type ? 'certificate:' . $type->certificate_type_id : 'unclassified'),
+                'kind'             => $categoryId !== null ? 'category' : 'certificate',
+                'label'            => $type?->logbookLabel() ?? 'Unclassified',
+                'category_id'      => $categoryId,
+                'type_token'       => $type ? 'c' . $type->certificate_type_id : null,
+                'document_type_id' => null,
+            ];
+
+            $this->foldProcessing($state, $request, $from, $to, $this->processingTime->forCertificate($request, $lineId, $history), $group);
+            $this->foldSigning($state, $from, $to, $this->processingTime->signingWaitForCertificate($request, $lineId, $history), $group);
         }
     }
 
-    private function foldTransaction(
+    /**
+     * @param array{key: string, kind: string, label: string, category_id: ?int, type_token: ?string, document_type_id: ?int} $group
+     */
+    private function foldProcessing(
         array &$state,
         DocumentRequest $request,
         CarbonInterface $from,
         CarbonInterface $to,
         ProcessingTimeResult $result,
-        string $groupKey,
-        string $kind,
-        string $label,
-        ?int $categoryId,
-        ?string $typeToken,
-        ?int $documentTypeId
+        array $group
     ): void {
         if (!$result->isMeasured() || $result->processedAt === null) {
             return;
@@ -176,29 +194,7 @@ class AnalyticsProcessingMetrics
         $state['overall']['count']++;
         $state['overall']['total'] += $minutes;
 
-        $group = &$state['groups'][$groupKey];
-        $group ??= [
-            'group_key'           => $groupKey,
-            'kind'                => $kind,
-            'document_name'       => $label,
-            'logbook_category_id' => $categoryId,
-            'type_tokens'         => [],
-            'document_type_id'    => null,
-            'min'                 => null,
-            'max'                 => null,
-            'total'               => 0,
-            'count'               => 0,
-        ];
-        $this->addSample($group, $minutes);
-        if ($typeToken !== null) {
-            $group['type_tokens'][$typeToken] = true;
-        }
-        if ($documentTypeId !== null) {
-            $group['document_type_id'] = $group['document_type_id'] === null
-                ? $documentTypeId
-                : min($group['document_type_id'], $documentTypeId);
-        }
-        unset($group);
+        $this->addToGroup($state['groups'], $group, $minutes);
 
         $adminId = $result->endedByUserId;
         if ($adminId === null) {
@@ -225,6 +221,53 @@ class AnalyticsProcessingMetrics
             $admin['forfeited'][$request->request_id] = true;
         }
         unset($admin);
+    }
+
+    /**
+     * @param array{key: string, kind: string, label: string, category_id: ?int, type_token: ?string, document_type_id: ?int} $group
+     */
+    private function foldSigning(array &$state, CarbonInterface $from, CarbonInterface $to, SigningWaitResult $result, array $group): void
+    {
+        if (!$result->isMeasured() || $result->finishedAt === null) {
+            return;
+        }
+
+        if ($result->finishedAt->lessThan($from) || $result->finishedAt->greaterThan($to)) {
+            return;
+        }
+
+        $this->addToGroup($state['signing_groups'], $group, (int) $result->minutes);
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $groups
+     * @param array{key: string, kind: string, label: string, category_id: ?int, type_token: ?string, document_type_id: ?int} $meta
+     */
+    private function addToGroup(array &$groups, array $meta, int $minutes): void
+    {
+        $group = &$groups[$meta['key']];
+        $group ??= [
+            'group_key'           => $meta['key'],
+            'kind'                => $meta['kind'],
+            'document_name'       => $meta['label'],
+            'logbook_category_id' => $meta['category_id'],
+            'type_tokens'         => [],
+            'document_type_id'    => null,
+            'min'                 => null,
+            'max'                 => null,
+            'total'               => 0,
+            'count'               => 0,
+        ];
+        $this->addSample($group, $minutes);
+        if ($meta['type_token'] !== null) {
+            $group['type_tokens'][$meta['type_token']] = true;
+        }
+        if ($meta['document_type_id'] !== null) {
+            $group['document_type_id'] = $group['document_type_id'] === null
+                ? $meta['document_type_id']
+                : min($group['document_type_id'], $meta['document_type_id']);
+        }
+        unset($group);
     }
 
     /** @param array<string, mixed> $bucket */

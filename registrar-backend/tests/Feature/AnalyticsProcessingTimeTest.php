@@ -250,6 +250,7 @@ test('the history is walked once per range however many panels ask for it', func
     $metrics->shouldReceive('aggregate')->once()->andReturn([
         'overall'  => ['count' => 0, 'total_minutes' => 0, 'avg_minutes' => null],
         'by_group' => [],
+        'signature_by_group' => [],
         'by_admin' => [],
     ]);
 
@@ -260,6 +261,100 @@ test('the history is walked once per range however many panels ask for it', func
     $service->byDocumentType($range);
     $service->processingTime($range);
     $service->signatureTurnaroundTime($range);
+});
+
+// ── Signing wait ─────────────────────────────────────────────────────────────
+
+test('signature_time is the office time spent in Pending Signature, whatever the stored minutes say', function () {
+    $admin = aptAdmin();
+
+    // Stopped Tue 14:00, signed Wed 10:00: 360 office minutes on Tuesday
+    // (14:00-20:00) + 120 on Wednesday (08:00-10:00). The stored column says 9999.
+    aptRequest([aptType('Transcript of Records')], S::Completed->value, aptAt('2026-03-10 10:00:00'), [
+        [S::Processing, S::PendingSignature, aptAt('2026-03-10 14:00:00'), null, $admin->user_id],
+        [S::PendingSignature, S::ReadyToClaim, aptAt('2026-03-11 10:00:00'), null, $admin->user_id],
+        [S::ReadyToClaim, S::Completed, aptAt('2026-03-12 09:00:00'), null, $admin->user_id],
+    ]);
+
+    $result = app(AnalyticsService::class)->signatureTurnaroundTime(aptRange('2026-03-09', '2026-03-13'));
+
+    expect($result['signature_time'])->toHaveCount(1)
+        ->and($result['signature_time'][0]['avg_minutes'])->toBe(480.0)
+        ->and($result['signature_time'][0]['min_minutes'])->toBe(480.0)
+        ->and($result['signature_time'][0]['max_minutes'])->toBe(480.0)
+        ->and($result['signature_time'][0]['sample_count'])->toBe(1)
+        // The registrar's own clock stopped at 14:00: 240 minutes, not affected by the signing wait.
+        ->and($result['registrar_time'][0]['avg_minutes'])->toBe(240.0);
+});
+
+test('a document still waiting for a signature, or one that never needed one, has no signing wait', function () {
+    $admin = aptAdmin();
+
+    // Still in Pending Signature.
+    aptRequest([aptType('Transcript of Records')], S::PendingSignature->value, aptAt('2026-03-10 10:00:00'), [
+        [S::Processing, S::PendingSignature, aptAt('2026-03-10 11:00:00'), null, $admin->user_id],
+    ]);
+    // No signature needed: Processing straight to Ready to Claim.
+    aptRequest([aptType('Certificate of Grades')], S::Completed->value, aptAt('2026-03-10 10:00:00'), [
+        [S::Processing, S::ReadyToClaim, aptAt('2026-03-10 11:00:00'), null, $admin->user_id],
+        [S::ReadyToClaim, S::Completed, aptAt('2026-03-10 15:00:00'), null, $admin->user_id],
+    ]);
+
+    $result = app(AnalyticsService::class)->signatureTurnaroundTime(aptRange('2026-03-09', '2026-03-13'));
+
+    expect($result['signature_time'])->toBe([])
+        ->and($result['registrar_time'])->toHaveCount(2);
+});
+
+test('a signature sent back and re-signed adds up every span in Pending Signature', function () {
+    $admin = aptAdmin();
+
+    aptRequest([aptType('Transcript of Records')], S::Completed->value, aptAt('2026-03-10 09:00:00'), [
+        [S::Processing, S::PendingSignature, aptAt('2026-03-10 10:00:00'), null, $admin->user_id],
+        [S::PendingSignature, S::Processing, aptAt('2026-03-10 10:30:00'), null, $admin->user_id],   // 30 signing
+        [S::Processing, S::PendingSignature, aptAt('2026-03-10 11:00:00'), null, $admin->user_id],
+        [S::PendingSignature, S::ReadyToClaim, aptAt('2026-03-10 11:45:00'), null, $admin->user_id], // 45 signing
+    ]);
+
+    $row = app(AnalyticsService::class)->signatureTurnaroundTime(aptRange('2026-03-09', '2026-03-13'))['signature_time'][0];
+
+    expect($row['avg_minutes'])->toBe(75.0)
+        ->and($row['sample_count'])->toBe(1);
+});
+
+test('each document in a bulk request has its own signing wait, grouped like the processing figure', function () {
+    $admin = aptAdmin();
+    $fast  = aptType('Certificate of Grades');
+    $slow  = aptType('Transcript of Records');
+
+    aptRequest([$fast, $slow], S::Completed->value, aptAt('2026-03-10 10:00:00'), [
+        [S::Processing, S::PendingSignature, aptAt('2026-03-10 11:00:00'), null, $admin->user_id],
+        [S::PendingSignature, S::Completed, aptAt('2026-03-10 17:00:00'), null, $admin->user_id],   // request: 360 signing
+        [S::PendingSignature, S::ReadyToClaim, aptAt('2026-03-10 12:00:00'), 0, $admin->user_id],   // first document: 60 signing
+    ]);
+
+    $rows = collect(app(AnalyticsService::class)->signatureTurnaroundTime(aptRange('2026-03-09', '2026-03-13'))['signature_time'])
+        ->keyBy('document_name');
+
+    expect($rows['Certificate of Grades']['avg_minutes'])->toBe(60.0)
+        ->and($rows['Transcript of Records']['avg_minutes'])->toBe(360.0);
+});
+
+test('a signing wait is counted in the period in which it finished', function () {
+    $admin = aptAdmin();
+
+    aptRequest([aptType('Transcript of Records')], S::Completed->value, aptAt('2026-03-10 10:00:00'), [
+        [S::Processing, S::PendingSignature, aptAt('2026-03-10 11:00:00'), null, $admin->user_id],
+        [S::PendingSignature, S::ReadyToClaim, aptAt('2026-03-12 11:00:00'), null, $admin->user_id],
+    ]);
+
+    $service = app(AnalyticsService::class);
+
+    // Registrar part finished on the 10th; the signature came back on the 12th.
+    expect($service->signatureTurnaroundTime(aptRange('2026-03-10', '2026-03-10'))['signature_time'])->toBe([])
+        ->and($service->signatureTurnaroundTime(aptRange('2026-03-10', '2026-03-10'))['registrar_time'])->toHaveCount(1)
+        ->and($service->signatureTurnaroundTime(aptRange('2026-03-12', '2026-03-12'))['signature_time'])->toHaveCount(1)
+        ->and($service->signatureTurnaroundTime(aptRange('2026-03-12', '2026-03-12'))['registrar_time'])->toBe([]);
 });
 
 // ── Comparison command ───────────────────────────────────────────────────────
