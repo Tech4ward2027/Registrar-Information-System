@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthProvider';
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -69,6 +70,12 @@ const sortStaffRows = (rows, { key, dir }) => {
 
 const AnalyticsDashboard = () => {
   const { isDark } = useTheme();
+  // Retired AI narrative card + chatbot: shown ONLY when the backend reports
+  // FEATURE_ANALYTICS_AI_LEGACY on (user.features, see App\Support\FeatureFlags).
+  // Strict `=== true` so a missing/undefined flag fails closed. UI convenience
+  // only: the endpoints themselves return 404 server-side when the flag is off.
+  const auth = useAuth();
+  const aiLegacyEnabled = auth?.user?.features?.analytics_ai_legacy === true;
   
   // Filters
   const [dateRange, setDateRange]     = useState('This Month');
@@ -584,17 +591,19 @@ const AnalyticsDashboard = () => {
         </div>
       )}
 
-      {/* ── 6. AI INSIGHT CARD ── */}
-      <AIInsightCard
-        narrative={aiNarrative}
-        loading={aiLoading}
-        error={aiError}
-        onGenerate={handleGenerateReport}
-        generatedAt={aiGeneratedAt}
-      />
-
-      {/* ── 7. AI QUERY CHAT */}
-      <AIQueryChat buildParams={buildParams} />
+      {/* ── 6/7. RETIRED AI NARRATIVE + CHAT — hidden unless flag is on ── */}
+      {aiLegacyEnabled && (
+        <>
+          <AIInsightCard
+            narrative={aiNarrative}
+            loading={aiLoading}
+            error={aiError}
+            onGenerate={handleGenerateReport}
+            generatedAt={aiGeneratedAt}
+          />
+          <AIQueryChat buildParams={buildParams} />
+        </>
+      )}
       <SuccessToast message={toastSuccess} onClose={() => setToastSuccess('')} />
       <ErrorToast message={toastError} onClose={() => setToastError('')} />
 

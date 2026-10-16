@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class RequestHistory extends Model
@@ -39,6 +40,28 @@ class RequestHistory extends Model
     protected $casts = [
         'changed_at' => 'datetime',
     ];
+
+    /**
+     * Restricts a query to ONE history timeline of a request:
+     *  - both ids null  => the whole-request rows only (neither id set);
+     *  - an id given    => only that document's / certificate's own rows.
+     *
+     * Used when looking up "when did this timeline last change", i.e. the
+     * start of the next segment. Without it, a whole-request row would take
+     * its segment start from an item row written a moment earlier (an item
+     * moving, then the aggregate recompute recording the request's own
+     * change), producing a near-zero segment.
+     */
+    public function scopeInTimeline(Builder $query, ?int $requestDocumentId, ?int $requestCertificateId): Builder
+    {
+        if ($requestDocumentId === null && $requestCertificateId === null) {
+            return $query->whereNull('request_document_id')->whereNull('request_certificate_id');
+        }
+
+        return $query
+            ->when($requestDocumentId, fn (Builder $q) => $q->where('request_document_id', $requestDocumentId))
+            ->when($requestCertificateId, fn (Builder $q) => $q->where('request_certificate_id', $requestCertificateId));
+    }
 
     public function request()
     {

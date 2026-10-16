@@ -57,6 +57,7 @@ const BusinessCalendarManagement = lazy(() => import('./layouts/BusinessCalendar
 const CashierOrOverrideManagement = lazy(() => import('./layouts/CashierOrOverrideManagement.jsx'));
 const SuperAdminAnalyticsDashboard = lazy(() => import('./layouts/SuperAdminAnalyticsDashboard.jsx'));
 const FreeRequestPage = lazy(() => import('./layouts/FreeRequestPage.jsx'));
+const CashierReconciliation = lazy(() => import('./pages/CashierReconciliation.jsx'));
 
 const StaffIndexRedirect = () => {
   const { user, loading } = useAuth();
@@ -199,6 +200,9 @@ const App = () => {
                     <Route path="cashier-overrides" element={
                       <ModuleRoute module={MODULE_KEYS.CASHIER_OVERRIDES}><CashierOrOverrideManagement /></ModuleRoute>
                     } />
+                    <Route path="cashier-reconciliation" element={
+                      <ModuleRoute module={MODULE_KEYS.CASHIER_RECONCILIATION}><CashierReconciliation /></ModuleRoute>
+                    } />
                     <Route path="free-requests" element={
                       <ModuleRoute module={MODULE_KEYS.FREE_REQUESTS}><FreeRequestPage /></ModuleRoute>
                     } />
@@ -226,6 +230,7 @@ const App = () => {
                     <Route path="settings" element={<SystemSettings />} />
                     <Route path="business-calendar" element={<BusinessCalendarManagement />} />
                     <Route path="cashier-overrides" element={<CashierOrOverrideManagement />} />
+                    <Route path="cashier-reconciliation" element={<CashierReconciliation />} />
                     <Route path="inbox" element={<InboxCenter />} />
                     <Route path="profile" element={<ProfilePage userType="superAdmin" />} />
                   </Route>

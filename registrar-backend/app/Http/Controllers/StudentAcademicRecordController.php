@@ -9,13 +9,9 @@ use App\Models\StudentAcademicRecord;
 
 class StudentAcademicRecordController extends Controller
 {
-    public function index()
-    {
-        return response()->json(
-            StudentAcademicRecord::with('studentProfile')->paginate(50),
-            200
-        );
-    }
+    // index() intentionally removed: it paged through every institutional
+    // academic record. Certificate flows use AcademicRecordLookupController
+    // (GET /academic-records/by-student) instead.
 
     public function show($id)
     {

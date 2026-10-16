@@ -131,10 +131,23 @@
   }
 
   .cert-header,
-  .cert-footer,
   .cert-header *,
-  .cert-footer * {
-    font-family: "Times New Roman", Times, serif !important;
+  .cert-footer-tagline {
+    font-family: "Lucida Fax", serif !important;
+  }
+
+  .cert-footer-contact-lines,
+  .cert-footer-contact-lines * {
+    font-family: Arial, Helvetica, sans-serif !important;
+    line-height: 1.15;
+  }
+
+  .cert-header {
+    border-bottom: 2px solid #e5e7eb;
+  }
+
+  .cert-footer {
+    border-top: 1px solid #e5e7eb;
   }
 
   .cert-editable-block {
@@ -215,7 +228,7 @@
     box-sizing: border-box !important;
     page-break-inside: avoid !important;
     margin: 0 !important;
-    padding: var(--print-margin, 0.5in) !important;
+    padding: 30mm var(--print-margin, 0.5in) !important;
     box-shadow: none !important;
     border: none !important;
     background: white !important;
@@ -254,27 +267,55 @@
   }
 }
 
-.asw-menu-btn {
-  opacity: 0 !important;
-  pointer-events: none !important;
-  position: fixed !important;
-  bottom: -9999px !important;
-  right: -9999px !important;
-  width: 0 !important;
-  height: 0 !important;
-  overflow: hidden !important;
+:root {
+  --a11y-font-scale: 1;
+  font-size: calc(16px * var(--a11y-font-scale));
 }
 
-.asw-menu {
-  left: auto !important;
-  right: 0px !important;
-  bottom: 80px !important;
+body {
+  font-size: 1rem;
 }
 
-.asw-overlay {
-  backdrop-filter: blur(4px) !important;
-  -webkit-backdrop-filter: blur(4px) !important;
-  background: rgba(0, 0, 0, 0.3) !important;
+.a11y-dyslexia-font,
+.a11y-dyslexia-font body {
+  font-family: "Trebuchet MS", Arial, sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.a11y-high-contrast body {
+  color: #111;
+}
+
+.a11y-high-contrast button,
+.a11y-high-contrast input,
+.a11y-high-contrast select,
+.a11y-high-contrast textarea {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.a11y-highlight-links a {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.a11y-line-spacing body {
+  line-height: 1.7;
+}
+
+.a11y-letter-spacing body {
+  letter-spacing: 0.04em;
+}
+
+.a11y-reduced-motion *,
+.a11y-reduced-motion *::before,
+.a11y-reduced-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  animation-play-state: paused !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
 }
 
 @keyframes pulse-slow {

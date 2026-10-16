@@ -1451,7 +1451,11 @@ class DocumentRequestService implements DocumentRequestServiceInterface
         // confirmed to keep different hours, look up that office's
         // calendar_id here for PendingSignature → ReadyToClaim segments
         // specifically, rather than changing this method's shape again.
+        // Whole-request timeline only: an item row recorded just before this
+        // one must not become this segment's start (see
+        // RequestHistory::scopeInTimeline()).
         $segmentStart = RequestHistory::where('request_id', $documentRequest->request_id)
+            ->inTimeline(null, null)
             ->orderByDesc('changed_at')
             ->orderByDesc('request_history_id')
             ->value('changed_at');

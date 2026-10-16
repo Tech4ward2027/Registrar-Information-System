@@ -112,7 +112,9 @@ export const searchGrantableUsers = (q) => api.get("/role-assignments/search-use
 // -------------------------------------------------------
 // ACADEMIC RECORDS
 // -------------------------------------------------------
-export const getAcademicRecords = ()         => api.get("/academic-records");
+// Single-record lookup (enrolled -> alumni -> undergrad requester). The
+// list-all endpoint was removed server-side.
+export const getAcademicRecordByStudent = (studentNum) => api.get("/academic-records/by-student", { params: { student_num: studentNum } });
 export const getAcademicRecord  = (id)       => api.get(`/academic-records/${id}`);
 
 // -------------------------------------------------------
@@ -184,6 +186,83 @@ export const uploadCertificationLayoutLogo = (id, formData) =>
   api.post(`/certifications/${id}/layout/logo`, formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+export const bulkUpdateCertificationLayouts = (layouts) =>
+  api.put("/certifications/layouts/bulk", { layouts });
+
+// -------------------------------------------------------
+// CERTIFICATE TEMPLATES (Phase 2) — Admin (role 3) only
+// Bodies live in object storage; the server versions every save.
+//   getCertificationTemplate -> { data: { source: "database"|"legacy", template } }
+//     "legacy" (template: null) means no DB template exists yet: keep using
+//     the built-in CERT_CONFIG wording.
+//   saveCertificationTemplate body: { content (required), paper_size?,
+//     orientation?, margin_top|right|bottom|left? (mm), required_fields?[],
+//     change_note? }. 201 = new version, 200 = identical to active (no-op).
+//     422 carries { message, errors } (bad merge tag / markup / required field).
+//   getCertificationTemplates -> active version metadata of every type (no bodies).
+// -------------------------------------------------------
+export const getCertificateMergeTags       = ()          => api.get("/certificate-merge-tags");
+export const getCertificationTemplates     = ()          => api.get("/certifications/templates");
+export const getCertificationTemplate      = (id)        => api.get(`/certifications/${id}/template`);
+export const getCertificationTemplateVersions = (id)     => api.get(`/certifications/${id}/template/versions`);
+export const saveCertificationTemplate     = (id, data, config = {}) =>
+  api.put(`/certifications/${id}/template`, data, config);
+export const activateCertificationTemplateVersion = (id, version) =>
+  api.post(`/certifications/${id}/template/versions/${version}/activate`);
+
+// -------------------------------------------------------
+// SERVER-SIDE CERTIFICATE GENERATION (Phase 3)
+// POST /certificates/generate — staff with dashboard Process|Complete.
+// Body: { certificate_type_id, student_num, request_id?,
+//         request_certificate_id? (needs request_id), signatory_id?,
+//         fields? } — `fields` may hold MANUAL merge tags only; anything the
+// server resolves (name, course, OR number...) is rejected if sent.
+//
+// Success: the PDF itself (responseType "blob"), never cached. Metadata is
+// in headers: X-Control-Number, X-Template-Version, X-Generation-Id.
+// Resolves to { blob, url, filename, controlNumber, templateVersion,
+// generationId }. `url` is an object URL — call URL.revokeObjectURL(url)
+// when done (preview closed / downloaded).
+//
+// Failure: rejects like any axios call, but because the request asks for a
+// blob, error.response.data is a Blob. This function parses it so callers
+// get the usual JSON in error.response.data: { message, code, errors?, ... }.
+// Codes: student_not_found, request_not_found, certificate_type_not_found,
+// template_not_configured (409, source "legacy" -> fall back to the old
+// print path), missing_required_fields (422, errors.fields[]),
+// template_invalid (422), certificate_type_archived (423),
+// template_storage_unavailable (503), generation_failed (500, the request
+// was NOT changed). 429 = throttled (20/min).
+// -------------------------------------------------------
+export const generateCertificate = async (payload) => {
+  try {
+    const res = await api.post("/certificates/generate", payload, {
+      responseType: "blob",
+      headers: { Accept: "application/pdf, application/json" },
+    });
+    const blob = res.data;
+    const disposition = res.headers["content-disposition"] ?? "";
+    const filename = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? "certificate.pdf";
+    return {
+      blob,
+      url: URL.createObjectURL(blob),
+      filename,
+      controlNumber: res.headers["x-control-number"] ?? null,
+      templateVersion: Number(res.headers["x-template-version"]) || null,
+      generationId: Number(res.headers["x-generation-id"]) || null,
+    };
+  } catch (err) {
+    // Error bodies arrive as a Blob when responseType is "blob".
+    if (err.response?.data instanceof Blob) {
+      try {
+        err.response.data = JSON.parse(await err.response.data.text());
+      } catch {
+        err.response.data = { message: "Certificate generation failed." };
+      }
+    }
+    throw err;
+  }
+};
 
 // -------------------------------------------------------
 // UNMATCHED CASHIER ITEMS (Admin+) — receipt labels
@@ -198,6 +277,19 @@ export const resolveUnmatchedCashierItem = (id, data) =>
   api.post(`/unmatched-cashier-items/${id}/resolve`, data);
 export const dismissUnmatchedCashierItem = (id) =>
   api.post(`/unmatched-cashier-items/${id}/dismiss`);
+
+// -------------------------------------------------------
+// FAILED CASHIER VERIFICATIONS (Cashier Reconciliation > Failed
+// verifications). Admin with the "cashier_reconciliation" module, or
+// Super Admin; 404 while the system_health flag is off. Opening a detail
+// writes an audit entry; the re-check only accepts an existing failed row.
+// -------------------------------------------------------
+export const getFailedCashierVerifications = (params = {}) =>
+  api.get("/failed-cashier-verifications", { params });
+export const getFailedCashierVerification = (auditLogId) =>
+  api.get(`/failed-cashier-verifications/${auditLogId}`);
+export const recheckFailedCashierVerification = (auditLogId) =>
+  api.post(`/failed-cashier-verifications/${auditLogId}/recheck`);
 
 // -------------------------------------------------------
 // CASHIER OR OVERRIDES (Admin with the "cashier_overrides" module, or
@@ -416,6 +508,22 @@ export const getDocumentRequestCounts = () => api.get("/document-requests/counts
 // items_completed / items_total drive the "1 of 2 Completed" badge.
 export const getDocumentRequestItems = (params = {}) => api.get("/document-requests/items", { params });
 export const getLogbookData       = (params = {}) => api.get("/document-requests/logbook", { params });
+
+// OPCR Timeliness report: average processing time per service category for a
+// rating period. params: { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD',
+// include_archived?: boolean }. Returns { period, working_day_minutes,
+// categories: [{ group_key, kind, label, total_minutes (ΣM),
+// processed_transactions (ΣR), mean_minutes (T̄ₖ), target_minutes,
+// meets_target, target_labels, unmeasured_transactions }], totals }.
+// Read-only; needs the logbook View permission.
+export const getOpcrPerformance   = (params = {}) => api.get("/opcr/performance", { params });
+
+// Records a logbook export in the audit log. The DOCX is built in the browser,
+// so this is the server's only signal that an export happened. Call it BEFORE
+// generating the file and abort the export if it rejects (fail closed).
+// payload: { format:'docx', mode:'documents'|'certifications', date_from?, date_to?,
+// row_count, section_count }. Needs the logbook Export permission.
+export const recordLogbookExport  = (payload) => api.post("/document-requests/logbook/export-audit", payload);
 
 // BE-2 backend fix paginated /document-requests/logbook (previously an
 // unbounded ->get() of every completed request ever). Logbook.jsx and
@@ -906,6 +1014,12 @@ export const getAdminRosterHealth         = ()             => api.get("/system-a
 export const getAccessRequestThroughput   = (params = {}) => api.get("/system-analytics/access-request-throughput", { params });
 export const getCashierVerificationHealth = (params = {}) => api.get("/system-analytics/cashier-verification-health", { params });
 export const getScheduledJobsHealth       = ()             => api.get("/system-analytics/scheduled-jobs-health");
+
+// System Health (flag-gated on the server: 404 while system_health is off).
+export const getCashierTrend              = (params = {}) => api.get("/system-analytics/cashier-trend", { params });
+export const getProvisioningHealth        = (params = {}) => api.get("/system-analytics/provisioning-health", { params });
+export const getSystemAlerts              = (params = {}) => api.get("/system-analytics/alerts", { params });
+export const acknowledgeSystemAlert       = (id)           => api.post(`/system-analytics/alerts/${id}/acknowledge`);
 
 // -------------------------------------------------------
 // ANNOUNCEMENTS (read: all authenticated | write: Super Admin)

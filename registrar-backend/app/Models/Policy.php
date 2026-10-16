@@ -32,7 +32,7 @@ class Policy extends Model
      * touching this array (plus the frontend's mirrored MODULE_KEYS in
      * src/utils/policy.js).
      */
-    public const MODULE_KEYS = ['dashboard', 'inbox', 'analytics', 'logbook', 'profile', 'access_requests', 'business_calendar', 'cashier_overrides', 'free_requests', 'undergrad_verification'];
+    public const MODULE_KEYS = ['dashboard', 'inbox', 'analytics', 'logbook', 'profile', 'access_requests', 'business_calendar', 'cashier_overrides', 'free_requests', 'undergrad_verification', 'cashier_reconciliation'];
 
     /**
      * Per-module action vocabulary — the single source of truth for

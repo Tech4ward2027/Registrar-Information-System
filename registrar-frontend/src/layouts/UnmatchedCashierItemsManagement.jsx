@@ -25,6 +25,31 @@ import {
  * document at all (a one-off misc fee) and just need to stop cluttering
  * the queue.
  */
+// suggestions arrives as an array (cast) or, defensively, a JSON string; it is
+// null when the feature is off or the job has not run yet. Everything below
+// must keep working when it is null.
+const parseSuggestions = (item) => {
+  let raw = item?.suggestions;
+  if (typeof raw === "string") {
+    try { raw = JSON.parse(raw); } catch { raw = null; }
+  }
+  return Array.isArray(raw) ? raw.filter((s) => s && s.id != null && s.type) : [];
+};
+
+const sourceLabel = (item) => (item?.suggestion_source === "llm" ? "AI-assisted" : "Rule-based");
+
+const SuggestionBadge = ({ item, isDark }) => (
+  <span
+    className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${
+      item?.suggestion_source === "llm"
+        ? isDark ? "bg-purple-900/50 text-purple-200" : "bg-purple-50 text-purple-700 border border-purple-200"
+        : isDark ? "bg-zinc-800 text-gray-300" : "bg-gray-100 text-gray-600 border border-gray-200"
+    }`}
+  >
+    {sourceLabel(item)}
+  </span>
+);
+
 const UnmatchedCashierItemsManagement = () => {
   const { isDark } = useTheme();
   const { documentTypes, certifications } = useReferenceData();
@@ -116,8 +141,27 @@ const UnmatchedCashierItemsManagement = () => {
     loadItems(1);
   }, [loadItems]);
 
+  // Preselect the top suggestion only if that type is still an active option.
   const openResolveModal = (item) => {
-    setResolveModal({ open: true, item, targetKind: "document", targetId: "" });
+    const top = parseSuggestions(item)[0];
+    const exists = top && combinedTargetOptions.some(
+      (o) => o.kind === top.type && String(o.id) === String(top.id)
+    );
+    setResolveModal({
+      open: true,
+      item,
+      targetKind: exists ? top.type : "document",
+      targetId: exists ? String(top.id) : "",
+    });
+  };
+
+  const chooseSuggestion = (sug) => {
+    const exists = combinedTargetOptions.some(
+      (o) => o.kind === sug.type && String(o.id) === String(sug.id)
+    );
+    if (exists) {
+      setResolveModal((s) => ({ ...s, targetKind: sug.type, targetId: String(sug.id) }));
+    }
   };
 
   const closeResolveModal = () => {
@@ -318,6 +362,14 @@ const UnmatchedCashierItemsManagement = () => {
                   </span>
                 </div>
 
+                {!showResolved && parseSuggestions(item)[0] && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className={subtleText}>Suggested:</span>
+                    <span className="font-semibold">{parseSuggestions(item)[0].name}</span>
+                    <SuggestionBadge item={item} isDark={isDark} />
+                  </div>
+                )}
+
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1">
                   <span className={subtleText}>
                     Last Seen: <span className="font-semibold text-gray-800 dark:text-gray-200">{item.last_seen_at ? new Date(item.last_seen_at).toLocaleDateString() : '—'}</span>
@@ -367,6 +419,7 @@ const UnmatchedCashierItemsManagement = () => {
               <tr className={`text-left ${isDark ? "bg-[#242526]" : "bg-gray-50"}`}>
                 <th className="px-4 py-3 font-semibold">Receipt Label</th>
                 <th className="px-4 py-3 font-semibold">Occurrences</th>
+                {!showResolved && <th className="px-4 py-3 font-semibold">Suggested</th>}
 
                 {/* Last Seen Header (Sortable) */}
                 <th className="px-4 py-3 font-semibold">
@@ -403,13 +456,13 @@ const UnmatchedCashierItemsManagement = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={showResolved ? 4 : 4} className={`px-4 py-8 text-center ${subtleText}`}>
+                  <td colSpan={showResolved ? 4 : 5} className={`px-4 py-8 text-center ${subtleText}`}>
                     Loading...
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={showResolved ? 4 : 4} className={`px-4 py-8 text-center ${subtleText}`}>
+                  <td colSpan={showResolved ? 4 : 5} className={`px-4 py-8 text-center ${subtleText}`}>
                     {search.trim() ? "No items matching search." : showResolved ? "No resolved items yet." : "Nothing unresolved right now — all clear!"}
                   </td>
                 </tr>
@@ -418,6 +471,21 @@ const UnmatchedCashierItemsManagement = () => {
                   <tr key={item.unmatched_cashier_item_id} className={`border-t ${rowBorder}`}>
                     <td className="px-4 py-3 font-medium">{item.raw_label}</td>
                     <td className="px-4 py-3">{item.occurrence_count}</td>
+                    {!showResolved && (
+                      <td className="px-4 py-3">
+                        {(() => {
+                          const top = parseSuggestions(item)[0];
+                          return top ? (
+                            <div className="space-y-1">
+                              <div className="text-xs font-semibold">{top.name}</div>
+                              <SuggestionBadge item={item} isDark={isDark} />
+                            </div>
+                          ) : (
+                            <span className={subtleText}>—</span>
+                          );
+                        })()}
+                      </td>
+                    )}
                     <td className={`px-4 py-3 ${subtleText}`}>
                       {item.last_seen_at ? new Date(item.last_seen_at).toLocaleDateString() : "—"}
                     </td>
@@ -515,6 +583,43 @@ const UnmatchedCashierItemsManagement = () => {
               <p className={`text-xs sm:text-sm font-normal leading-relaxed ${isDark ? "text-gray-300" : "text-gray-600"}`}>
                 Attach receipt label <strong className={isDark ? "text-white" : "text-gray-900"}>"{resolveModal.item?.raw_label}"</strong> to a document or certificate type:
               </p>
+
+              {(() => {
+                const sugs = parseSuggestions(resolveModal.item);
+                if (sugs.length === 0) return null;
+                return (
+                  <div className={`rounded-lg border p-3 space-y-2 ${rowBorder}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold">Suggested matches</span>
+                      <SuggestionBadge item={resolveModal.item} isDark={isDark} />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {sugs.map((sug, idx) => {
+                        const selected = resolveModal.targetKind === sug.type && String(resolveModal.targetId) === String(sug.id);
+                        return (
+                          <button
+                            key={`${sug.type}-${sug.id}`}
+                            type="button"
+                            onClick={() => chooseSuggestion(sug)}
+                            aria-pressed={selected}
+                            title={sug.ai_reason || undefined}
+                            className={`text-xs px-3 py-1.5 rounded-full border cursor-pointer transition-all ${
+                              selected
+                                ? isDark ? "bg-yellow-400 text-gray-900 border-yellow-400" : "bg-pup-dark-maroon text-white border-pup-dark-maroon"
+                                : isDark ? "border-[#3e4042] text-[#e4e6eb] hover:bg-[#2f3031]" : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                            }`}
+                          >
+                            {idx === 0 ? "Top: " : ""}{sug.name} · {Math.round(Number(sug.score || 0) * 100)}%
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className={`text-[11px] ${subtleText}`}>
+                      Suggestions only — please confirm before resolving. None of these fit? Choose a type below, or close and dismiss the label if it is not a real document.
+                    </p>
+                  </div>
+                );
+              })()}
 
               <div>
                 <DropdownGroup

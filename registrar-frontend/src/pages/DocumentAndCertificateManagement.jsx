@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Navigate } from "react-router-dom";
 import DocumentManagement from "../layouts/DocumentManagement.jsx";
 import CertificateTemplateManagement from "../layouts/CertificateTemplateManagement.jsx";
 import SignatoryManagement from "../layouts/SignatoryManagement.jsx";
-import UnmatchedCashierItemsManagement from "../layouts/UnmatchedCashierItemsManagement.jsx";
 import ArchivedManagement from "../pages/ArchivedManagement.jsx";
 import { useTheme } from "../context/ThemeContext";
 import SuccessToast from "../components/SuccessToast.jsx";
@@ -28,7 +27,7 @@ const DocumentAndCertificateManagement = () => {
   const { isDark } = useTheme();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const validTabs = ["documents", "certificates", "signatories", "unmatched-cashier", "archived"];
+  const validTabs = ["documents", "certificates", "signatories", "archived"];
   const tabFromUrl = searchParams.get("tab");
   const activeTab = validTabs.includes(tabFromUrl) ? tabFromUrl : "documents";
 
@@ -141,6 +140,13 @@ const DocumentAndCertificateManagement = () => {
     }
   };
 
+  // Unmatched cashier items moved to Cashier Reconciliation. Keep old
+  // bookmarks / links working. Placed after every hook above so the rules
+  // of hooks are respected.
+  if (tabFromUrl === "unmatched-cashier") {
+    return <Navigate to="/super-admin/cashier-reconciliation?tab=unmatched" replace />;
+  }
+
   return (
     <div className={`font-sans ${isDark ? 'text-[#e4e6eb]' : ''}`}>
       
@@ -190,19 +196,6 @@ const DocumentAndCertificateManagement = () => {
             Signatories
           </button>
           <button
-            onClick={() => handleTabChange("unmatched-cashier")}
-            className={`text-sm font-semibold transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer ${activeTab === "unmatched-cashier"
-                ? isDark
-                  ? "text-yellow-400 font-bold"
-                  : "text-pup-dark-maroon font-black"
-                : isDark
-                  ? "text-[#b0b3b8] hover:text-white"
-                  : "text-gray-500 hover:text-gray-900"
-              }`}
-          >
-            Unmatched Cashier Items
-          </button>
-          <button
             onClick={() => handleTabChange("archived")}
             className={`text-sm font-semibold transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer ${activeTab === "archived"
                 ? isDark
@@ -235,9 +228,6 @@ const DocumentAndCertificateManagement = () => {
       )}
       {activeTab === "signatories" && (
         <SignatoryManagement />
-      )}
-      {activeTab === "unmatched-cashier" && (
-        <UnmatchedCashierItemsManagement />
       )}
       {activeTab === "archived" && (
         <ArchivedManagement 

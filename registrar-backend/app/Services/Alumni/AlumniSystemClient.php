@@ -4,6 +4,8 @@ namespace App\Services\Alumni;
 
 use App\DTOs\Alumni\AlumniDTO;
 use App\Exceptions\AlumniSystemException;
+use App\Models\SecurityEvent;
+use App\Services\SecurityEventLogger;
 use Illuminate\Support\Facades\Log;
 use App\Contracts\AlumniSystemClientInterface;
 
@@ -16,7 +18,12 @@ class AlumniSystemClient implements AlumniSystemClientInterface
     private string $baseUrl;
     private string $token;
 
-    public function __construct()
+    /**
+     * $securityEvents is optional so `new AlumniSystemClient()` keeps
+     * working; the container injects the singleton. When null, failure
+     * recording is skipped.
+     */
+    public function __construct(private readonly ?SecurityEventLogger $securityEvents = null)
     {
         $this->baseUrl = rtrim(config('alumni.base_url'), '/');
         $this->token   = config('alumni.token');
@@ -104,6 +111,26 @@ class AlumniSystemClient implements AlumniSystemClientInterface
                 'error' => $e->getMessage(),
                 'code'  => $e->getCode(),
             ]);
+
+            // System Health Phase 2a. A 404 is PUPTAPS's ordinary "no such
+            // alumnus" answer (a NON_SIS alumnus legitimately gets it on
+            // every login) — not a failure. Everything else (timeout,
+            // 5xx, 401, bad JSON) is the system being unable to answer.
+            // Recorded HERE, where the two cases are still distinguishable;
+            // by the time this returns null to the caller they are not.
+            // Best-effort: never throws, never changes what is returned.
+            if ($e->getCode() !== 404 && $this->securityEvents !== null) {
+                try {
+                    $this->securityEvents->recordProvisioningFailed(
+                        SecurityEvent::REASON_ALUMNI_LOOKUP_FAILED,
+                        $email,
+                        (int) $e->getCode() ?: null,
+                    );
+                } catch (\Throwable) {
+                    // Intentionally swallowed.
+                }
+            }
+
             return null;
         }
     }

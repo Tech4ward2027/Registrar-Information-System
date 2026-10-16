@@ -51,4 +51,34 @@ return [
     */
     'free_request_page' => (bool) env('FEATURE_FREE_REQUEST_PAGE', false),
 
+    /*
+    |--------------------------------------------------------------------
+    | Cashier Reconciliation / System Health / AI label suggestions
+    |--------------------------------------------------------------------
+    |
+    | Three independent kill-switches. Same fail-closed rule as above:
+    | each defaults to false and is enabled per environment by setting
+    | the FEATURE_* variable explicitly in that environment's .env.
+    |
+    |   - ai_label_suggestions: the LLM re-rank layer for unmatched
+    |     cashier labels. Rule-based suggestions do NOT depend on this
+    |     flag; only the outbound model call does. Off => no request
+    |     ever leaves the backend for this feature.
+    |   - system_health: rollups, anomaly detection, alerts and the
+    |     System Health API surface.
+    |   - analytics_ai_legacy: the retired analytics narrative card
+    |     (POST analytics/ai-report) and chatbot (POST analytics/ai-query).
+    |     Kept behind a flag, not deleted, until after the project
+    |     defense. Off => both endpoints return 404 and the UI hides
+    |     the cards.
+    |
+    | Which of these the SPA may learn about is controlled by
+    | App\Support\FeatureFlags::CLIENT_VISIBLE (allow-list, so a flag
+    | added here is never exposed to the browser by accident).
+    |
+    */
+    'ai_label_suggestions' => (bool) env('FEATURE_AI_LABEL_SUGGESTIONS', false),
+    'system_health'        => (bool) env('FEATURE_SYSTEM_HEALTH', false),
+    'analytics_ai_legacy'  => (bool) env('FEATURE_ANALYTICS_AI_LEGACY', false),
+
 ];

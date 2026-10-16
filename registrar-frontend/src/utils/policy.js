@@ -28,6 +28,9 @@ export const MODULE_KEYS = {
   FREE_REQUESTS: "free_requests",
   // Undergrad Requestor Registration — Phase 0/4.
   UNDERGRAD_VERIFICATION: "undergrad_verification",
+  // Cashier Reconciliation — Phase 1. Mirrors the backend's
+  // App\Models\Policy::MODULE_KEYS entry (single-token 'Access' module).
+  CASHIER_RECONCILIATION: "cashier_reconciliation",
 };
 
 export const KEY_TO_LABEL = {
@@ -41,6 +44,7 @@ export const KEY_TO_LABEL = {
   cashier_overrides: "Cashier OR Overrides",
   free_requests: "Free Requests",
   undergrad_verification: "Undergrad Requestor Verification",
+  cashier_reconciliation: "Cashier Reconciliation",
 };
 
 export const LABEL_TO_KEY = Object.fromEntries(

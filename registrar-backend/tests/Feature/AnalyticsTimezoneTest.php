@@ -74,7 +74,7 @@ test('peak hours reports the local Asia/Manila hour, not the raw UTC hour', func
 
     expect($storedRequestedAt)->toBe('2026-03-10 05:15:00');
 
-    $service = new AnalyticsService();
+    $service = app(AnalyticsService::class);
 
     $hours = $service->peakHours([
         \Carbon\Carbon::parse('2026-03-10 00:00:00', 'UTC'),

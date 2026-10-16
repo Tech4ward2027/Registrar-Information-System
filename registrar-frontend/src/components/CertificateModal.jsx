@@ -108,7 +108,7 @@ const CertificateModal = ({ request, onClose, onCertificatePrinted }) => {
     docType: selectedCert,
     certificateNames: hasMatchingCert ? certNames : [],
     fullName: request.studentName ?? '',
-    studentNum: request.studentNum?? '',
+    studentNum: request.studentNumber ?? request.studentNum ?? '',
     course: request.course ?? '',
     syAdmitted: request.syAdmitted ?? '',
     eventTitle: request.eventTitle ?? '',

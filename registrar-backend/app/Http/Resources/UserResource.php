@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use App\Models\Policy;
 use App\Models\SystemUser;
+use App\Support\FeatureFlags;
 
 class UserResource extends JsonResource
 {
@@ -134,6 +135,12 @@ class UserResource extends JsonResource
             // e.g. AuthController@me, where admin_grant is simply null for
             // a plain Student/Alumni session).
             'admin_grant' => $this->resolveAdminGrant(),
+
+            // Environment-wide feature flags the SPA is allowed to see
+            // (allow-list in App\Support\FeatureFlags::CLIENT_VISIBLE).
+            // UI-only convenience: every flagged route is independently
+            // enforced server-side by the 'feature:<flag>' middleware.
+            'features' => FeatureFlags::forClient(),
         ];
     }
 

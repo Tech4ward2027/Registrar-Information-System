@@ -14,12 +14,14 @@ use App\Models\Alumni;
 use App\Models\AlumniProfile;
 use App\Models\AuditLog;
 use App\Models\RoleAssignment;
+use App\Models\SecurityEvent;
 use App\Models\StudentProfile;
 use App\Models\SystemUser;
 use App\Services\Alumni\AlumniProvisioningService;
 use App\Services\AuditLogger;
 use App\Services\Ocms\OcmsAdminService;
 use App\Services\Ogos\OgosStudentService;
+use App\Services\SecurityEventLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -34,6 +36,7 @@ class UserProvisioningService
         private OcmsAdminService         $ocmsAdminService,
         private AuditLogger              $auditLogger,
         private UndergradEnrollmentLookupClientInterface $enrollmentLookup,
+        private SecurityEventLogger      $securityEvents,
     ) {}
 
     /**
@@ -268,7 +271,12 @@ class UserProvisioningService
             );
         }
 
-        return DB::transaction(function () use ($existing, $email, $idpUserId, $firstName, $middleName, $lastName, $profile, $request) {
+        // Provisioning-failure events (OGOS/PUPTAPS lookups) are recorded
+        // after this transaction ends, not inside it: a refused new user
+        // (UnregisteredAccountException) rolls the transaction back, and
+        // an event written inside would be rolled back with it. See
+        // SecurityEventLogger::deferProvisioningFailures().
+        return $this->securityEvents->deferProvisioningFailures(fn () => DB::transaction(function () use ($existing, $email, $idpUserId, $firstName, $middleName, $lastName, $profile, $request) {
             $roleId = $this->roleResolver->resolve($existing);
 
             // Captured only if the not-pre-registered branch below ends up
@@ -302,7 +310,23 @@ class UserProvisioningService
                 try {
                     $this->ogosStudentService->getClient()->getStudentByEmail($email);
                     $roleId = SystemUser::ROLE_STUDENT;
-                } catch (OgosException) {
+                } catch (OgosException $ogosException) {
+                    // System Health Phase 2a: a 404 is the ordinary "this
+                    // person is not an OGOS student" answer (alumni, or
+                    // genuinely unregistered) and is NOT a provisioning
+                    // failure. Anything else means OGOS could not answer —
+                    // and this person is about to be treated as "not a
+                    // student", so it is exactly the outage worth seeing.
+                    // Best-effort and flow-neutral: recordProvisioningFailed()
+                    // never throws, and control continues unchanged below.
+                    if ($ogosException->getCode() !== 404) {
+                        $this->securityEvents->recordProvisioningFailed(
+                            SecurityEvent::REASON_OGOS_UNREACHABLE,
+                            $email,
+                            (int) $ogosException->getCode() ?: null,
+                        );
+                    }
+
                     // Not a current OGOS student either — check PUPTAPS
                     // before rejecting. If they exist there they're a valid
                     // alumnus; auto-register them the same way. Keep the
@@ -413,6 +437,95 @@ class UserProvisioningService
             $this->ensureBaselineRoleAssignment($user, $roleId);
 
             return new ProvisioningResult($user, $needsOnboarding);
+        }));
+    }
+
+    /**
+     * An Undergrad Requestor that is not usable yet and has no human
+     * decision behind it: still awaiting review, or abandoned past the
+     * 14-day window. 'Rejected' (an explicit admin decision) and the
+     * approved path ('Pending Activation' / 'Activated') are deliberately
+     * excluded — reclassification must never override either.
+     */
+    private function isStalledUndergradRequestor(SystemUser $user): bool
+    {
+        return (int) $user->role_id === SystemUser::ROLE_UNDERGRAD_REQUESTOR
+            && in_array($user->status, ['Pending Verification', 'Expired'], true)
+            && !$user->undergradRequestorVerification?->isApproved();
+    }
+
+    /**
+     * Whether OGOS positively reports this email as a currently enrolled
+     * student. The lookup client never throws and distinguishes "OGOS does
+     * not know them" from "OGOS could not be asked", and only a performed,
+     * matching answer counts — an outage must never convert an account.
+     */
+    private function isCurrentlyEnrolled(string $email): bool
+    {
+        $result = $this->enrollmentLookup->lookup(null, $email);
+
+        return $result->performed && $result->matchFound;
+    }
+
+    /**
+     * Convert a stalled Undergrad Requestor into a normal Student and
+     * dispose of the mistaken submission.
+     *
+     * Runs in its own transaction with the row locked, so two concurrent
+     * logins (double-click, two tabs) cannot both convert, and a second
+     * caller that loses the race simply receives the already-converted
+     * row. The submission's profile (self-declared PII) and verification
+     * rows are DELETED rather than flagged: there is no further use for
+     * them, data minimisation (RA 10173) favours disposal, and the
+     * audit_logs entry written here is the permanent record. Deleting the
+     * rows also frees the account from the review queue and the
+     * rejected-PII purge, with no new verification status needed.
+     *
+     * Nothing beyond the Student shape is set: the profile itself is
+     * provisioned from OGOS by provisionProfile() later in provision(),
+     * exactly as for any other first-time student login.
+     */
+    private function reclassifyAsStudent(SystemUser $existing, array $profile, Request $request): SystemUser
+    {
+        return DB::transaction(function () use ($existing, $profile, $request) {
+            $locked = SystemUser::whereKey($existing->user_id)->lockForUpdate()->first();
+
+            // Gone, or already converted/decided by a concurrent request.
+            if (!$locked || !$this->isStalledUndergradRequestor($locked)) {
+                return $locked ?? $existing;
+            }
+
+            $previousStatus = $locked->status;
+
+            $locked->update([
+                'role_id'            => SystemUser::ROLE_STUDENT,
+                'status'             => 'Activated',
+                'idp_user_id'        => $profile['id'] ?? $locked->idp_user_id,
+                // Same shape SSO-created students get: an unusable random
+                // password, local auth off.
+                'password'           => bcrypt(Str::random(32)),
+                'local_auth_enabled' => 0,
+                'pending_expires_at' => null,
+            ]);
+
+            $locked->undergradRequestorProfile()->delete();
+            $locked->undergradRequestorVerification()->delete();
+
+            // A stale role-5 assignment would stop
+            // ensureBaselineRoleAssignment() from writing the Student one.
+            RoleAssignment::where('user_id', $locked->user_id)
+                ->where('role_id', SystemUser::ROLE_UNDERGRAD_REQUESTOR)
+                ->delete();
+
+            $this->auditLogger->log($request, $locked, AuditLog::ACTION_UNDERGRAD_REQUESTOR_RECLASSIFIED, [
+                'target_user_id'  => $locked->user_id,
+                'target_email'    => $locked->email,
+                'previous_status' => $previousStatus,
+                'role_id'         => SystemUser::ROLE_STUDENT,
+                'reason'          => 'ogos_currently_enrolled',
+            ]);
+
+            return $locked->unsetRelations();
         });
     }
 
