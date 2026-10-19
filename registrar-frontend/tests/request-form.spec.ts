@@ -72,6 +72,7 @@ test.describe('Student Request Form E2E Tests', () => {
         body: JSON.stringify({ data: [] }),
       });
     });
+
     await page.route(/\/api\/(v1\/)?request-statuses/, async (route) => {
       await route.fulfill({
         status: 200,
@@ -79,6 +80,7 @@ test.describe('Student Request Form E2E Tests', () => {
         body: JSON.stringify([]),
       });
     });
+
     await page.route(/\/api\/(v1\/)?announcements/, async (route) => {
       await route.fulfill({
         status: 200,
@@ -86,8 +88,10 @@ test.describe('Student Request Form E2E Tests', () => {
         body: JSON.stringify({ data: [], last_page: 1 }),
       });
     });
+
     await page.route(/\/api\/(v1\/)?notifications/, async (route) => {
       const url = route.request().url();
+
       if (url.includes('/unread-count')) {
         await route.fulfill({
           status: 200,
@@ -103,12 +107,7 @@ test.describe('Student Request Form E2E Tests', () => {
       }
     });
 
-    // 7. Mock the OR-first verify-or step — hit before Documents now (see
-    // RequestForm.jsx's orStep/docStep reorder). The mutation's onSuccess
-    // reads response.data.suggestions.{documents,certificates,unresolved}
-    // and uses each suggested document_type_id to look up a name from the
-    // already-mocked /api/document-types list above, so this id must
-    // match one of those (1 = 'Transcript of Records').
+    // 7. Mock the OR-first verify-or step
     await page.route(/\/api\/(v1\/)?document-requests\/verify-or/, async (route) => {
       await route.fulfill({
         status: 200,
@@ -130,7 +129,8 @@ test.describe('Student Request Form E2E Tests', () => {
     });
 
     // 8. Mock form submission endpoint
-    await page.route(/\/api\/document-requests$/, async (route) => {
+    // FIX: Support both /api/document-requests and /api/v1/document-requests
+    await page.route(/\/api\/(v1\/)?document-requests\/?$/, async (route) => {
       if (route.request().method() === 'POST') {
         await route.fulfill({
           status: 200,
@@ -153,19 +153,16 @@ test.describe('Student Request Form E2E Tests', () => {
 
     // --- STEP 1: TERMS & CONDITIONS ---
     await expect(page.getByText('In compliance with the Data Privacy Act (DPA) of 2012')).toBeVisible();
-    
+
     // Attempting to click Next without agreeing to terms should display an error
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByText('You must read and agree to the Terms & Conditions to proceed.')).toBeVisible();
-    
+
     // Check agreement checkbox
     await page.locator('input[name="termsAgreed"]').check();
     await page.getByRole('button', { name: 'Next' }).click();
 
     // --- STEP 2: OFFICIAL RECEIPT VERIFICATION ---
-    // Moved ahead of Documents (OR-first wizard reorder) — clicking Next
-    // here calls handleVerifyOr(), which POSTs to verify-or and only
-    // advances on a successful match (mocked above).
     await page.getByPlaceholder('XXXXXXX').fill('1234567');
 
     const today = new Date().toISOString().split('T')[0];
@@ -177,13 +174,11 @@ test.describe('Student Request Form E2E Tests', () => {
     await expect(page.getByRole('heading', { name: 'Select documents' })).toBeVisible();
     await expect(page.getByText('Documents & Certifications')).toBeVisible();
 
-    // 'Transcript of Records' should already be selected — auto-filled
-    // from the verify-or suggestion above — so just confirm the
-    // auto-fill banner and the pill are present rather than re-selecting.
+    // Confirm auto-filled document from OR verification
     await expect(page.getByText(/Auto-filled from OR #1234567/)).toBeVisible();
     await expect(page.getByText('Transcript of Records', { exact: true })).toBeVisible();
 
-    // Verify the "Couldn't match automatically" unresolved items box at the bottom
+    // Verify unresolved items
     await expect(page.getByText("Couldn't match automatically")).toBeVisible();
     await expect(page.getByText("3 items")).toBeVisible();
     await expect(page.getByText("CAV/Apostille (DFA) - undergraduate")).toBeVisible();
@@ -194,7 +189,7 @@ test.describe('Student Request Form E2E Tests', () => {
     await expect(page.getByText("₱150.00 • qty 2")).toBeVisible();
     await expect(page.getByText("Select the matching document below, or contact the registrar's office if unsure.")).toBeVisible();
 
-    // Select 'Employment' from purpose dropdown
+    // Select Employment from purpose dropdown
     await page.locator('div:has(> label:has-text("Purpose of Request")) button').click();
     await page.getByRole('button', { name: 'Employment', exact: true }).click();
     await page.getByRole('button', { name: 'Next' }).click();
@@ -215,6 +210,7 @@ test.describe('Student Request Form E2E Tests', () => {
 
   test('Pressing Enter on OR input verifies OR and advances to next step instead of submitting form', async ({ page }) => {
     let postRequestSubmitted = false;
+
     await page.route(/\/api\/document-requests$/, async (route) => {
       if (route.request().method() === 'POST') {
         postRequestSubmitted = true;
@@ -240,15 +236,17 @@ test.describe('Student Request Form E2E Tests', () => {
 
     // Step 2: Fill OR fields
     await page.getByPlaceholder('XXXXXXX').fill('1234567');
+
     const today = new Date().toISOString().split('T')[0];
     await page.locator('input[name="dateOfPayment"]').fill(today);
 
     // Press Enter while focused inside the OR number input
     await page.getByPlaceholder('XXXXXXX').press('Enter');
 
-    // Should verify OR and advance to Step 3, without submitting the entire request
+    // Should verify OR and advance to Step 3 without submitting the entire request
     await expect(page.getByRole('heading', { name: 'Select documents' })).toBeVisible();
     await expect(page.getByText(/Auto-filled from OR #1234567/)).toBeVisible();
+
     expect(postRequestSubmitted).toBe(false);
   });
 });
