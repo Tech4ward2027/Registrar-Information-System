@@ -44,6 +44,7 @@ const MODULE_OPTIONS = [
   "Cashier OR Overrides",
   "Free Requests",
   "Undergrad Requestors",
+  "Cashier Reconciliation",
 ];
 
 const LABEL_TO_KEY = {
@@ -57,6 +58,7 @@ const LABEL_TO_KEY = {
   "Cashier OR Overrides": "cashier_overrides",
   "Free Requests": "free_requests",
   "Undergrad Requestors": "undergrad_verification",
+  "Cashier Reconciliation": "cashier_reconciliation",
 };
 
 const KEY_TO_LABEL = Object.fromEntries(

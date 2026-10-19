@@ -4,9 +4,12 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\SystemUserController;
 use App\Http\Controllers\StudentProfileController;
 use App\Http\Controllers\StudentAcademicRecordController;
+use App\Http\Controllers\AcademicRecordLookupController;
 use App\Http\Controllers\RequestStatusController;
 use App\Http\Controllers\DocumentTypeController;
 use App\Http\Controllers\CertificationTypeController;
+use App\Http\Controllers\CertificateGenerationController;
+use App\Http\Controllers\CertificateTemplateController;
 use App\Http\Controllers\DocumentRequestController;
 use App\Http\Controllers\ItemClaimController;
 use App\Http\Controllers\ItemTerminationController;
@@ -23,6 +26,8 @@ use App\Http\Controllers\AiQueryController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\RequestPurposeController;
 use App\Http\Controllers\LogbookCategoryController;
+use App\Http\Controllers\LogbookExportAuditController;
+use App\Http\Controllers\OpcrPerformanceController;
 use App\Http\Controllers\FulfillmentTrackController;
 use App\Http\Controllers\UnmatchedCashierItemController;
 use App\Http\Controllers\CashierOrOverrideController;
@@ -38,6 +43,8 @@ use App\Http\Controllers\BusinessHoursController;
 use App\Http\Controllers\CalendarExceptionController;
 use App\Http\Controllers\CalendarOverrideController;
 use App\Http\Controllers\SuperAdminAnalyticsController;
+use App\Http\Controllers\FailedCashierVerificationController;
+use App\Http\Controllers\SystemHealthController;
 use App\Http\Controllers\SecurityEventController;
 use App\Http\Controllers\UndergradRequestorController;
 use App\Http\Controllers\UndergradRequestorVerificationController;
@@ -137,14 +144,6 @@ Route::get('/undergrad-requestors/programs', [ProgramController::class, 'index']
 // can trigger heavy DB aggregation or a paid Anthropic API call.
 Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function () {
 
-    // ── OGOS student data ────────────────────────────────────────────────────
-    Route::prefix('students')->group(function () {
-        Route::get('search',                    [StudentProfileController::class, 'search']);
-        Route::get('{studentNumber}/ogos',      [StudentProfileController::class, 'showByStudentNumber']);
-        Route::get('{studentNumber}/personal-info', [StudentProfileController::class, 'personalInfo']);
-        Route::get('{studentNumber}/addresses', [StudentProfileController::class, 'addresses']);
-    });
-
     // ── Alumni System (PUPTAPS) integration ─────────────────────────────────────
     Route::prefix('alumni-system')->group(function () {
         Route::get('/',      [AlumniSystemController::class, 'index']);
@@ -227,6 +226,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
     Route::prefix('document-requests')->group(function () {
         Route::get('/',                           [DocumentRequestController::class, 'index'])->middleware('module:dashboard,View');
         Route::get('logbook',                     [DocumentRequestController::class, 'logbook'])->middleware(['role:3,4', 'module:logbook,View']);
+        // Audit record for a client-side logbook export. Gated on the Export
+        // action (previously enforced only in the UI), throttled per user.
+        Route::post('logbook/export-audit',       [LogbookExportAuditController::class, 'store'])->middleware(['role:3,4', 'module:logbook,Export', 'throttle:20,1,logbook-export-audit']);
         Route::get('counts',                      [DocumentRequestController::class, 'counts'])->middleware(['role:3,4', 'module:dashboard,View']);
         // One row per document/certificate (staff dashboard). Registered before
         // the '{documentRequest}' wildcard so "items" is never read as an id.
@@ -424,6 +426,45 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::post('cashier-overrides/{id}/revoke',  [CashierOrOverrideController::class, 'revoke']);
     });
 
+    // Cashier Reconciliation — unmatched cashier receipt labels, the
+    // admin review screen backing the naming-drift fix from
+    // CashierDocumentSuggester (see UnmatchedCashierItemController's
+    // class docblock). Previously these three routes sat in the bare
+    // 'role:3' group with NO module gate, so every registrar admin
+    // could call them regardless of policy. They now require the
+    // 'cashier_reconciliation' module; the
+    // 2026_10_05_000001_backfill_cashier_reconciliation_policy_access
+    // migration grants it to every existing non-zero-access policy so
+    // nobody loses access on deploy, and a super admin can narrow it
+    // afterwards. Super admin bypasses the module check as usual.
+    // Own throttle bucket ('unmatched-cashier-items') — see the
+    // verify-or route's comment for why an unprefixed throttle would
+    // share the outer group's counter. Writes get a tighter bucket.
+    Route::middleware(['role:3,4', 'module:cashier_reconciliation'])->group(function () {
+        Route::get('unmatched-cashier-items',               [UnmatchedCashierItemController::class, 'index'])
+            ->middleware('throttle:60,1,unmatched-cashier-items');
+        Route::post('unmatched-cashier-items/{id}/resolve', [UnmatchedCashierItemController::class, 'resolve'])
+            ->middleware('throttle:30,1,unmatched-cashier-items-write');
+        Route::post('unmatched-cashier-items/{id}/dismiss', [UnmatchedCashierItemController::class, 'dismiss'])
+            ->middleware('throttle:30,1,unmatched-cashier-items-write');
+
+        // Failed verifications (System Health Phase 5). Same module gate as
+        // the unmatched labels, plus the system_health flag (404 when off).
+        // Own named buckets; the re-check is the tightest. The feature
+        // check runs before throttling so a disabled route never spends the
+        // caller's rate limit.
+        Route::middleware('feature:system_health')->group(function () {
+            Route::get('failed-cashier-verifications', [FailedCashierVerificationController::class, 'index'])
+                ->middleware('throttle:60,1,failed-verifications');
+            Route::get('failed-cashier-verifications/{auditLogId}', [FailedCashierVerificationController::class, 'show'])
+                ->whereNumber('auditLogId')
+                ->middleware('throttle:60,1,failed-verification-detail');
+            Route::post('failed-cashier-verifications/{auditLogId}/recheck', [FailedCashierVerificationController::class, 'recheck'])
+                ->whereNumber('auditLogId')
+                ->middleware('throttle:10,1,failed-verification-recheck');
+        });
+    });
+
     // Free Document/Certificate Request (FESPEC-0008) — the admin
     // Free Request page. Staff on-behalf-of filing for the Free
     // Documents/Certificates Request Policy and the First Copy Free
@@ -493,11 +534,31 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::get('{id}', [RequestHistoryController::class, 'show']);
     });
 
+    // OPCR Timeliness report — average processing time per service category
+    // for a rating period. READ ONLY, same access gate as the logbook it is
+    // computed from. Aggregates every Completed request in the range, so it
+    // is throttled harder than the group default.
+    Route::middleware(['role:3,4', 'module:logbook,View', 'throttle:6,1,opcr-performance'])
+        ->prefix('opcr')
+        ->group(function () {
+            Route::get('performance', [OpcrPerformanceController::class, 'index']);
+        });
+
     // Read-only reference data — all authenticated roles
     Route::get('document-types',             [DocumentTypeController::class, 'index']);
     Route::get('document-types/{id}',        [DocumentTypeController::class, 'show']);
     Route::get('certifications',             [CertificationTypeController::class, 'index']);
     Route::get('certifications/layouts',     [CertificationTypeController::class, 'layouts']);
+    // Active template version of every certificate type (metadata only, no
+    // bodies). Static path: must stay ahead of 'certifications/{id}'.
+    Route::get('certifications/templates',   [CertificateTemplateController::class, 'summary'])
+        ->middleware('role:3');
+    // Certificate generation staff need to read the active template for the
+    // preview and server-generation flow. Editing and version management stay
+    // restricted to the admin routes below.
+    Route::get('certifications/{id}/template', [CertificateTemplateController::class, 'show'])
+        ->whereNumber('id')
+        ->middleware('role:3,4');
     Route::get('certifications/{id}',        [CertificationTypeController::class, 'show']);
     Route::get('request-statuses',           [RequestStatusController::class, 'index']);
     Route::get('request-statuses/{id}',      [RequestStatusController::class, 'show']);
@@ -521,13 +582,55 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::delete('certifications/{id}',       [CertificationTypeController::class, 'destroy']);
         Route::patch('certifications/{id}/archive', [CertificationTypeController::class, 'archive']);
         Route::patch('certifications/{id}/restore', [CertificationTypeController::class, 'restore']);
+        // Static 'layouts/bulk' path — cannot collide with the {id} routes (different segment count).
+        Route::put('certifications/layouts/bulk',         [CertificationTypeController::class, 'bulkUpdateLayouts']);
+
+        // Database-driven certificate templates (Phase 2). Bodies live in the
+        // private object store; see CertificateTemplateService. GET answers
+        // source "legacy" when a type has no template, so clients fall back
+        // to CERT_CONFIG. Writes get their own throttle bucket.
+        Route::get('certificate-merge-tags', [CertificateTemplateController::class, 'mergeTags']);
+        Route::get('certifications/{id}/template/versions', [CertificateTemplateController::class, 'versions'])
+            ->whereNumber('id');
+        Route::put('certifications/{id}/template', [CertificateTemplateController::class, 'upsert'])
+            ->whereNumber('id')
+            ->middleware('throttle:20,1,certificate-template-write');
+        Route::post('certifications/{id}/template/versions/{version}/activate', [CertificateTemplateController::class, 'activate'])
+            ->whereNumber(['id', 'version'])
+            ->middleware('throttle:20,1,certificate-template-write');
         Route::put('certifications/{id}/layout',          [CertificationTypeController::class, 'updateLayout']);
         Route::post('certifications/{id}/layout/logo',    [CertificationTypeController::class, 'uploadLayoutLogo']);
         Route::post('request-statuses',        [RequestStatusController::class, 'store']);
         Route::put('request-statuses/{id}',    [RequestStatusController::class, 'update']);
         Route::delete('request-statuses/{id}', [RequestStatusController::class, 'destroy']);
-        Route::apiResource('students',         StudentProfileController::class);
-        Route::apiResource('academic-records', StudentAcademicRecordController::class);
+        // Student data is per-student only: no list-all. 'search' must stay
+        // ahead of the apiResource or it is captured as students/{student}.
+        // Named throttle prefix (see verify-or) so these counters are separate
+        // from the group's throttle:60,1.
+        Route::prefix('students')->middleware('throttle:30,1,students-lookup')->group(function () {
+            Route::get('search',                        [StudentProfileController::class, 'search']);
+            Route::get('{studentNumber}/ogos',          [StudentProfileController::class, 'showByStudentNumber']);
+            Route::get('{studentNumber}/personal-info', [StudentProfileController::class, 'personalInfo']);
+            Route::get('{studentNumber}/addresses',     [StudentProfileController::class, 'addresses']);
+        });
+        Route::apiResource('students',         StudentProfileController::class)->except(['index']);
+        // Student-specific certificate lookup (three-tier: enrolled -> alumni
+        // -> approved undergrad requester). MUST be registered before the
+        // apiResource below, or 'by-student' is captured as {academic_record}.
+        // Same gate as mark-certificates-generated (staff who can generate
+        // certificates); named throttle prefix so this counter isn't shared
+        // with the group's throttle:60,1 (see verify-or's comment).
+        Route::get('academic-records/by-student', AcademicRecordLookupController::class)
+            ->middleware(['module:dashboard,Process|Complete', 'throttle:30,1,academic-record-lookup']);
+        // No `index`: listing every academic record is deliberately not
+        // exposed — see AcademicRecordLookupController for the replacement.
+        Route::apiResource('academic-records', StudentAcademicRecordController::class)->except(['index']);
+        // Server-side certificate generation (Phase 3): returns the PDF itself.
+        // Same staff gate as mark-certificates-generated / the lookup above.
+        // Named throttle prefix (see verify-or) — each call renders a PDF, so
+        // this is deliberately tighter than the group's throttle:60,1.
+        Route::post('certificates/generate', CertificateGenerationController::class)
+            ->middleware(['module:dashboard,Process|Complete', 'throttle:20,1,certificate-generate']);
 
         Route::prefix('analytics')->middleware(['throttle:60,1', 'module:analytics'])->group(function () {
             Route::get('overview',         [AnalyticsController::class, 'overview']);
@@ -538,15 +641,20 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::get('signature-turnaround', [AnalyticsController::class, 'signatureTurnaround']);
             Route::get('peak-hours',       [AnalyticsController::class, 'peakHours']);
             Route::get('by-purpose',       [AnalyticsController::class, 'byPurpose']);
+            // The two AI routes below are RETIRED behind
+            // 'feature:analytics_ai_legacy' (config/features.php, default
+            // false => 404). 'feature' is listed before 'throttle' so a
+            // disabled endpoint never consumes the caller's rate-limit
+            // budget. Code is kept until after the project defense.
             // Distinct prefixes below — see the verify-or route's comment
             // for why an unprefixed throttle stacked under the group's
             // throttle:60,1 shares its counter and trips at roughly half
             // its configured value.
             Route::post('ai-report', [AnalyticsController::class, 'aiReport'])
-                ->middleware('throttle:30,1,ai-report');
+                ->middleware(['feature:analytics_ai_legacy', 'throttle:30,1,ai-report']);
             // Phase 3 — Conversational NLQ
             Route::post('ai-query', [AiQueryController::class, 'query'])
-                ->middleware('throttle:30,1,ai-query');
+                ->middleware(['feature:analytics_ai_legacy', 'throttle:30,1,ai-query']);
         });
 
         Route::post('request-purposes',        [RequestPurposeController::class, 'store']);
@@ -560,13 +668,6 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::post('fulfillment-tracks',        [FulfillmentTrackController::class, 'store']);
         Route::put('fulfillment-tracks/{id}',    [FulfillmentTrackController::class, 'update']);
         Route::delete('fulfillment-tracks/{id}', [FulfillmentTrackController::class, 'destroy']);
-
-        // Unmatched cashier receipt labels — admin review screen backing
-        // the naming-drift fix from CashierDocumentSuggester. See
-        // UnmatchedCashierItemController's class docblock.
-        Route::get('unmatched-cashier-items',              [UnmatchedCashierItemController::class, 'index']);
-        Route::post('unmatched-cashier-items/{id}/resolve', [UnmatchedCashierItemController::class, 'resolve']);
-        Route::post('unmatched-cashier-items/{id}/dismiss', [UnmatchedCashierItemController::class, 'dismiss']);
 
         // Signatories (certificate signees) — admin-only end to end,
         // unlike document-types/certifications above whose GET is open to
@@ -630,6 +731,17 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::get('access-request-throughput',  [SuperAdminAnalyticsController::class, 'accessRequestThroughput']);
             Route::get('cashier-verification-health', [SuperAdminAnalyticsController::class, 'cashierVerificationHealth']);
             Route::get('scheduled-jobs-health',       [SuperAdminAnalyticsController::class, 'scheduledJobsHealth']);
+
+            // System Health (Phase 3): flag-gated. Reads rollups/alerts only.
+            // Acknowledge has its own named bucket and is audited.
+            Route::middleware('feature:system_health')->group(function () {
+                Route::get('cashier-trend',       [SystemHealthController::class, 'cashierTrend']);
+                Route::get('provisioning-health', [SystemHealthController::class, 'provisioningHealth']);
+                Route::get('alerts',              [SystemHealthController::class, 'alerts']);
+                Route::post('alerts/{alert}/acknowledge', [SystemHealthController::class, 'acknowledge'])
+                    ->whereNumber('alert')
+                    ->middleware('throttle:30,1,system-health-alert-ack');
+            });
         });
         Route::post('announcements',                      [AnnouncementController::class, 'store']);
         Route::put('announcements/{announcement}',        [AnnouncementController::class, 'update']);
@@ -654,6 +766,12 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
     Route::prefix('access-requests')->group(function () {
         Route::post('/', [AccessRequestController::class, 'store'])
             ->middleware(['role:3,4', 'module:access_requests']);
+
+        // Any admin / super admin reading ONLY their own submissions
+        // (AccessRequestPolicy::viewOwn). Static segment, so it cannot be
+        // captured by the {accessRequest} routes below.
+        Route::get('mine', [AccessRequestController::class, 'mine'])
+            ->middleware('role:3,4');
 
         Route::middleware('role:4')->group(function () {
             Route::get('/',                     [AccessRequestController::class, 'index']);

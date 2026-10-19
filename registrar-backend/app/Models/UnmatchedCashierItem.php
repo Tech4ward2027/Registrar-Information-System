@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use App\Jobs\SuggestUnmatchedLabelTargetJob;
 use App\Services\CashierLabelNormalizer;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
 
 /**
  * A cashier receipt label that CashierDocumentSuggester could not match to
@@ -11,6 +13,12 @@ use Illuminate\Database\Eloquent\Model;
  * suggester's class docblock and the table's own migration for the full
  * rationale — this is the operational, admin-driven fix for receipt-label
  * drift, standing in deliberately for algorithmic fuzzy matching.
+ *
+ * Phase 4: a newly created row may also carry ranked suggestions
+ * (suggestions / suggestion_source / suggested_at), computed off the request
+ * path by SuggestUnmatchedLabelTargetJob. They are advisory only — an admin
+ * still resolves every item by hand — and suggestion_accepted records, at
+ * resolve time, whether the admin chose the top suggestion.
  */
 class UnmatchedCashierItem extends Model
 {
@@ -27,11 +35,18 @@ class UnmatchedCashierItem extends Model
         'resolved_by',
     ];
 
+    // The suggestion_* columns are deliberately NOT mass-assignable: they are
+    // written only by the suggestion job (query builder) and by the resolve
+    // action (forceFill), never from request input.
+
     protected $casts = [
-        'occurrence_count' => 'integer',
-        'first_seen_at'    => 'datetime',
-        'last_seen_at'     => 'datetime',
-        'resolved_at'      => 'datetime',
+        'occurrence_count'    => 'integer',
+        'first_seen_at'       => 'datetime',
+        'last_seen_at'        => 'datetime',
+        'resolved_at'         => 'datetime',
+        'suggestions'         => 'array',
+        'suggested_at'        => 'datetime',
+        'suggestion_accepted' => 'boolean',
     ];
 
     public function resolvedByUser()
@@ -76,7 +91,7 @@ class UnmatchedCashierItem extends Model
         }
 
         try {
-            static::create([
+            $created = static::create([
                 'raw_label'        => $rawLabel,
                 'normalised_label' => $normalised,
                 'occurrence_count' => 1,
@@ -101,6 +116,35 @@ class UnmatchedCashierItem extends Model
             }
 
             throw $e;
+        }
+
+        // Only the request that actually created the row queues suggestions
+        // (the race loser above returns early), so there is one job per
+        // distinct label.
+        static::queueSuggestions($created);
+    }
+
+    /**
+     * Queue suggestion generation for a newly created row.
+     *
+     * Behind the ai_label_suggestions flag (default off) and best-effort in
+     * the same spirit as CashierDocumentSuggester::recordUnmatched(): a
+     * queue outage must never affect the student's OR verification, so any
+     * failure is logged and swallowed.
+     */
+    private static function queueSuggestions(self $item): void
+    {
+        if (!config('features.ai_label_suggestions', false)) {
+            return;
+        }
+
+        try {
+            SuggestUnmatchedLabelTargetJob::dispatch((int) $item->getKey())->afterCommit();
+        } catch (\Throwable $e) {
+            Log::warning('UnmatchedCashierItem: could not queue label suggestions', [
+                'item_id'   => $item->getKey(),
+                'exception' => $e::class,
+            ]);
         }
     }
 

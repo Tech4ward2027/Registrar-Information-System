@@ -98,6 +98,16 @@ class SecurityEvent extends Model
      */
     public const EVENT_TYPE_ONBOARDING_THROTTLED = 'onboarding_throttled';
 
+    /**
+     * Cashier Reconciliation / System Health — Phase 2a. An OGOS or
+     * PUPTAPS lookup failed while provisioning a person at login. These
+     * used to be Log::warning() lines only. The login itself still
+     * succeeds (or fails) exactly as before — this event is a side
+     * record, never a control-flow change. See
+     * SecurityEventLogger::recordProvisioningFailed().
+     */
+    public const EVENT_TYPE_PROVISIONING_FAILED = 'provisioning_failed';
+
     // -------------------------------------------------------
     // reason constants — subtypes of EVENT_TYPE_LOGIN_FAILED.
     // Mirrors the distinct \RuntimeException branches inside
@@ -133,6 +143,31 @@ class SecurityEvent extends Model
     // -------------------------------------------------------
     public const REASON_THROTTLED_REGISTER = 'register';
     public const REASON_THROTTLED_CONFIRM  = 'confirm_email';
+
+    // -------------------------------------------------------
+    // reason constants — subtypes of EVENT_TYPE_PROVISIONING_FAILED.
+    // Each reason belongs to exactly one external system (see
+    // PROVISIONING_REASON_SYSTEM), so a rollup can group "by system"
+    // from the indexed `reason` column without querying JSON metadata.
+    // All values stay inside varchar(50).
+    // -------------------------------------------------------
+    public const REASON_OGOS_NOT_FOUND                  = 'ogos_not_found';
+    public const REASON_OGOS_UNREACHABLE                = 'ogos_unreachable';
+    public const REASON_OGOS_PERSONAL_INFO_UNAVAILABLE  = 'ogos_personal_info_unavailable';
+    public const REASON_OGOS_ADDRESSES_UNAVAILABLE      = 'ogos_addresses_unavailable';
+    public const REASON_ALUMNI_LOOKUP_FAILED            = 'alumni_lookup_failed';
+
+    public const SYSTEM_OGOS    = 'ogos';
+    public const SYSTEM_PUPTAPS = 'puptaps';
+
+    /** reason => external system. Single source of truth for grouping. */
+    public const PROVISIONING_REASON_SYSTEM = [
+        self::REASON_OGOS_NOT_FOUND                 => self::SYSTEM_OGOS,
+        self::REASON_OGOS_UNREACHABLE               => self::SYSTEM_OGOS,
+        self::REASON_OGOS_PERSONAL_INFO_UNAVAILABLE => self::SYSTEM_OGOS,
+        self::REASON_OGOS_ADDRESSES_UNAVAILABLE     => self::SYSTEM_OGOS,
+        self::REASON_ALUMNI_LOOKUP_FAILED           => self::SYSTEM_PUPTAPS,
+    ];
 
     // -------------------------------------------------------
     // Write-once enforcement.

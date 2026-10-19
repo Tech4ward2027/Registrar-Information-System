@@ -3,7 +3,14 @@ import InputGroup from "../components/InputGroup.jsx";
 import { useTheme } from "../context/ThemeContext";
 import { useReferenceData } from "../context/ReferenceDataContext";
 import { PrinterIcon } from "@heroicons/react/24/solid";
-import { getAcademicRecords, getCertifications, getCertificationLayouts, markCertificatesGenerated } from "../services/api";
+import {
+  getAcademicRecordByStudent,
+  getCertifications,
+  getCertificationLayouts,
+  getCertificationTemplate,
+  generateCertificate,
+  markCertificatesGenerated,
+} from "../services/api";
 import { CertHeader, CertFooter, getTodayDate } from "../utils/helpers.jsx";
 import { CERT_CONFIG } from "../utils/Certification.jsx";
 import DropDown from "../components/DropDown.jsx";
@@ -67,6 +74,48 @@ const DEFAULT_FORM = {
   signee: "", // Set once signatories load — see the effect below.
 };
 
+const TEMPLATE_TAG_PATTERN = /\{\{\s*([a-z][a-z0-9_]*)\s*(?:\|\s*([a-z]+)\s*)?\}\}/g;
+
+const buildTemplateData = (formData, academicRecord) => ({
+  full_name: formData.fullName || "",
+  student_number: academicRecord?.student_number || formData.studentNum || "",
+  course: academicRecord?.course || formData.course || "",
+  date_graduated: academicRecord?.graduation_date || formData.dateGraduated || "",
+  official_receipt_number: academicRecord?.or_number || formData.officialReceiptNum || "",
+  issue_date: formData.date || "",
+  signee_name: formData.signee || "",
+  education_level: formData.educationLevel || "",
+  major: formData.major || "",
+  gwa: formData.gwa || "",
+  units: formData.units || "",
+  latin_honors: formData.latinHonors || "",
+  semesters: formData.semesters || "",
+  semesters_num: formData.semestersNum || "",
+  last_semesters: formData.lastSemesters || "",
+  sy_admitted: formData.syAdmitted || "",
+  last_sy: formData.lastSy || "",
+  diploma_num: formData.diplomaNum || "",
+  ladderized_degree: formData.ladderizedDegree || "",
+  student_status: academicRecord?.status || formData.studentStatus || "",
+  eligibility_type: formData.eligibilityType || "",
+  cav_num: formData.cavNum || "",
+  cav_series: formData.cavSeries || "",
+  nstp_serial_num: formData.nstpSerialNum || "",
+  amount: formData.amount || "",
+  control_number: "[Generated on certificate issuance]",
+});
+
+const renderTemplatePreview = (content, data) => String(content || "").replace(
+  TEMPLATE_TAG_PATTERN,
+  (_, name, filter) => {
+    const value = data[name] || `[${name}]`;
+    if (filter === "upper") return value.toUpperCase();
+    if (filter === "lower") return value.toLowerCase();
+    if (filter === "title") return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
+    return value;
+  }
+);
+
 // ─── Field Config ─────
 // ComponentType: "input" | "dropdown"
 
@@ -98,11 +147,43 @@ const buildFieldConfig = (courseOptions) => [
   ["nstpSerialNum",     "input",    "NSTP Serial Number",      { placeholder: "e.g. C-13-113719-16" }],
 ];
 
+const MANUAL_TEMPLATE_FIELDS = {
+  education_level: "educationLevel",
+  major: "major",
+  gwa: "gwa",
+  units: "units",
+  latin_honors: "latinHonors",
+  semesters: "semesters",
+  semesters_num: "semestersNum",
+  last_semesters: "lastSemesters",
+  sy_admitted: "syAdmitted",
+  last_sy: "lastSy",
+  diploma_num: "diplomaNum",
+  ladderized_degree: "ladderizedDegree",
+  student_status: "studentStatus",
+  eligibility_type: "eligibilityType",
+  cav_num: "cavNum",
+  cav_series: "cavSeries",
+  nstp_serial_num: "nstpSerialNum",
+  amount: "amount",
+};
+
 // ─── Memoized Certificate Preview ───
-  const CertificatePreview = React.memo(({ certConfig, activeLayout, debouncedFormData, isDark, pageDimensions, marginValue, margins }) => {
+  const CertificatePreview = React.memo(({
+    certConfig,
+    activeLayout,
+    debouncedFormData,
+    academicRecord,
+    databaseTemplate,
+    pageDimensions,
+    marginValue,
+  }) => {
     const pageSizeSpec = `${pageDimensions.widthInches}in ${pageDimensions.heightInches}in`;
 
     const fontScale = useMemo(() => 1.0, []);
+    const templateData = buildTemplateData(debouncedFormData, academicRecord);
+    const templateMarkup = renderTemplatePreview(databaseTemplate?.content, templateData);
+    const templateMargins = databaseTemplate?.margins;
 
     return (
       <div 
@@ -111,7 +192,9 @@ const buildFieldConfig = (courseOptions) => [
           "--print-margin": `${marginValue}in`,
           "--header-logo-size": `${activeLayout?.headerLogoSize ?? 120}px`,
           "--footer-logo-size": `${activeLayout?.footerLogoSize ?? 45}px`,
-          padding: "var(--print-margin)",
+          padding: templateMargins
+            ? `${templateMargins.top}mm ${templateMargins.right}mm ${templateMargins.bottom}mm ${templateMargins.left}mm`
+            : "var(--print-margin)",
           backgroundColor: "white",
           color: "black",
           width: `${pageDimensions.width}px`,
@@ -128,16 +211,28 @@ const buildFieldConfig = (courseOptions) => [
             margin: 0;
           }
         `}} />
-        {!certConfig?.hideHeaderFooter && <CertHeader layout={activeLayout} />}
+        {!certConfig?.hideHeaderFooter && (
+          <div>
+            <CertHeader layout={activeLayout} />
+          </div>
+        )}
         
         <div 
           className="flex-1 min-h-0 overflow-visible transition-all"
           style={{ fontSize: `${fontScale * 100}%` }}
         >
-          {certConfig?.renderBody(debouncedFormData, activeLayout)}
+          {databaseTemplate ? (
+            <div dangerouslySetInnerHTML={{ __html: templateMarkup }} />
+          ) : (
+            certConfig?.renderBody(debouncedFormData, activeLayout)
+          )}
         </div>
         
-        {!certConfig?.hideHeaderFooter && <CertFooter layout={activeLayout} />}
+        {!certConfig?.hideHeaderFooter && (
+          <div>
+            <CertFooter layout={activeLayout} />
+          </div>
+        )}
       </div>
     );
   });
@@ -176,16 +271,20 @@ const GenerateCertification = ({ initialData, onClose, onCertificatePrinted, onL
     return acc;
   }, {});
 
-  // Create a mapping from database certificate_type_id to CERT_CONFIG ID
-  // For now, assuming database IDs match CERT_CONFIG IDs
-  const certTypeIdToCertConfigId = (dbId) => dbId;
-
   const [loading, setLoading] = useState(false);
+  const [academicRecord, setAcademicRecord] = useState(null);
+  const [academicRecordError, setAcademicRecordError] = useState("");
+  const [showAcademicRecord, setShowAcademicRecord] = useState(false);
   const [printLoading, setPrintLoading] = useState(false);
   const [certifications, setCertifications] = useState([]);
   const [layoutsByCertId, setLayoutsByCertId] = useState({});
+  const [databaseTemplate, setDatabaseTemplate] = useState(null);
+  const [databaseTemplateError, setDatabaseTemplateError] = useState("");
+  const [generatedCertificate, setGeneratedCertificate] = useState(null);
+  const [generatedPdfLoading, setGeneratedPdfLoading] = useState(false);
+  const [generatedPdfError, setGeneratedPdfError] = useState("");
+  const [generationError, setGenerationError] = useState("");
   const [docTypeOptions, setDocTypeOptions] = useState(Object.keys(CERT_CONFIG).map(Number));
-  const [certNameById, setCertNameById] = useState(certIdToName);
   const [formData, setFormData] = useState({ ...DEFAULT_FORM, ...(initialData ?? {}) });
   const [savedData, setSavedData] = useState({ ...DEFAULT_FORM, ...(initialData ?? {}) });
 
@@ -263,7 +362,7 @@ useEffect(() => {
         if (lockDocTypeToRequest) {
           const requestedIdsFromNames = requestedCertNames
             .map((name) => {
-              return Object.entries(CERT_CONFIG).find(([_, config]) => {
+              return Object.entries(CERT_CONFIG).find(([, config]) => {
                 if (normalizeCertName(config.name) === name) return true;
                 if (Array.isArray(config.otherNames)) {
                   return config.otherNames.some((alias) => normalizeCertName(alias) === name);
@@ -353,42 +452,71 @@ useEffect(() => {
   }, [initialData?.or_number]);
 
   useEffect(() => {
-    if (formData.course && formData.studentNum) return;
-    const studentNum = initialData?.studentNum;
-    const studentId  = initialData?.studentId;
-    const fetch = async () => {
+    const studentNum = String(initialData?.studentNum ?? "").trim();
+    if (!studentNum) {
+      setAcademicRecord(null);
+      setAcademicRecordError("");
+      return;
+    }
+
+    let cancelled = false;
+    const resolveAcademicRecord = async () => {
+      setLoading(true);
+      setAcademicRecord(null);
+      setAcademicRecordError("");
       try {
-        setLoading(true);
-        const res = await getAcademicRecords();
-        const records = Array.isArray(res?.data?.data) ? res.data.data : (Array.isArray(res?.data) ? res.data : []);
-        const record = records.find(
-          (r) => r.student_number === studentNum || r.student_id === studentId
-        );
-        if (record) {
-          const educationLevel = ["Alumni", "Graduated"].includes(record.status) ? "Graduate" : "Undergraduate";
-          setFormData((prev) => ({
-            ...prev,
-            course: record.course || prev.course,
-            studentNum: record.student_number || prev.studentNum,
-            educationLevel,
-          }));
-        }
+        const res = await getAcademicRecordByStudent(studentNum);
+        const record = res?.data?.data;
+        if (!record) throw new Error("Empty academic record response.");
+        if (cancelled) return;
+
+        setAcademicRecord(record);
+        setFormData((prev) => ({
+          ...prev,
+          studentNum: record.student_number ?? prev.studentNum,
+          course: record.course ?? prev.course,
+          dateGraduated: record.graduation_date ?? prev.dateGraduated,
+          studentStatus: record.status ?? prev.studentStatus,
+          officialReceiptNum: record.or_number ?? prev.officialReceiptNum,
+          educationLevel: record.status === "Alumni" ? "Graduate" : "Undergraduate",
+        }));
       } catch (err) {
-        console.error("Error fetching course data:", err);
+        if (cancelled) return;
+        setAcademicRecordError(
+          err?.response?.status === 404
+            ? "No academic record was found for this student number."
+            : err?.response?.data?.message || "Unable to resolve the academic record. Please try again."
+        );
+        console.error("Error resolving academic record:", err);
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false);
       }
     };
-    fetch();
-  }, [initialData?.studentNum, initialData?.studentId]);
+
+    resolveAcademicRecord();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialData?.studentNum]);
 
   // Create display options (names) in the order of docTypeOptions
   const docTypeDisplayOptions = useMemo(() =>
     docTypeOptions.map((id) => certIdToName[id])
   , [docTypeOptions, certIdToName]);
 
+  const clearGeneratedCertificate = useCallback(() => {
+    setGeneratedCertificate((current) => {
+      if (current?.url) URL.revokeObjectURL(current.url);
+      return null;
+    });
+    setGeneratedPdfLoading(false);
+    setGeneratedPdfError("");
+    setGenerationError("");
+  }, []);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
+    clearGeneratedCertificate();
     
     // If this is the docType field, convert display name back to numeric ID
     if (name === "docType") {
@@ -402,7 +530,21 @@ useEffect(() => {
     }
   };
 
-  const handlePrint = async () => {
+  const markLegacyCertificateGenerated = () => {
+    if (initialData?.requestId) {
+      const requestId = initialData.requestId;
+      const selectedCertName = normalizeCertName(certIdToName[formData.docType]);
+      const certificateId = initialData?.certificateIdsByName?.[selectedCertName];
+
+      markCertificatesGenerated(requestId, certificateId).catch((err) => {
+        console.error("Failed to record certificate as generated:", err);
+      });
+
+      onCertificatePrinted?.(requestId);
+    }
+  };
+
+  const handleLegacyPrint = async () => {
     setPrintLoading(true);
 
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -419,42 +561,124 @@ useEffect(() => {
     };
     window.addEventListener("afterprint", handleAfterPrint, { once: true });
 
-    if (initialData?.requestId) {
-      const requestId = initialData.requestId;
-
-      // Resolve which specific request_certificate row is currently
-      // selected, via the name -> id map CertificateModal.jsx built from
-      // the real backend data. formData.docType is a CERT_CONFIG numeric
-      // id here, not a name, so it's translated back through certIdToName
-      // and normalized the same way the map's keys were built. If it
-      // can't be resolved (no map entry, e.g. an older caller that never
-      // passed certificateIdsByName, or the ambiguous same-name-twice
-      // edge case noted in CertificateModal.jsx), certificateId stays
-      // undefined and markCertificatesGenerated falls back to its
-      // request-wide behavior — never a hard failure either way.
-      const selectedCertName = normalizeCertName(certIdToName[formData.docType]);
-      const certificateId = initialData?.certificateIdsByName?.[selectedCertName];
-
-      // Real, server-side "generated" signal — see
-      // DocumentRequestService::markCertificatesGenerated(). This is what
-      // the ReadyToClaim guards actually check now; the onCertificatePrinted
-      // callback below just invalidates the dashboard's cached request list
-      // so it reflects the change sooner than its 30s poll — it no longer
-      // gates anything by itself. Fire-and-forget: a failure here shouldn't
-      // block the print the staff member already completed, but is
-      // surfaced so it isn't silently lost.
-      markCertificatesGenerated(requestId, certificateId).catch((err) => {
-        console.error("Failed to record certificate as generated:", err);
-      });
-
-      if (onCertificatePrinted) {
-        onCertificatePrinted(requestId);
-      }
-    }
+    markLegacyCertificateGenerated();
   };
 
   const resolvedFormDocTypeId = resolveCertConfigId(formData.docType);
   const resolvedPreviewDocTypeId = resolveCertConfigId(savedData.docType);
+  const selectedCertification = useMemo(() => certifications.find((cert) => {
+    const certConfigId = resolveCertConfigId(cert?.certificate_name);
+    return Number(cert?.certificate_type_id) === Number(resolvedPreviewDocTypeId)
+      || certConfigId === Number(resolvedPreviewDocTypeId);
+  }), [certifications, resolveCertConfigId, resolvedPreviewDocTypeId]);
+
+  useEffect(() => {
+    if (!resolvedPreviewDocTypeId || !certifications.length) {
+      setDatabaseTemplate(null);
+      setDatabaseTemplateError("");
+      return undefined;
+    }
+
+    if (!selectedCertification) {
+      setDatabaseTemplate(null);
+      setDatabaseTemplateError("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setDatabaseTemplateError("");
+    getCertificationTemplate(selectedCertification.certificate_type_id)
+      .then((response) => {
+        if (cancelled) return;
+        const payload = response?.data?.data;
+        setDatabaseTemplate(payload?.source === "database" ? payload.template : null);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setDatabaseTemplate(null);
+        setDatabaseTemplateError(
+          error?.response?.status === 503
+            ? "The saved template is temporarily unavailable. Using the legacy certificate."
+            : "Unable to load the saved template. Using the legacy certificate."
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [certifications, resolveCertConfigId, resolvedPreviewDocTypeId, selectedCertification]);
+
+  useEffect(() => {
+    clearGeneratedCertificate();
+  }, [clearGeneratedCertificate, resolvedPreviewDocTypeId, academicRecord?.student_number]);
+
+  useEffect(() => () => {
+    if (generatedCertificate?.url) URL.revokeObjectURL(generatedCertificate.url);
+  }, [generatedCertificate]);
+
+  const handleGenerate = async () => {
+    if (!selectedCertification || !databaseTemplate) {
+      await handleLegacyPrint();
+      return;
+    }
+
+    const manualFields = Object.entries(MANUAL_TEMPLATE_FIELDS).reduce((fields, [tag, fieldName]) => {
+      const value = formData[fieldName];
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        fields[tag] = String(value);
+      }
+      return fields;
+    }, {});
+
+    const requiredManualFields = (databaseTemplate.required_fields ?? [])
+      .filter((name) => MANUAL_TEMPLATE_FIELDS[name])
+      .filter((name) => !String(manualFields[name] ?? "").trim());
+
+    if (requiredManualFields.length > 0) {
+      setGenerationError(`Please complete the required field${requiredManualFields.length === 1 ? "" : "s"}: ${requiredManualFields.join(", ")}.`);
+      return;
+    }
+
+    setPrintLoading(true);
+    setGenerationError("");
+    try {
+      const signatory = signatories.find((item) => item.name === formData.signee);
+      const result = await generateCertificate({
+        certificate_type_id: selectedCertification.certificate_type_id,
+        student_num: academicRecord?.student_number || formData.studentNum || initialData?.studentNum,
+        request_id: initialData?.requestId ?? null,
+        request_certificate_id: initialData?.certificateIdsByName
+          ? initialData.certificateIdsByName[normalizeCertName(selectedCertification.certificate_name)] ?? null
+          : null,
+        signatory_id: signatory?.signatory_id ?? null,
+        fields: manualFields,
+      });
+      setGeneratedCertificate(result);
+      setGeneratedPdfLoading(true);
+      setGeneratedPdfError("");
+      if (initialData?.requestId) onCertificatePrinted?.(initialData.requestId);
+    } catch (error) {
+      const payload = error?.response?.data ?? {};
+      const fields = payload?.errors?.fields;
+      setGenerationError(
+        Array.isArray(fields) && fields.length > 0
+          ? `Please complete the required field${fields.length === 1 ? "" : "s"}: ${fields.join(", ")}.`
+          : payload?.message || "The certificate could not be generated. Please check the information and try again."
+      );
+    } finally {
+      setPrintLoading(false);
+    }
+  };
+
+  const handleGeneratedPrint = () => {
+    if (!generatedCertificate?.url) return;
+    const printWindow = window.open(generatedCertificate.url, "_blank", "noopener,noreferrer");
+    if (!printWindow) {
+      setGenerationError("Your browser blocked the certificate preview window. Please allow pop-ups and try again.");
+      return;
+    }
+    printWindow.addEventListener("load", () => printWindow.print(), { once: true });
+  };
 
   useEffect(() => {
     if (!resolvedPreviewDocTypeId) return;
@@ -469,10 +693,18 @@ useEffect(() => {
   const formCertConfig = resolvedFormDocTypeId ? CERT_CONFIG[resolvedFormDocTypeId] : undefined;
   const previewCertConfig = resolvedPreviewDocTypeId ? CERT_CONFIG[resolvedPreviewDocTypeId] : undefined;
   const shouldShow = useCallback((fieldName) => formCertConfig?.fields.includes(fieldName), [formCertConfig]);
+  const requiredManualFieldNames = useMemo(
+    () => (databaseTemplate?.required_fields ?? [])
+      .map((tag) => MANUAL_TEMPLATE_FIELDS[tag])
+      .filter(Boolean),
+    [databaseTemplate]
+  );
+  const shouldShowField = useCallback(
+    (fieldName) => shouldShow(fieldName) || requiredManualFieldNames.includes(fieldName),
+    [requiredManualFieldNames, shouldShow]
+  );
   
   // Get the certificate name for display
-  const certDisplayName = previewCertConfig?.name || certIdToName[resolvedPreviewDocTypeId] || "Certificate";
-
   const activeLayout = useMemo(() => {
     // Look up the layout using the exact ID selected in the dropdown
     if (!resolvedPreviewDocTypeId) return DEFAULT_CERTIFICATE_LAYOUT;
@@ -483,20 +715,34 @@ useEffect(() => {
     return layoutsByCertId[id] ?? DEFAULT_CERTIFICATE_LAYOUT;
   }, [resolvedPreviewDocTypeId, layoutsByCertId]);
 
+  const effectivePaperSize = databaseTemplate?.paper_size === "LETTER"
+    ? "Letter"
+    : databaseTemplate?.paper_size === "LEGAL"
+      ? "Legal"
+      : databaseTemplate?.paper_size === "FOLIO"
+        ? "Folio"
+        : databaseTemplate?.paper_size === "A4"
+          ? "A4"
+          : paperSize;
+  const effectiveOrientation = databaseTemplate?.orientation === "landscape" ? "Landscape" : databaseTemplate?.orientation === "portrait" ? "Portrait" : orientation;
+
   const pageDimensions = useMemo(() => {
     let w = 8.5;
     let h = 11;
-    if (paperSize === "A4") {
+    if (effectivePaperSize === "A4") {
       w = 8.27;
       h = 11.69;
-    } else if (paperSize === "Legal") {
+    } else if (effectivePaperSize === "Legal") {
       w = 8.5;
       h = 14;
+    } else if (effectivePaperSize === "Folio") {
+      w = 8.5;
+      h = 13;
     }
-    return orientation === "Portrait"
+    return effectiveOrientation === "Portrait"
       ? { width: Math.round(w * 96), height: Math.round(h * 96), widthInches: w, heightInches: h }
       : { width: Math.round(h * 96), height: Math.round(w * 96), widthInches: h, heightInches: w };
-  }, [paperSize, orientation]);
+  }, [effectivePaperSize, effectiveOrientation]);
 
   const marginValue = useMemo(() => {
     if (margins.startsWith("Narrow")) return 0.25;
@@ -609,8 +855,30 @@ useEffect(() => {
                 ← Back
               </button>
             )}
+            {generatedCertificate && (
+              <>
+                <a
+                  href={generatedCertificate.url}
+                  download={generatedCertificate.filename}
+                  className={`flex-1 sm:flex-none rounded-xl border px-4 py-2.5 text-center text-sm font-semibold ${
+                    isDark ? 'border-[#3e4042] bg-[#2a2a2f] text-[#e4e6eb] hover:bg-[#353539]' : 'border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Download PDF
+                </a>
+                <button
+                  type="button"
+                  onClick={handleGeneratedPrint}
+                  className={`flex-1 sm:flex-none rounded-xl px-4 py-2.5 text-sm font-bold ${
+                    isDark ? 'border border-[#3e4042] bg-[#2a2a2f] text-[#e4e6eb] hover:bg-[#353539]' : 'bg-[#800000] text-white hover:bg-[#600000]'
+                  }`}
+                >
+                  Print PDF
+                </button>
+              </>
+            )}
             <button
-              onClick={handlePrint}
+              onClick={generatedCertificate ? handleGeneratedPrint : handleGenerate}
               disabled={printLoading}
               className={`flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold shadow-md transition-all active:scale-95 ${
                 printLoading
@@ -621,7 +889,7 @@ useEffect(() => {
               }`}
             >
               <PrinterIcon className="w-4 h-4" />
-              {printLoading ? 'Preparing...' : 'Print Certificate'}
+              {printLoading ? 'Generating...' : generatedCertificate ? 'Print Certificate' : databaseTemplate ? 'Generate Certificate' : 'Print Certificate'}
             </button>
           </div>
         </div>
@@ -647,9 +915,49 @@ useEffect(() => {
 
             <form className={`space-y-4 ${loading ? "opacity-50 pointer-events-none" : ""}`}>
               {loading && <p className="text-xs text-amber-500 animate-pulse">Loading academic record data...</p>}
+              {academicRecordError && (
+                <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {academicRecordError}
+                </p>
+              )}
+              {generationError && (
+                <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {generationError}
+                </p>
+              )}
+              {generatedCertificate?.controlNumber && (
+                <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-900">
+                  <span className="font-semibold">Control number:</span> {generatedCertificate.controlNumber}
+                </div>
+              )}
+              {academicRecord && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 text-xs text-blue-900">
+                  <button
+                    type="button"
+                    onClick={() => setShowAcademicRecord((prev) => !prev)}
+                    aria-expanded={showAcademicRecord}
+                    aria-controls="resolved-student-information"
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left font-semibold"
+                  >
+                    <span>Resolved student information</span>
+                    <span aria-hidden="true" className="text-sm">
+                      {showAcademicRecord ? "−" : "+"}
+                    </span>
+                  </button>
+                  {showAcademicRecord && (
+                    <dl id="resolved-student-information" className="grid grid-cols-2 gap-x-3 gap-y-1 border-t border-blue-200 px-3 py-2">
+                      <dt>Student number</dt><dd className="font-medium">{academicRecord.student_number || "—"}</dd>
+                      <dt>Course</dt><dd className="font-medium">{academicRecord.course || "—"}</dd>
+                      <dt>Graduation date</dt><dd className="font-medium">{academicRecord.graduation_date || "—"}</dd>
+                      <dt>Status</dt><dd className="font-medium">{academicRecord.status || "—"}</dd>
+                      <dt>Requester type</dt><dd className="font-medium">{academicRecord.requester_type || "—"}</dd>
+                    </dl>
+                  )}
+                </div>
+              )}
 
               {FIELD_CONFIG.map(([name, type, label, props]) => {
-                if (!shouldShow(name)) return null;
+                if (!shouldShowField(name)) return null;
                 if (type === "dropdown") {
                   return (
                     <DropDown
@@ -722,12 +1030,31 @@ useEffect(() => {
             <h2 className={`text-sm font-extrabold uppercase tracking-tight ${isDark ? 'text-white' : 'text-gray-800'}`}>
               Certificate Preview
             </h2>
-            <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${
-              isDark ? 'border-[#3e4042] bg-[#1f1f1f] text-[#b0b3b8]' : 'border-gray-200 bg-gray-50 text-gray-600'
-            }`}>
-              Scale: {Math.round(scale * 100)}%
-            </span>
+            <div className="flex items-center gap-2">
+              {databaseTemplate && (
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${
+                  isDark ? 'border-emerald-800 bg-emerald-950/40 text-emerald-300' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                }`}>
+                  Template v{databaseTemplate.version}
+                </span>
+              )}
+              <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${
+                isDark ? 'border-[#3e4042] bg-[#1f1f1f] text-[#b0b3b8]' : 'border-gray-200 bg-gray-50 text-gray-600'
+              }`}>
+                Scale: {Math.round(scale * 100)}%
+              </span>
+            </div>
           </div>
+          {databaseTemplateError && (
+            <p className={`px-5 py-2 text-xs ${isDark ? 'bg-amber-950/30 text-amber-200' : 'bg-amber-50 text-amber-800'}`}>
+              {databaseTemplateError}
+            </p>
+          )}
+          {!databaseTemplate && selectedCertification && !databaseTemplateError && (
+            <p className={`px-5 py-2 text-xs ${isDark ? 'bg-amber-950/30 text-amber-200' : 'bg-amber-50 text-amber-800'}`}>
+              This certificate is using the legacy layout because no active database template is available.
+            </p>
+          )}
           
           <div 
             ref={previewContainerRef}
@@ -754,15 +1081,51 @@ useEffect(() => {
                 }}
                 className="print:!static print:!transform-none print:!w-full print:!h-full print:!p-0 print:!m-0"
               >
-                <CertificatePreview 
-                  certConfig={previewCertConfig} 
-                  activeLayout={activeLayout} 
-                  debouncedFormData={debouncedFormData} 
-                  isDark={isDark} 
-                  pageDimensions={pageDimensions}
-                  marginValue={marginValue}
-                  margins={margins}
-                />
+                {generatedCertificate ? (
+                  <div className="relative h-full w-full min-h-[520px] bg-white">
+                    {generatedPdfLoading && (
+                      <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/90 text-sm font-semibold text-gray-600">
+                        Loading generated certificate preview…
+                      </div>
+                    )}
+                    {generatedPdfError && (
+                      <div role="alert" className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white px-6 text-center text-sm text-red-700">
+                        <p>{generatedPdfError}</p>
+                        <a
+                          href={generatedCertificate.url}
+                          download={generatedCertificate.filename}
+                          className="rounded-lg bg-[#800000] px-4 py-2 font-semibold text-white"
+                        >
+                          Download certificate instead
+                        </a>
+                      </div>
+                    )}
+                    <iframe
+                      title="Generated certificate preview"
+                      src={generatedCertificate.url}
+                      onLoad={() => {
+                        setGeneratedPdfLoading(false);
+                        setGeneratedPdfError("");
+                      }}
+                      onError={() => {
+                        setGeneratedPdfLoading(false);
+                        setGeneratedPdfError("The generated certificate could not be previewed.");
+                      }}
+                      className="h-full min-h-[520px] w-full border-0 bg-white"
+                    />
+                  </div>
+                ) : (
+                  <CertificatePreview
+                    certConfig={previewCertConfig}
+                    activeLayout={activeLayout}
+                    debouncedFormData={debouncedFormData}
+                    academicRecord={academicRecord}
+                    databaseTemplate={databaseTemplate}
+                    pageDimensions={pageDimensions}
+                    marginValue={marginValue}
+                    margins={margins}
+                  />
+                )}
               </div>
             </div>
           </div>

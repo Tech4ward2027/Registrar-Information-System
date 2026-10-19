@@ -15,6 +15,32 @@ use Illuminate\Support\Facades\Schema;
  */
 class AnalyticsService
 {
+    /**
+     * Per-instance memo of the processing-time aggregate, keyed by range.
+     * overview(), byDocumentType(), processingTime() and signatureTurnaroundTime()
+     * all read the same pass, so a caller that asks for several of them in one
+     * go (buildAiPayload) pays for the history walk once.
+     *
+     * @var array<string, array<string, mixed>>
+     */
+    private array $processingAggregates = [];
+
+    public function __construct(private AnalyticsProcessingMetrics $processingMetrics) {}
+
+    /**
+     * Processing-time figures for a range, from the shared per-transaction
+     * measurement (ProcessingTimeService) — see AnalyticsProcessingMetrics.
+     *
+     * @param  array{0: \Carbon\CarbonInterface, 1: \Carbon\CarbonInterface}  $range
+     * @return array<string, mixed>
+     */
+    private function processingAggregate(array $range): array
+    {
+        $key = $range[0]->getTimestamp() . ':' . $range[1]->getTimestamp();
+
+        return $this->processingAggregates[$key] ??= $this->processingMetrics->aggregate($range);
+    }
+
     // -------------------------------------------------------------------------
     // Archive / soft-delete exclusion
     // -------------------------------------------------------------------------
@@ -47,62 +73,6 @@ class AnalyticsService
         return $query
             ->where("{$alias}.is_archived", false)
             ->whereNull("{$alias}.deleted_at");
-    }
-
-    /**
-     * Deficiency Notice & Withdrawn Status — Phase 5 ("Analytics/report
-     * exclusion"). Excludes every request_history row belonging to a
-     * WITHDRAWN request from average-processing-time metrics, on top of
-     * the archive/soft-delete exclusion above.
-     *
-     * Applies only to the business_minutes-based "how long does
-     * processing take" queries (overview()'s avg_processing_minutes,
-     * byDocumentType()'s processingTimeByGroup subquery,
-     * processingTime()'s per-document-type and per-admin averages, and
-     * signatureTurnaroundTime()'s two SLA-clock breakdowns) — NOT plain
-     * request-count queries like overview()'s total/pending/completed
-     * buckets or byStatus(), where a Withdrawn request legitimately
-     * belongs in the count (it was a real submission that consumed
-     * intake) even though it never belongs in a "how fast do we complete
-     * work" average. A Withdrawn request never completed, so blending
-     * its interim segments — some reflecting a mistake caught quickly,
-     * others a stalled request finally being closed out — into a
-     * completion-time average would skew the number for no analytical
-     * benefit, in either direction depending on which cases happen to
-     * dominate a given date range.
-     *
-     * NOTE — Forfeited requests are deliberately NOT excluded here: this
-     * method's job is the Withdrawn-specific exit criterion this
-     * feature's Phase 5 calls for, not a general audit of every terminal
-     * status's inclusion in these averages. On inspection, Forfeited
-     * requests are not currently excluded from any of these same
-     * averages either (a Forfeited request's ReadyToClaim segment — time
-     * spent sitting unclaimed before expiring — still contributes to
-     * processingTime()'s and overview()'s numbers today). That is a
-     * pre-existing gap, not something introduced or fixed by this
-     * change; flagged here for visibility rather than silently expanding
-     * this method's scope to also cover it without an explicit decision
-     * to do so.
-     *
-     * ClosedUnableToProcess (Data Retention & Disposal Policy §3.4) is
-     * excluded for the identical reason as Withdrawn above: it is a
-     * terminal status a request reaches WITHOUT ever completing, so
-     * blending its interim segments into a completion-time average is
-     * the same category of distortion Withdrawn's exclusion already
-     * addresses. Grouped into this same method (rather than a second,
-     * near-duplicate exclusion method) since both statuses share the
-     * exact same "terminal, never completed, still counts as real
-     * volume" characteristics that justify excluding them from this
-     * specific class of query and no other.
-     *
-     * @param  \Illuminate\Database\Query\Builder  $query
-     * @param  string  $alias  Alias of a joined document_request table.
-     */
-    private function excludeFromProcessingTimeMetrics(\Illuminate\Database\Query\Builder $query, string $alias = 'document_request'): \Illuminate\Database\Query\Builder
-    {
-        return $this->excludeArchived($query, $alias)
-            ->where("{$alias}.status_id", '!=', RequestStatusEnum::Withdrawn->value)
-            ->where("{$alias}.status_id", '!=', RequestStatusEnum::ClosedUnableToProcess->value);
     }
 
     // -------------------------------------------------------------------------
@@ -186,21 +156,12 @@ class AnalyticsService
         $completed = (int) $counts->completed;
         $forfeited = (int) $counts->forfeited;
 
-        // Raw DB::table() query (not RequestHistory::), since averaging
-        // needs a join back to document_request to reach is_archived /
-        // deleted_at at all — request_history carries neither column
-        // itself. Uses business_minutes (calendar-aware, per-segment
-        // duration), not minutes_processed (cumulative wall-clock time
-        // since requested_at, re-counted on every status change) — see
-        // processingTime()'s doc block for the full explanation of why
-        // these two columns aren't interchangeable.
-        $avgProcessing = $this->excludeFromProcessingTimeMetrics(
-            DB::table('request_history as rh')
-                ->join('document_request as dr', 'rh.request_id', '=', 'dr.request_id')
-                ->whereBetween('rh.changed_at', [$from, $to])
-                ->whereNotNull('rh.business_minutes'),
-            'dr'
-        )->avg('rh.business_minutes');
+        // Mean processing time per transaction (one document/certificate
+        // line), from the shared ProcessingTimeService rule — the same figure
+        // the logbook and the OPCR report use. Replaces the old average of
+        // stored per-segment minutes, which included Awaiting Submission and
+        // the signing wait. Null when nothing was processed in the range.
+        $avgProcessing = $this->processingAggregate($range)['overall']['avg_minutes'];
 
         // BUG FIX (QA #13 — "'No Prior Data' Despite History"): 'all'
         // sets $from to now()->subYears(100) (see AnalyticsController::
@@ -251,7 +212,7 @@ class AnalyticsService
             'ready_to_claim'         => (int) $counts->ready_to_claim,
             'completed'              => $completed,
             'forfeited'              => $forfeited,
-            'avg_processing_minutes' => $avgProcessing ? round($avgProcessing, 1) : null,
+            'avg_processing_minutes' => $avgProcessing,
             'completion_rate'        => $total > 0 ? round(($completed / $total) * 100, 1) : 0,
             'forfeit_rate'           => $total > 0 ? round(($forfeited / $total) * 100, 1) : 0,
             'volume_change_pct'      => $prevTotal > 0
@@ -303,39 +264,14 @@ class AnalyticsService
     {
         [$from, $to] = $range;
 
-        $groupKey = self::logbookGroupKeyExpression('dt2');
-
-        // Processing-time-per-logbook-group subquery, built with the query
-        // builder (rather than a hand-written DB::raw string) so the date
-        // range and archive exclusion can be bound/applied the same way as
-        // everywhere else instead of living outside the query builder's
-        // reach. Grouped by the same logbook rollup key as the outer query
-        // (see logbookGroupKeyExpression()) and aggregated directly off the
-        // raw history rows — a true weighted average across every request
-        // in the group, not an "average of the per-document averages" that
-        // would silently over-weight low-volume document types once several
-        // of them start sharing a logbook_category. Two bugs fixed here vs.
-        // the original version:
-        //   1. business_minutes, not minutes_processed — see processingTime()
-        //      for the full explanation of why these differ.
-        //   2. This subquery previously had no whereBetween('changed_at', ...)
-        //      at all, so avg_processing_min silently ignored the selected
-        //      date range and always computed an all-time average regardless
-        //      of whether "Today," "This Month," or "This Year" was picked.
-        $processingTimeByGroup = $this->excludeFromProcessingTimeMetrics(
-            DB::table('request_history as rh')
-                ->join('request_document as rd2', 'rh.request_id', '=', 'rd2.request_id')
-                ->join('document_type as dt2', 'rd2.document_type_id', '=', 'dt2.document_type_id')
-                ->join('document_request as dr2', 'rh.request_id', '=', 'dr2.request_id')
-                ->whereBetween('rh.changed_at', [$from, $to])
-                ->whereNotNull('rh.business_minutes'),
-            'dr2'
-        )
-            ->select(
-                DB::raw("{$groupKey} as group_key"),
-                DB::raw('ROUND(AVG(rh.business_minutes), 1) as avg_minutes')
-            )
-            ->groupBy(DB::raw($groupKey));
+        // Average processing time per logbook group comes from the shared
+        // per-transaction measurement (see processingAggregate()), keyed the
+        // same way as the rows below: 'category:<id>' for a logbook category,
+        // 'document:<id>' for an uncategorized document type. It is a true
+        // weighted mean across every transaction in the group, and it follows
+        // the selected date range (a transaction belongs to the period in
+        // which its processing finished).
+        $averages = collect($this->processingAggregate($range)['by_group'])->keyBy('group_key');
 
         $outerGroupKey = self::logbookGroupKeyExpression('dt');
 
@@ -352,9 +288,6 @@ class AnalyticsService
                 ->join('document_type as dt', 'rd.document_type_id', '=', 'dt.document_type_id')
                 ->leftJoin('logbook_category as lc', 'dt.logbook_category_id', '=', 'lc.logbook_category_id')
                 ->join('document_request as dr', 'rd.request_id', '=', 'dr.request_id')
-                ->leftJoinSub($processingTimeByGroup, 'pt', function ($join) use ($outerGroupKey) {
-                    $join->on(DB::raw($outerGroupKey), '=', 'pt.group_key');
-                })
                 ->whereBetween('dr.requested_at', [$from, $to]),
             'dr'
         )
@@ -391,22 +324,27 @@ class AnalyticsService
                 // old name invited "why doesn't this match Total Requests"
                 // confusion against overview()'s distinct-request count.
                 DB::raw('COUNT(rd.request_document_id) as total_documents'),
-                DB::raw('SUM(rd.number_of_copies) as total_copies'),
-                DB::raw('MAX(pt.avg_minutes) as avg_processing_min')
+                DB::raw('SUM(rd.number_of_copies) as total_copies')
             )
             ->groupBy(DB::raw($outerGroupKey), 'dt.logbook_category_id')
             ->orderByDesc('total_documents')
             ->get();
 
-        return $rows->map(fn ($row) => [
-            'document_type_id'    => $row->document_type_id,
-            'logbook_category_id' => $row->logbook_category_id,
-            'document_name'       => $row->document_name,
-            'document_type_count' => (int) $row->document_type_count,
-            'total_documents'     => (int) $row->total_documents,
-            'total_copies'        => (int) $row->total_copies,
-            'avg_processing_min'  => $row->avg_processing_min,
-        ])->all();
+        return $rows->map(function ($row) use ($averages) {
+            $groupKey = $row->logbook_category_id !== null
+                ? 'category:' . $row->logbook_category_id
+                : 'document:' . $row->document_type_id;
+
+            return [
+                'document_type_id'    => $row->document_type_id,
+                'logbook_category_id' => $row->logbook_category_id,
+                'document_name'       => $row->document_name,
+                'document_type_count' => (int) $row->document_type_count,
+                'total_documents'     => (int) $row->total_documents,
+                'total_copies'        => (int) $row->total_copies,
+                'avg_processing_min'  => data_get($averages->get($groupKey), 'avg_minutes'),
+            ];
+        })->all();
     }
 
     // -------------------------------------------------------------------------
@@ -444,268 +382,69 @@ class AnalyticsService
 
     public function processingTime(array $range): array
     {
-        [$from, $to] = $range;
-
-        // Uses business_minutes, not minutes_processed — same reasoning as
-        // by_admin below: minutes_processed is cumulative wall-clock time
-        // since requested_at (re-counted on every transition), while
-        // business_minutes is the calendar-aware, per-segment duration.
-        // Also joins document_request so excludeArchived() has a table to
-        // filter on — this query previously had no path to is_archived /
-        // deleted_at at all, so archived/deleted requests' processing times
-        // silently skewed the "Processing Time" chart.
-        // Grouped by logbook_category (falling back to the document type's
-        // own name when unset) — see logbookGroupKeyExpression()'s docblock
-        // and byDocumentType() for the full rationale. min/avg/max/
-        // sample_count are computed directly off the raw history rows
-        // within each group, so a rolled-up category's numbers are a true
-        // aggregate across every underlying document type, not an average
-        // of pre-computed per-document averages.
-        $groupKey = self::logbookGroupKeyExpression('dt');
-
-        $byDocTypeQuery = DB::table('request_history as rh')
-            ->join('request_document as rd', 'rh.request_id', '=', 'rd.request_id')
-            ->join('document_type as dt', 'rd.document_type_id', '=', 'dt.document_type_id')
-            ->leftJoin('logbook_category as lc', 'dt.logbook_category_id', '=', 'lc.logbook_category_id')
-            ->join('document_request as dr', 'rh.request_id', '=', 'dr.request_id')
-            ->whereBetween('rh.changed_at', [$from, $to])
-            ->whereNotNull('rh.business_minutes');
-
-        $byDocType = $this->excludeFromProcessingTimeMetrics($byDocTypeQuery, 'dr')
-            ->select(
-                DB::raw('MIN(dt.document_type_id) as document_type_id'),
-                'dt.logbook_category_id',
-                DB::raw('COALESCE(MAX(lc.name), MAX(dt.document_name)) as document_name'),
-                DB::raw('COUNT(DISTINCT dt.document_type_id) as document_type_count'),
-                DB::raw('ROUND(MIN(rh.business_minutes), 1) as min_minutes'),
-                DB::raw('ROUND(AVG(rh.business_minutes), 1) as avg_minutes'),
-                DB::raw('ROUND(MAX(rh.business_minutes), 1) as max_minutes'),
-                DB::raw('COUNT(*) as sample_count')
-            )
-            ->groupBy(DB::raw($groupKey), 'dt.logbook_category_id')
-            ->orderBy('avg_minutes')
-            ->get();
-
-        // Staff Performance panel (per-admin Requests Handled / Avg
-        // Processing Time). Two correctness fixes vs. the naive version:
+        // Both panels read the shared per-transaction measurement
+        // (AnalyticsProcessingMetrics -> ProcessingTimeService): the minutes
+        // the Registrar itself worked on a document, office hours only, from
+        // filing to Pending Signature (or Ready to Claim when no signature is
+        // needed), with Awaiting Submission, the signing wait and pickup never
+        // counted. Replaces averages of the stored per-segment business_minutes.
         //
-        //   1. avg_minutes uses rh.business_minutes, NOT rh.minutes_processed.
-        //      minutes_processed is cumulative wall-clock time since the
-        //      request's original requested_at, recomputed on every single
-        //      transition (see DocumentRequestService::recordStatusHistory's
-        //      doc block) — so a request that sat untouched for days before
-        //      an admin finally moved it gets that entire wait attributed to
-        //      that admin, like a relay runner timed for the whole race
-        //      instead of just their leg. business_minutes is the additive,
-        //      per-segment duration (time since the *previous* status change,
-        //      or since requested_at for the first transition) already
-        //      computed and stored for this exact purpose — no new column or
-        //      backfill needed, it just wasn't being read here yet.
+        // by_document_type: grouped by logbook category (falling back to the
+        // document/certificate type's own name) — a true aggregate across the
+        // group's transactions, not an average of per-type averages.
         //
-        //      business_minutes is also calendar-aware (office hours only,
-        //      excludes weekends/holidays), which is what we want for a
-        //      staff performance number: it doesn't penalize an admin for a
-        //      request sitting overnight, only for time they actually held
-        //      it during business hours.
-        //
-        //      whereNotNull('rh.business_minutes') below also takes care of
-        //      "reset old records": business_minutes was added as a nullable
-        //      column and is NULL on any history row written before that
-        //      migration, so those rows simply drop out of this average
-        //      instead of polluting it with the old cumulative numbers.
-        //
-        //   2. requests_handled counts COUNT(DISTINCT rh.request_id), not
-        //      COUNT(*). Every request logs one history row per status
-        //      transition, so COUNT(*) credited an admin once per step
-        //      instead of once per request — a single 4-step request handled
-        //      by one admin end-to-end was counted as 4 "requests handled".
-        //
-        // Plan Step 1a — min_minutes / max_minutes / sample_count added here,
-        // mirroring by_document_type above: a bare average hides whether an
-        // admin's "requests handled" were consistently fast or a mix of very
-        // fast and very slow ones. sample_count is COUNT(*) (transitions
-        // averaged), distinct from requests_handled (COUNT(DISTINCT), see
-        // point 2 above) — deliberately different numbers for different
-        // questions ("how many samples went into this average" vs. "how
-        // many requests did this admin handle").
-        //
-        // Joins document_request so excludeArchived() has a table to filter
-        // on — same gap as by_document_type above: this query had no path
-        // to is_archived / deleted_at, so an admin's stats included work
-        // done on requests that are now archived or soft-deleted.
-        $byAdminQuery = DB::table('request_history as rh')
-            ->join('users as u', 'rh.changed_by', '=', 'u.user_id')
-            ->leftJoin('admin_profile as ap', 'u.user_id', '=', 'ap.user_id')
-            ->join('document_request as dr', 'rh.request_id', '=', 'dr.request_id')
-            ->whereBetween('rh.changed_at', [$from, $to])
-            ->whereNotNull('rh.business_minutes');
-
-        $byAdmin = $this->excludeFromProcessingTimeMetrics($byAdminQuery, 'dr')
-            ->select(
-                'u.user_id',
-                'u.email',
-                DB::raw("CONCAT(COALESCE(ap.first_name,''), ' ', COALESCE(ap.last_name,'')) as display_name"),
-                DB::raw('ROUND(MIN(rh.business_minutes), 1) as min_minutes'),
-                DB::raw('ROUND(AVG(rh.business_minutes), 1) as avg_minutes'),
-                DB::raw('ROUND(MAX(rh.business_minutes), 1) as max_minutes'),
-                DB::raw('COUNT(*) as sample_count'),
-                DB::raw('COUNT(DISTINCT rh.request_id) as requests_handled'),
-                // Plan Step 1b — distinct calendar days (in the display
-                // timezone, same conversion as everywhere else in this file)
-                // this admin touched at least one request. Used below to
-                // compute a rate metric (requests handled per active day)
-                // instead of a raw count over the whole selected range,
-                // which would make an admin who worked 3 of 30 days look
-                // "slow" purely because most of the range wasn't theirs to
-                // work at all.
-                DB::raw('COUNT(DISTINCT ' . self::dateExpression('rh.changed_at') . ') as active_days')
-            )
-            ->groupBy('u.user_id', 'u.email', 'ap.first_name', 'ap.last_name')
-            ->orderBy('avg_minutes')
-            ->get();
-
-        // Plan Step 1c — rework/quality signal. Chosen proxy (per the plan's
-        // open question 1): count of requests each admin touched in-range
-        // that are currently Forfeited (never claimed within the SLA
-        // window), as a fraction of the requests they handled. This is a
-        // signal, not a verdict — forfeiture is frequently outside staff
-        // control (a student simply never returns) — so it's surfaced as a
-        // rate alongside the other metrics rather than as a standalone
-        // "quality score." The plan's alternative proxy ("re-touched after
-        // leaving their hands") would need a self-join across ordered
-        // history rows per request and is left as a follow-up if this proxy
-        // turns out to be too noisy in practice.
-        $forfeitedCounts = $this->excludeArchived(
-            DB::table('request_history as rh')
-                ->join('document_request as dr', 'rh.request_id', '=', 'dr.request_id')
-                ->whereBetween('rh.changed_at', [$from, $to])
-                ->whereNotNull('rh.changed_by')
-                ->where('dr.status_id', RequestStatusEnum::Forfeited->value),
-            'dr'
-        )
-            ->select('rh.changed_by as user_id', DB::raw('COUNT(DISTINCT rh.request_id) as forfeited_count'))
-            ->groupBy('rh.changed_by')
-            ->get()
-            ->keyBy('user_id');
-
-        // Post-aggregate ratios (rate-per-active-day, forfeit rate) are
-        // computed here in PHP rather than as SQL expressions — they're
-        // simple divisions of two already-aggregated columns, and doing it
-        // here avoids a driver-specific "safe divide by zero" SQL
-        // expression for what's a two-line null check in PHP.
-        $byAdmin = $byAdmin->map(function ($row) use ($forfeitedCounts) {
-            $row->requests_per_active_day = $row->active_days > 0
-                ? round($row->requests_handled / $row->active_days, 1)
-                : null;
-
-            $forfeited = (int) ($forfeitedCounts[$row->user_id]->forfeited_count ?? 0);
-            $row->forfeited_count = $forfeited;
-            $row->forfeit_rate = $row->requests_handled > 0
-                ? round(($forfeited / $row->requests_handled) * 100, 1)
-                : 0.0;
-
-            return $row;
-        });
+        // by_admin: each transaction is credited to the staff member who moved
+        // it into the stopping status. requests_handled counts distinct
+        // requests, sample_count the transactions averaged, active_days the
+        // distinct display-timezone days that person finished work, and
+        // forfeited_count/forfeit_rate the credited requests that later
+        // expired unclaimed (a signal, not a verdict — forfeiture is often
+        // outside staff control).
+        $aggregate = $this->processingAggregate($range);
 
         return [
-            'by_document_type' => $byDocType,
-            'by_admin'         => $byAdmin,
+            'by_document_type' => $aggregate['by_group'],
+            'by_admin'         => $aggregate['by_admin'],
         ];
     }
 
     /**
      * Splits elapsed time into the two SLA clocks introduced alongside the
-     * PendingSignature status (RequestStatusEnum::PendingSignature):
+     * PendingSignature status (RequestStatusEnum::PendingSignature). Both are
+     * derived per document/certificate line from the history TIMESTAMPS by
+     * ProcessingTimeService (office hours only: weekends, holidays, Monday WFH
+     * and closures excluded) and grouped by logbook category, falling back to
+     * the type's own name. The stored request_history.business_minutes column
+     * is not read, so old rows with inaccurate stored values are measured
+     * correctly with no backfill.
      *
-     *   - registrar_time: business-hours-aware duration of segments where
-     *     old_status_id = Processing — i.e. time the Registrar itself
-     *     controlled, ending the moment they moved a request to either
-     *     ReadyToClaim directly or PendingSignature. This is the fair
-     *     number for the Registrar's own performance report; it no longer
-     *     includes time spent waiting on an external signatory.
+     *   - registrar_time: the time the Registrar itself controlled, from filing
+     *     to Pending Signature (or Ready to Claim when no signature is needed),
+     *     with Awaiting Submission paused. Identical to processingTime()'s
+     *     by_document_type, so the two panels always agree. Counted in the
+     *     period in which the registrar's part finished.
      *
-     *   - signature_time: business-hours-aware duration of segments where
-     *     old_status_id = PendingSignature — i.e. time an external signing
-     *     office (dean, department head, etc.) held the request before it
-     *     moved to ReadyToClaim. Grouped by document type only for now;
-     *     once individual signing offices are tracked as their own entity
-     *     (see the calendar-per-office note in DocumentRequestService::
+     *   - signature_time: the time an external signing office (dean,
+     *     department head, etc.) held the document in Pending Signature, for
+     *     documents that needed a signature. Counted in the period in which the
+     *     wait finished (the document left Pending Signature). A document still
+     *     waiting for its signature has no finished wait yet and is not
+     *     averaged. Grouped by document type only for now; once individual
+     *     signing offices are tracked as their own entity (see the
+     *     calendar-per-office note in DocumentRequestService::
      *     recordStatusHistory()), this can be grouped by office too.
      *
-     * Both use business_minutes (calendar-aware: office hours only,
-     * weekends/holidays excluded), not minutes_processed (raw wall-clock,
-     * cumulative since requested_at) — see the doc block on migration
-     * 2026_08_15_000000_add_pending_signature_status for why the two
-     * columns mean different things and aren't interchangeable here.
-     *
-     * Requests that never went through PendingSignature simply have zero
-     * matching rows in signature_time — this method doesn't assume every
-     * request needs a signature, only reports on the ones that did.
+     * Archived, soft-deleted, Withdrawn and Closed-Unable-To-Process requests
+     * and line items are excluded from both (see AnalyticsProcessingMetrics).
+     * Forfeited requests stay in.
      */
     public function signatureTurnaroundTime(array $range): array
     {
-        [$from, $to] = $range;
-
-        // Both queries below join document_request so excludeArchived() has
-        // a table to filter on — neither had a path to is_archived /
-        // deleted_at previously, so SLA turnaround stats included segments
-        // from requests that are now archived or soft-deleted.
-        // Both grouped by logbook_category (falling back to the document
-        // type's own name when unset) — see logbookGroupKeyExpression()'s
-        // docblock and byDocumentType() for the full rationale.
-        $groupKey = self::logbookGroupKeyExpression('dt');
-
-        $registrarTimeQuery = DB::table('request_history as rh')
-            ->join('request_document as rd', 'rh.request_id', '=', 'rd.request_id')
-            ->join('document_type as dt', 'rd.document_type_id', '=', 'dt.document_type_id')
-            ->leftJoin('logbook_category as lc', 'dt.logbook_category_id', '=', 'lc.logbook_category_id')
-            ->join('document_request as dr', 'rh.request_id', '=', 'dr.request_id')
-            ->where('rh.old_status_id', RequestStatusEnum::Processing->value)
-            ->whereBetween('rh.changed_at', [$from, $to])
-            ->whereNotNull('rh.business_minutes');
-
-        $registrarTime = $this->excludeFromProcessingTimeMetrics($registrarTimeQuery, 'dr')
-            ->select(
-                DB::raw('MIN(dt.document_type_id) as document_type_id'),
-                'dt.logbook_category_id',
-                DB::raw('COALESCE(MAX(lc.name), MAX(dt.document_name)) as document_name'),
-                DB::raw('COUNT(DISTINCT dt.document_type_id) as document_type_count'),
-                DB::raw('ROUND(MIN(rh.business_minutes), 1) as min_minutes'),
-                DB::raw('ROUND(AVG(rh.business_minutes), 1) as avg_minutes'),
-                DB::raw('ROUND(MAX(rh.business_minutes), 1) as max_minutes'),
-                DB::raw('COUNT(*) as sample_count')
-            )
-            ->groupBy(DB::raw($groupKey), 'dt.logbook_category_id')
-            ->orderBy('avg_minutes')
-            ->get();
-
-        $signatureTimeQuery = DB::table('request_history as rh')
-            ->join('request_document as rd', 'rh.request_id', '=', 'rd.request_id')
-            ->join('document_type as dt', 'rd.document_type_id', '=', 'dt.document_type_id')
-            ->leftJoin('logbook_category as lc', 'dt.logbook_category_id', '=', 'lc.logbook_category_id')
-            ->join('document_request as dr', 'rh.request_id', '=', 'dr.request_id')
-            ->where('rh.old_status_id', RequestStatusEnum::PendingSignature->value)
-            ->whereBetween('rh.changed_at', [$from, $to])
-            ->whereNotNull('rh.business_minutes');
-
-        $signatureTime = $this->excludeFromProcessingTimeMetrics($signatureTimeQuery, 'dr')
-            ->select(
-                DB::raw('MIN(dt.document_type_id) as document_type_id'),
-                'dt.logbook_category_id',
-                DB::raw('COALESCE(MAX(lc.name), MAX(dt.document_name)) as document_name'),
-                DB::raw('COUNT(DISTINCT dt.document_type_id) as document_type_count'),
-                DB::raw('ROUND(MIN(rh.business_minutes), 1) as min_minutes'),
-                DB::raw('ROUND(AVG(rh.business_minutes), 1) as avg_minutes'),
-                DB::raw('ROUND(MAX(rh.business_minutes), 1) as max_minutes'),
-                DB::raw('COUNT(*) as sample_count')
-            )
-            ->groupBy(DB::raw($groupKey), 'dt.logbook_category_id')
-            ->orderBy('avg_minutes')
-            ->get();
+        $aggregate = $this->processingAggregate($range);
 
         return [
-            'registrar_time' => $registrarTime,
-            'signature_time' => $signatureTime,
+            'registrar_time' => $aggregate['by_group'],
+            'signature_time' => $aggregate['signature_by_group'],
         ];
     }
 
@@ -797,13 +536,13 @@ class AnalyticsService
         // the narrative can speak to workload and outcomes, not just a
         // single "fastest admin" average.
         $adminPerf = collect($processingTime['by_admin'])->map(fn ($a) => [
-            'name'                    => trim($a->display_name) ?: 'Unknown',
-            'avg_minutes'             => $a->avg_minutes,
-            'min_minutes'             => $a->min_minutes,
-            'max_minutes'             => $a->max_minutes,
-            'requests_handled'        => $a->requests_handled,
-            'requests_per_active_day' => $a->requests_per_active_day,
-            'forfeit_rate'            => $a->forfeit_rate,
+            'name'                    => trim($a['display_name']) ?: 'Unknown',
+            'avg_minutes'             => $a['avg_minutes'],
+            'min_minutes'             => $a['min_minutes'],
+            'max_minutes'             => $a['max_minutes'],
+            'requests_handled'        => $a['requests_handled'],
+            'requests_per_active_day' => $a['requests_per_active_day'],
+            'forfeit_rate'            => $a['forfeit_rate'],
         ])->values()->all();
 
         // Peak hours — only top 5 busiest to keep payload compact
@@ -835,26 +574,6 @@ class AnalyticsService
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
-
-    /**
-     * Return a SQL expression that formats a datetime column as 'YYYY-MM-DD'
-     * in the display timezone. Used to count an admin's distinct active
-     * working days (Step 1b) — the same local-timezone conversion as
-     * monthExpression()/hourExpression() above, truncated to day instead of
-     * month/hour, so a transition made at 11:30 PM local time is bucketed
-     * onto the correct calendar day rather than the UTC one.
-     */
-    private static function dateExpression(string $column): string
-    {
-        $driver = DB::connection()->getDriverName();
-        $local  = self::localExpression($column, $driver);
-
-        return match ($driver) {
-            'sqlite' => "date({$local})",
-            'pgsql'  => "to_char({$local}, 'YYYY-MM-DD')",
-            default  => "DATE_FORMAT({$local}, '%Y-%m-%d')",  // MySQL / MariaDB
-        };
-    }
 
     /**
      * Return a SQL expression that formats a datetime column as 'YYYY-MM'.

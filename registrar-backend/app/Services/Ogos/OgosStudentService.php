@@ -11,7 +11,9 @@ use App\Models\StudentAcademicRecord;
 use App\Models\StudentAddress;
 use App\Models\StudentContactInformation;
 use App\Models\StudentProfile;
+use App\Models\SecurityEvent;
 use App\Models\SystemUser;
+use App\Services\SecurityEventLogger;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -27,7 +29,15 @@ use Illuminate\Support\Facades\Log;
  */
 class OgosStudentService
 {
-    public function __construct(private readonly OgosClient $client) {}
+    /**
+     * $securityEvents is optional so `new OgosStudentService($client)`
+     * keeps working (tests, tinker); the container always injects the
+     * singleton. When null, failure recording is simply skipped.
+     */
+    public function __construct(
+        private readonly OgosClient $client,
+        private readonly ?SecurityEventLogger $securityEvents = null,
+    ) {}
 
     /** Expose the underlying client for auth-time checks (e.g. OGOS existence check). */
     public function getClient(): OgosClient
@@ -52,6 +62,19 @@ class OgosStudentService
                 'email'  => $user->email,
                 'error'  => $e->getMessage(),
             ]);
+
+            // A clean 404 means OGOS has no such student; anything else
+            // (5xx, connection error, 401 M2M failure) means OGOS could
+            // not answer. Different causes, different owners — keep them
+            // apart so the health view can tell "bad data" from "outage".
+            $this->recordFailure(
+                $e->getCode() === 404
+                    ? SecurityEvent::REASON_OGOS_NOT_FOUND
+                    : SecurityEvent::REASON_OGOS_UNREACHABLE,
+                $user,
+                $e,
+            );
+
             return false;
         }
 
@@ -64,6 +87,7 @@ class OgosStudentService
                 'student_number' => $student->studentNumber,
                 'error'          => $e->getMessage(),
             ]);
+            $this->recordFailure(SecurityEvent::REASON_OGOS_PERSONAL_INFO_UNAVAILABLE, $user, $e);
         }
 
         // Step 3: Get addresses (separate endpoint, may return multiple
@@ -78,10 +102,30 @@ class OgosStudentService
                 'student_number' => $student->studentNumber,
                 'error'          => $e->getMessage(),
             ]);
+            $this->recordFailure(SecurityEvent::REASON_OGOS_ADDRESSES_UNAVAILABLE, $user, $e);
         }
 
         $this->upsertLocalRecords($user, $student, $personal, $addresses);
         return true;
+    }
+
+    /**
+     * Best-effort capture of a provisioning failure as a queryable
+     * security event. Never throws and never changes control flow: the
+     * caller still fails silently exactly as before.
+     */
+    private function recordFailure(string $reason, SystemUser $user, OgosException $e): void
+    {
+        if ($this->securityEvents === null) {
+            return;
+        }
+
+        try {
+            $this->securityEvents->recordProvisioningFailed($reason, $user->email, (int) $e->getCode() ?: null);
+        } catch (\Throwable) {
+            // Intentionally swallowed — a login must never break because
+            // the failure record could not be written.
+        }
     }
 
     // ── On-demand lookups (used by controllers) ───────────────

@@ -5,8 +5,10 @@ namespace App\Jobs;
 use App\Contracts\AlumniSystemClientInterface;
 use App\Exceptions\OgosException;
 use App\Models\AuditLog;
+use App\Models\FailureReasonCode;
 use App\Models\SystemUser;
 use App\Services\AuditLogger;
+use App\Services\CashierFailureDiagnosisService;
 use App\Services\Ogos\OgosStudentService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -73,6 +75,7 @@ class EnrichCashierFailureJob implements ShouldQueue
         AuditLogger                 $auditLogger,
         OgosStudentService          $ogosStudentService,
         AlumniSystemClientInterface $alumniSystemClient,
+        CashierFailureDiagnosisService $diagnosis,
     ): void {
         $actor = SystemUser::find($this->actorUserId);
 
@@ -99,10 +102,53 @@ class EnrichCashierFailureJob implements ShouldQueue
                 'on_file_snapshot'    => $snapshot,
                 'enrichment_status'   => $status,
                 'failure_reason'      => $failureReason,
+                // System Health Phase 2b — "likely contributing factors",
+                // never a fault verdict (the Cashier API does not return
+                // the on-file name). Appended to THIS row at creation;
+                // the original cashier_verification row and the
+                // append-only / hash-chain guarantees are untouched.
+                'diagnosis_codes'     => $this->diagnosisCodes($diagnosis, $actor, $snapshot, $failureReason),
             ],
             ipAddress: $this->ipAddress,
             userAgent: $this->userAgent,
         );
+    }
+
+    /**
+     * Best-effort: a bug or catalog problem here must never stop the
+     * enrichment row (the snapshot the registrar actually needs) from
+     * being written, so any failure degrades to "no codes".
+     *
+     * @return array<int, string>
+     */
+    private function diagnosisCodes(
+        CashierFailureDiagnosisService $diagnosis,
+        SystemUser $actor,
+        ?array $snapshot,
+        ?string $failureReason,
+    ): array {
+        try {
+            $profile = $actor->studentProfile ?? $actor->alumniProfile ?? $actor->undergradRequestorProfile ?? null;
+
+            $attempts = AuditLog::find($this->sourceAuditLogId)?->metadata['attempts'] ?? [];
+
+            $codes = $diagnosis->diagnose(
+                localProfile:        $profile ? $profile->only(['first_name', 'middle_name', 'last_name', 'suffix']) : [],
+                snapshot:            $snapshot,
+                sourceFailureReason: $failureReason,
+                attempts:            is_array($attempts) ? $attempts : [],
+            );
+
+            // Operators can switch a noisy code off in the catalog.
+            return array_values(array_diff($codes, FailureReasonCode::inactiveCodes()));
+        } catch (Throwable $e) {
+            Log::warning('EnrichCashierFailureJob: diagnosis failed; continuing without codes', [
+                'source_audit_log_id' => $this->sourceAuditLogId,
+                'message'             => $e->getMessage(),
+            ]);
+
+            return [];
+        }
     }
 
     /**
@@ -140,7 +186,7 @@ class EnrichCashierFailureJob implements ShouldQueue
                 // else (5xx, connection error, 401 M2M failure) is
                 // transient, so rethrow and let tries/backoff handle it.
                 if ($e->getCode() === 404) {
-                    return [null, 'ogos', 'not_found', 'NOT_FOUND_IN_OGOS'];
+                    return [null, 'ogos', 'not_found', CashierFailureDiagnosisService::SOURCE_FAILURE_OGOS_NOT_FOUND];
                 }
 
                 Log::warning('EnrichCashierFailureJob: OGOS lookup failed, will retry', [
@@ -162,7 +208,7 @@ class EnrichCashierFailureJob implements ShouldQueue
             $alumni = $alumniSystemClient->tryLookupAlumniByEmail($actor->email);
 
             if ($alumni === null) {
-                return [null, 'alumni_system', 'failed', 'ALUMNI_SYSTEM_UNAVAILABLE_OR_NOT_FOUND'];
+                return [null, 'alumni_system', 'failed', CashierFailureDiagnosisService::SOURCE_FAILURE_ALUMNI];
             }
 
             return [
@@ -182,7 +228,7 @@ class EnrichCashierFailureJob implements ShouldQueue
         // Defensive fallback — the controller only dispatches this job
         // after confirming a profile exists on the OR-verification path,
         // so this should be unreachable in practice.
-        return [null, null, 'failed', 'NO_PROFILE_ON_ACTOR'];
+        return [null, null, 'failed', CashierFailureDiagnosisService::SOURCE_FAILURE_NO_PROFILE];
     }
 
     /**
@@ -208,7 +254,13 @@ class EnrichCashierFailureJob implements ShouldQueue
                 'source_system'       => $actor->studentProfile ? 'ogos' : 'alumni_system',
                 'on_file_snapshot'    => null,
                 'enrichment_status'   => 'failed',
-                'failure_reason'      => 'OGOS_UNREACHABLE_AFTER_RETRIES',
+                'failure_reason'      => CashierFailureDiagnosisService::SOURCE_FAILURE_OGOS_UNREACHABLE,
+                'diagnosis_codes'     => $this->diagnosisCodes(
+                    app(CashierFailureDiagnosisService::class),
+                    $actor,
+                    null,
+                    CashierFailureDiagnosisService::SOURCE_FAILURE_OGOS_UNREACHABLE,
+                ),
             ],
             ipAddress: $this->ipAddress,
             userAgent: $this->userAgent,

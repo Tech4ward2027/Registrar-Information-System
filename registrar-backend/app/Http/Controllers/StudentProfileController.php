@@ -17,10 +17,9 @@ class StudentProfileController extends Controller
 {
     public function __construct(private OgosStudentService $ogos) {}
 
-    public function index()
-    {
-        return response()->json(StudentProfile::with('user')->get(), 200);
-    }
+    // index() intentionally removed (data privacy): it loaded every student
+    // profile with its user. Use show($id) or the per-student-number
+    // endpoints below.
 
     public function show($id)
     {

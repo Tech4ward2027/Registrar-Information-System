@@ -114,6 +114,22 @@ class AuditLog extends Model
     public const ACTION_CERTIFICATE_TYPE_CREATED  = 'certificate_type_created';
     public const ACTION_CERTIFICATE_TYPE_UPDATED  = 'certificate_type_updated';
     public const ACTION_CERTIFICATE_TYPE_DELETED  = 'certificate_type_deleted';
+    // PUT /certifications/layouts/bulk — one entry per bulk save (not per row);
+    // metadata carries the certificate_type_ids touched. See CertificationLayoutService.
+    public const ACTION_CERTIFICATE_LAYOUTS_BULK_UPDATED = 'certificate_layouts_bulk_updated';
+    // Database-driven certificate templates (Phase 2). Metadata carries the
+    // template version (and the previous one) but never the template body.
+    //   VERSION_CREATED — content or render settings changed => a new version row.
+    //   ACTIVATED       — an existing (older) version was made current again.
+    public const ACTION_CERTIFICATE_TEMPLATE_VERSION_CREATED = 'certificate_template_version_created';
+    public const ACTION_CERTIFICATE_TEMPLATE_ACTIVATED       = 'certificate_template_activated';
+    // Server-side certificate generation (Phase 3). Metadata carries the
+    // control number, template version and request ids — never the PDF or the
+    // merge values (those live on the certificate_generation record).
+    //   GENERATED         — a PDF was produced and returned.
+    //   GENERATION_FAILED — the attempt failed; the control number stays reserved.
+    public const ACTION_CERTIFICATE_GENERATED         = 'certificate_generated';
+    public const ACTION_CERTIFICATE_GENERATION_FAILED = 'certificate_generation_failed';
 
     // Logbook category lookup table (see LogbookCategoryController) —
     // previously unaudited entirely, same gap as document/certificate
@@ -121,6 +137,11 @@ class AuditLog extends Model
     public const ACTION_LOGBOOK_CATEGORY_CREATED = 'logbook_category_created';
     public const ACTION_LOGBOOK_CATEGORY_UPDATED = 'logbook_category_updated';
     public const ACTION_LOGBOOK_CATEGORY_DELETED = 'logbook_category_deleted';
+
+    // Logbook DOCX export. The file is built in the browser, so the frontend
+    // reports each export here (POST document-requests/logbook/export-audit)
+    // before generating it. Metadata only: range, mode, row/section counts.
+    public const ACTION_LOGBOOK_EXPORTED = 'logbook_exported';
 
     // Fulfillment track lookup table (see FulfillmentTrackController) —
     // new admin screen; audited from the start rather than repeating
@@ -187,6 +208,18 @@ class AuditLog extends Model
     // Cashier System's own availability, not a name/OR mismatch worth
     // cross-checking against OGOS/the alumni system.
     public const ACTION_CASHIER_VERIFICATION_ENRICHED = 'cashier_verification_enriched';
+
+    // System Health — a Super Admin acknowledged a system alert. Metadata
+    // only (alert id/type/metric); no personal data.
+    public const ACTION_SYSTEM_ALERT_ACKNOWLEDGED = 'system_alert_acknowledged';
+
+    // Cashier Reconciliation > Failed verifications (System Health Phase 5).
+    // VIEWED: staff opened the detail of one failed OR verification (who
+    // looked at whose failure record). RECHECKED: staff re-ran the Cashier
+    // lookup for that stored failure. Metadata only: row id, outcome,
+    // counts. Never names, and never the OR number.
+    public const ACTION_FAILED_VERIFICATION_VIEWED    = 'failed_verification_viewed';
+    public const ACTION_FAILED_VERIFICATION_RECHECKED = 'failed_verification_rechecked';
 
     // Unmatched cashier receipt labels — admin resolution (see
     // UnmatchedCashierItem, CashierDocumentSuggester)

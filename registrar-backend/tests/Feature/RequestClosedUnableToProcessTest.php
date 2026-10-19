@@ -340,7 +340,7 @@ test('a ClosedUnableToProcess request is excluded from processing-time averages 
         ->assertOk();
 
     $range   = [now()->subDay(), now()->addDay()];
-    $overview = (new \App\Services\AnalyticsService())->overview($range);
+    $overview = app(\App\Services\AnalyticsService::class)->overview($range);
 
     // The request exists and was real intake — it should not vanish
     // from the system entirely, only from the completion-time average

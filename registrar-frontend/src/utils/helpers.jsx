@@ -150,15 +150,14 @@ export const CertHeader = ({ layout }) => {
             className="object-contain shrink-0 transition-all"
             style={{ width: `${logoSize}px`, height: `${logoSize}px` }}
           />
-          <div className="cert-header-text pt-0.5 leading-tight text-black uppercase font-lucida min-w-0">
+          <div className="cert-header-text pt-0.5 leading-none text-black uppercase font-lucida min-w-0">
             {headerLines.map((line, idx) => {
               const isMain = idx % 2 !== 0; // lines 1, 3, etc. are main lines (bold)
-              const fontSize = isMain ? baseFontSize : Math.max(7, Math.round(baseFontSize * 0.68));
               return (
                 <p
                   key={`header-line-${idx}`}
-                  className={`tracking-tight truncate ${isMain ? "font-bold" : "font-normal"}`}
-                  style={{ fontSize: `${fontSize}px`, lineHeight: "1.2" }}
+                  className={`tracking-tight truncate m-0 p-0 ${isMain ? "font-bold" : "font-normal"}`}
+                  style={{ fontSize: `${baseFontSize}px`, lineHeight: "1.05" }}
                 >
                   {line}
                 </p>
@@ -193,13 +192,13 @@ export const RegistrarDateTitle = ({ date }) => (
 
 export const CertFooter = ({ layout }) => (
   <div className="mt-auto pt-2 border-t border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-start print:items-start gap-4 shrink-0">
-    <div className="space-y-1 text-left cert-footer-contact pt-0.5">
-      <div className="text-[9px] sm:text-[10px] leading-tight">
+    <div className="text-left cert-footer-contact pt-0.5">
+      <div className="cert-footer-contact-lines text-[9px] sm:text-[10px] leading-tight font-sans">
         General Santos Avenue, Lower Bicutan, Taguig City, Philippines 1632<br />
         Direct Line: (02) 8837 5858 to 60 | Email: taguig@pup.edu.ph<br />
         Website: www.pup.edu.ph | Inquiries: https://bit.ly/PUPSINTA
       </div>
-      <div className="cert-footer-tagline text-[10px] sm:text-[15px] font-bold tracking-tight leading-tight uppercase text-black font-lucida">
+      <div className="cert-footer-tagline text-[10px] sm:text-[15px] font-bold tracking-tight leading-tight uppercase text-black font-lucida mt-0.5">
         THE COUNTRY'S 1st POLYTECHNIC
       </div>
     </div>
