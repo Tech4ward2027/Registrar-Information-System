@@ -61,6 +61,12 @@ services:
       CASHIER_SINGLE_USE: ${CASHIER_SINGLE_USE}
       ALUMNI_MOCK: ${ALUMNI_MOCK}
       TELESCOPE_ENABLED: ${TELESCOPE_ENABLED:-false}
+      # Feature flags are NOT inherited from the host .env: this file passes
+      # variables through explicitly, so every flag a service reads must be
+      # listed here. Fail-closed default (see config/features.php): a missing
+      # or empty value keeps the feature OFF.
+      # system_health gates the System Health / Failed Verifications API.
+      FEATURE_SYSTEM_HEALTH: ${FEATURE_SYSTEM_HEALTH:-false}
     ports:
       - "8000:8000"
     networks:
@@ -282,6 +288,9 @@ services:
     command: >
       sh -c "while true; do php artisan schedule:run --no-interaction >> /var/log/scheduler.log 2>&1; sleep 60; done"
     environment:
+      # health:rollup / health:detect are no-ops unless this flag is on, so the
+      # scheduler needs the same value as the backend. Fail-closed default.
+      FEATURE_SYSTEM_HEALTH: ${FEATURE_SYSTEM_HEALTH:-false}
       APP_ENV: ${APP_ENV:-production}
       APP_KEY: ${APP_KEY}
       APP_DEBUG: ${APP_DEBUG:-false}
