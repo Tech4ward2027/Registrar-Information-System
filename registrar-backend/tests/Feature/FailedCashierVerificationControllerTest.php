@@ -17,7 +17,7 @@ uses(RefreshDatabase::class);
 
 // Helpers are fv-prefixed because Pest helper functions are global.
 
-const FV_LIST = '/api/failed-cashier-verifications';
+const FV_LIST = '/api/v1/failed-cashier-verifications';
 
 beforeEach(function () {
     config(['features.system_health' => true]);

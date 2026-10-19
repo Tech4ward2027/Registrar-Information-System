@@ -113,7 +113,7 @@ test('search-accounts requires the free_requests View module grant', function ()
     $admin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated']); // no policy attached => "No Access"
     Sanctum::actingAs($admin);
 
-    $this->getJson('/api/free-requests/search-accounts?q=zen')->assertForbidden();
+    $this->getJson('/api/v1/free-requests/search-accounts?q=zen')->assertForbidden();
 });
 
 test('search-accounts returns matching accounts and writes an audit log entry', function () {
@@ -121,7 +121,7 @@ test('search-accounts returns matching accounts and writes an audit log entry', 
     $student = frcMakeStudent();
     $student->studentProfile->update(['first_name' => 'Zendaya']);
 
-    $response = $this->getJson('/api/free-requests/search-accounts?q=Zendaya');
+    $response = $this->getJson('/api/v1/free-requests/search-accounts?q=Zendaya');
 
     $response->assertOk();
     $response->assertJsonFragment(['user_id' => $student->user_id]);
@@ -132,7 +132,7 @@ test('search-accounts returns matching accounts and writes an audit log entry', 
 test('search-accounts rejects a query shorter than 2 characters', function () {
     frcMakeAdmin(['View']);
 
-    $this->getJson('/api/free-requests/search-accounts?q=z')->assertStatus(422);
+    $this->getJson('/api/v1/free-requests/search-accounts?q=z')->assertStatus(422);
 });
 
 test('search-accounts narrows a name match to the correct account using student_number', function () {
@@ -147,12 +147,12 @@ test('search-accounts narrows a name match to the correct account using student_
     $studentB->academicRecord->update(['student_number' => '2021-00002']);
 
     // Both share the same name — a plain name search would return both.
-    $unfiltered = $this->getJson('/api/free-requests/search-accounts?q=Dela Cruz');
+    $unfiltered = $this->getJson('/api/v1/free-requests/search-accounts?q=Dela Cruz');
     $unfiltered->assertOk();
     expect(count($unfiltered->json('data')))->toBe(2);
 
     // Adding student_number narrows to exactly one.
-    $filtered = $this->getJson('/api/free-requests/search-accounts?q=Dela Cruz&student_number=2021-00002');
+    $filtered = $this->getJson('/api/v1/free-requests/search-accounts?q=Dela Cruz&student_number=2021-00002');
     $filtered->assertOk();
     $filtered->assertJsonFragment(['user_id' => $studentB->user_id]);
     expect(count($filtered->json('data')))->toBe(1);
@@ -169,7 +169,7 @@ test('search-accounts narrows a name match to the correct account using program'
     $studentB->studentProfile->update(['first_name' => 'Maria', 'last_name' => 'Santos']);
     $studentB->academicRecord->update(['course' => 'BSCS']);
 
-    $filtered = $this->getJson('/api/free-requests/search-accounts?q=Santos&program=BSCS');
+    $filtered = $this->getJson('/api/v1/free-requests/search-accounts?q=Santos&program=BSCS');
 
     $filtered->assertOk();
     $filtered->assertJsonFragment(['user_id' => $studentB->user_id]);
@@ -183,7 +183,7 @@ test('search-accounts filters are AND, not OR — a student_number that matches 
     $student->studentProfile->update(['first_name' => 'Pedro', 'last_name' => 'Reyes']);
     $student->academicRecord->update(['student_number' => '2021-00099']);
 
-    $response = $this->getJson('/api/free-requests/search-accounts?q=Reyes&student_number=9999999');
+    $response = $this->getJson('/api/v1/free-requests/search-accounts?q=Reyes&student_number=9999999');
 
     $response->assertOk();
     expect($response->json('data'))->toBeEmpty();
@@ -194,7 +194,7 @@ test('search-accounts matches an alumni by student_number carried on their alumn
 
     $alumni = frcMakeAlumni(); // fixture default student_number is '2018-00001'
 
-    $response = $this->getJson('/api/free-requests/search-accounts?q=Alumna&student_number=2018-00001');
+    $response = $this->getJson('/api/v1/free-requests/search-accounts?q=Alumna&student_number=2018-00001');
 
     $response->assertOk();
     $response->assertJsonFragment(['user_id' => $alumni->user_id]);
@@ -207,7 +207,7 @@ test('eligibility check returns a per-item result without creating a request', f
     $alumni   = frcMakeAlumni();
     $certType = frcMakeGraduateScopedCertType();
 
-    $response = $this->postJson('/api/free-requests/eligibility', [
+    $response = $this->postJson('/api/v1/free-requests/eligibility', [
         'target_user_id' => $alumni->user_id,
         'certificates'   => [['certificate_type_id' => $certType->certificate_type_id]],
     ]);
@@ -222,7 +222,7 @@ test('eligibility check requires the free_requests View module grant', function 
     Sanctum::actingAs($admin);
     $alumni = frcMakeAlumni();
 
-    $this->postJson('/api/free-requests/eligibility', ['target_user_id' => $alumni->user_id])
+    $this->postJson('/api/v1/free-requests/eligibility', ['target_user_id' => $alumni->user_id])
         ->assertForbidden();
 });
 
@@ -233,7 +233,7 @@ test('filing a free request requires the free_requests File module grant (View a
     $student = frcMakeStudent();
     $docType = frcMakeUnlimitedDocType(accessId: 1);
 
-    $this->postJson('/api/free-requests', [
+    $this->postJson('/api/v1/free-requests', [
         'target_user_id'      => $student->user_id,
         'request_purpose_id'  => frcPurposeId(),
         'documents'           => [['document_type_id' => $docType->document_type_id, 'number_of_copies' => 1]],
@@ -245,7 +245,7 @@ test('filing a free LOA request end-to-end returns 201 with the loaded document_
     $student = frcMakeStudent();
     $docType = frcMakeUnlimitedDocType(accessId: 1);
 
-    $response = $this->postJson('/api/free-requests', [
+    $response = $this->postJson('/api/v1/free-requests', [
         'target_user_id'     => $student->user_id,
         'request_purpose_id' => frcPurposeId(),
         'documents'          => [['document_type_id' => $docType->document_type_id, 'number_of_copies' => 1]],
@@ -282,7 +282,7 @@ test('filing a free COG request without verification confirmation returns 422', 
     $alumni   = frcMakeAlumni();
     $certType = frcMakeGraduateScopedCertType();
 
-    $this->postJson('/api/free-requests', [
+    $this->postJson('/api/v1/free-requests', [
         'target_user_id'     => $alumni->user_id,
         'request_purpose_id' => frcPurposeId(),
         'certificates'       => [['certificate_type_id' => $certType->certificate_type_id]],
@@ -294,7 +294,7 @@ test('filing a free COG request with verification confirmation returns 201 and l
     $alumni   = frcMakeAlumni();
     $certType = frcMakeGraduateScopedCertType();
 
-    $response = $this->postJson('/api/free-requests', [
+    $response = $this->postJson('/api/v1/free-requests', [
         'target_user_id'     => $alumni->user_id,
         'request_purpose_id' => frcPurposeId(),
         'certificates'       => [['certificate_type_id' => $certType->certificate_type_id]],
@@ -323,7 +323,7 @@ test('filing a duplicate claimed free COG request is rejected with a structured 
         'verification'       => ['credentials_verified' => true, 'records_checked' => true],
     ];
 
-    $first = $this->postJson('/api/free-requests', $payload)->assertCreated();
+    $first = $this->postJson('/api/v1/free-requests', $payload)->assertCreated();
 
     // Simulate the graduate having actually claimed the first copy.
     $requestId = $first->json('document_request.request_id');
@@ -332,7 +332,7 @@ test('filing a duplicate claimed free COG request is rejected with a structured 
     \App\Models\RequestCertificate::where('request_id', $requestId)
         ->update(['status_id' => \App\Enums\RequestStatusEnum::Completed->value]);
 
-    $second = $this->postJson('/api/free-requests', $payload);
+    $second = $this->postJson('/api/v1/free-requests', $payload);
 
     $second->assertStatus(422);
     $second->assertJsonStructure(['message', 'errors' => [['eligible', 'reason_code']]]);
@@ -351,7 +351,7 @@ test('overriding an ineligible item without an override_reason returns a 422 val
         'free_issuance_limit' => null,
     ]);
 
-    $this->postJson('/api/free-requests', [
+    $this->postJson('/api/v1/free-requests', [
         'target_user_id'     => $alumni->user_id,
         'request_purpose_id' => frcPurposeId(),
         'certificates'       => [['certificate_type_id' => $certType->certificate_type_id]],
@@ -363,5 +363,5 @@ test('a student/alumni account cannot reach the free-requests endpoints at all (
     $student = frcMakeStudent();
     Sanctum::actingAs($student);
 
-    $this->getJson('/api/free-requests/search-accounts?q=zen')->assertForbidden();
+    $this->getJson('/api/v1/free-requests/search-accounts?q=zen')->assertForbidden();
 });

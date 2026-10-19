@@ -203,12 +203,12 @@ test('provisioning failures appear in the security events list and its filter op
 
     app(SecurityEventLogger::class)->recordProvisioningFailed(SecurityEvent::REASON_OGOS_UNREACHABLE, 'x@example.com', 503);
 
-    $filters = $this->getJson('/api/security-events/filters')->assertOk();
+    $filters = $this->getJson('/api/v1/security-events/filters')->assertOk();
 
     expect($filters->json('event_types'))->toContain('provisioning_failed')
         ->and($filters->json('reasons'))->toContain('ogos_unreachable');
 
-    $this->getJson('/api/security-events?event_type=provisioning_failed')
+    $this->getJson('/api/v1/security-events?event_type=provisioning_failed')
         ->assertOk()
         ->assertJsonPath('meta.total', 1)
         ->assertJsonPath('data.0.event_type', 'Provisioning Failed')
@@ -232,7 +232,7 @@ test('an OGOS outage during the new-user student check is recorded, and the logi
     // is refused as unregistered.
     expect(fn () => $service->provision([
         'id' => 'pf-new-1', 'email' => 'pf.new@example.com',
-    ], Request::create('/api/sso/callback', 'GET')))->toThrow(UnregisteredAccountException::class);
+    ], Request::create('/api/v1/sso/callback', 'GET')))->toThrow(UnregisteredAccountException::class);
 
     $event = pfEvents()->where('email', 'pf.new@example.com')->sole();
     expect($event->reason)->toBe(SecurityEvent::REASON_OGOS_UNREACHABLE)
@@ -252,7 +252,7 @@ test('a clean OGOS 404 in the new-user student check is NOT a provisioning failu
 
     expect(fn () => $service->provision([
         'id' => 'pf-new-2', 'email' => 'pf.notstudent@example.com',
-    ], Request::create('/api/sso/callback', 'GET')))->toThrow(UnregisteredAccountException::class);
+    ], Request::create('/api/v1/sso/callback', 'GET')))->toThrow(UnregisteredAccountException::class);
 
     expect(pfEvents()->where('email', 'pf.notstudent@example.com')->count())->toBe(0);
 });
@@ -286,7 +286,7 @@ test('a refused new user does not lose the outage events to the provisioning tra
 
     expect(fn () => app(UserProvisioningService::class)->provision([
         'id' => 'pf-rollback', 'email' => 'pf.rollback@example.com',
-    ], Request::create('/api/sso/callback', 'GET')))->toThrow(UnregisteredAccountException::class);
+    ], Request::create('/api/v1/sso/callback', 'GET')))->toThrow(UnregisteredAccountException::class);
 
     // The refusal really did roll back (no user was kept)...
     expect(\App\Models\SystemUser::count())->toBe($before);

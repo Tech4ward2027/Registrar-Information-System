@@ -59,7 +59,7 @@ function ctpPayload(array $overrides = []): array
 
 function ctpUrl(CertificationType $type, string $suffix = ''): string
 {
-    return "/api/certifications/{$type->certificate_type_id}/template{$suffix}";
+    return "/api/v1/certifications/{$type->certificate_type_id}/template{$suffix}";
 }
 
 // ── Access ───────────────────────────────────────────────────────────────────
@@ -75,8 +75,8 @@ test('guests, students and alumni cannot touch template endpoints', function () 
         $this->putJson(ctpUrl($type), ctpPayload())->assertForbidden();
         $this->getJson(ctpUrl($type, '/versions'))->assertForbidden();
         $this->postJson(ctpUrl($type, '/versions/1/activate'))->assertForbidden();
-        $this->getJson('/api/certificate-merge-tags')->assertForbidden();
-        $this->getJson('/api/certifications/templates')->assertForbidden();
+        $this->getJson('/api/v1/certificate-merge-tags')->assertForbidden();
+        $this->getJson('/api/v1/certifications/templates')->assertForbidden();
     }
 
     expect(CertificateTemplate::count())->toBe(0);
@@ -97,9 +97,9 @@ test('a type with no template reports the legacy source so the client keeps CERT
 test('an unknown certification type is a 404 on every template route', function () {
     ctpActAs();
 
-    $this->getJson('/api/certifications/999999/template')->assertNotFound();
-    $this->getJson('/api/certifications/999999/template/versions')->assertNotFound();
-    $this->putJson('/api/certifications/999999/template', ctpPayload())->assertNotFound();
+    $this->getJson('/api/v1/certifications/999999/template')->assertNotFound();
+    $this->getJson('/api/v1/certifications/999999/template/versions')->assertNotFound();
+    $this->putJson('/api/v1/certifications/999999/template', ctpPayload())->assertNotFound();
 });
 
 // ── Create / read ────────────────────────────────────────────────────────────
@@ -156,7 +156,7 @@ test('the summary endpoint lists the active version of every type that has one',
     $this->putJson(ctpUrl($a), ctpPayload())->assertCreated();
     $this->putJson(ctpUrl($b), ctpPayload(['content' => '<p>{{ full_name }}</p>', 'required_fields' => ['full_name']]))->assertCreated();
 
-    $res = $this->getJson('/api/certifications/templates')->assertOk();
+    $res = $this->getJson('/api/v1/certifications/templates')->assertOk();
     expect($res->json('data'))->toHaveCount(2)
         ->and(collect($res->json('data'))->pluck('certificate_type_id')->all())
         ->toBe([$a->certificate_type_id, $b->certificate_type_id])
@@ -473,7 +473,7 @@ test('the database refuses a second active version for the same type', function 
 test('the merge-tag reference lists every supported tag and format', function () {
     ctpActAs();
 
-    $res = $this->getJson('/api/certificate-merge-tags')->assertOk();
+    $res = $this->getJson('/api/v1/certificate-merge-tags')->assertOk();
     $names = collect($res->json('data'))->pluck('name');
 
     expect($names)->toContain('full_name', 'student_number', 'course', 'control_number', 'issue_date_formal')

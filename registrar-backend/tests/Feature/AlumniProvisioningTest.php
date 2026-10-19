@@ -25,7 +25,7 @@ uses(RefreshDatabase::class);
 
 function alumniSsoRequest(): Request
 {
-    return Request::create('/api/auth/callback', 'POST');
+    return Request::create('/api/v1/auth/callback', 'POST');
 }
 
 /**

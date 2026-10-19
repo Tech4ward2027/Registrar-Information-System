@@ -32,7 +32,7 @@ function signatoryMake(array $overrides = []): Signatory
 test('student cannot list signatories', function () {
     signatoryMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->getJson('/api/signatories')->assertStatus(403);
+    $this->getJson('/api/v1/signatories')->assertStatus(403);
 });
 
 test('admin can list signatories ordered by sort_order', function () {
@@ -46,7 +46,7 @@ test('admin can list signatories ordered by sort_order', function () {
     $first  = signatoryMake(['name' => 'Mhel P. Garcia', 'sort_order' => 0]);
     signatoryMakeUser(SystemUser::ROLE_ADMIN);
 
-    $response = $this->getJson('/api/signatories')->assertOk();
+    $response = $this->getJson('/api/v1/signatories')->assertOk();
 
     $names = collect($response->json())->pluck('name')->values()->all();
     expect($names)->toBe(['Mhel P. Garcia', 'Marissa B. Ferrer, DEM, RPsy']);
@@ -56,7 +56,7 @@ test('super admin can list signatories', function () {
     signatoryMake();
     signatoryMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->getJson('/api/signatories')->assertOk();
+    $this->getJson('/api/v1/signatories')->assertOk();
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -66,7 +66,7 @@ test('super admin can list signatories', function () {
 test('student cannot create a signatory', function () {
     signatoryMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->postJson('/api/signatories', [
+    $this->postJson('/api/v1/signatories', [
         'name'     => 'Juan Dela Cruz',
         'position' => 'Registrar',
     ])->assertStatus(403);
@@ -75,7 +75,7 @@ test('student cannot create a signatory', function () {
 test('admin can create a signatory with valid data', function () {
     signatoryMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/signatories', [
+    $this->postJson('/api/v1/signatories', [
         'name'       => 'Juan Dela Cruz',
         'position'   => 'Assistant Registrar',
         'sort_order' => 2,
@@ -88,7 +88,7 @@ test('admin can create a signatory with valid data', function () {
 test('store fails validation when name is missing', function () {
     signatoryMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/signatories', [
+    $this->postJson('/api/v1/signatories', [
         'position' => 'Registrar',
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['name']);
@@ -97,7 +97,7 @@ test('store fails validation when name is missing', function () {
 test('store fails validation when position is missing', function () {
     signatoryMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/signatories', [
+    $this->postJson('/api/v1/signatories', [
         'name' => 'Juan Dela Cruz',
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['position']);
@@ -106,7 +106,7 @@ test('store fails validation when position is missing', function () {
 test('store fails validation when name exceeds max length', function () {
     signatoryMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/signatories', [
+    $this->postJson('/api/v1/signatories', [
         'name'     => str_repeat('a', 256),
         'position' => 'Registrar',
     ])->assertStatus(422)
@@ -116,7 +116,7 @@ test('store fails validation when name exceeds max length', function () {
 test('store fails validation when sort_order is not an integer', function () {
     signatoryMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/signatories', [
+    $this->postJson('/api/v1/signatories', [
         'name'       => 'Juan Dela Cruz',
         'position'   => 'Registrar',
         'sort_order' => 'not-a-number',
@@ -132,7 +132,7 @@ test('student cannot update a signatory', function () {
     $signatory = signatoryMake();
     signatoryMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->putJson("/api/signatories/{$signatory->signatory_id}", [
+    $this->putJson("/api/v1/signatories/{$signatory->signatory_id}", [
         'name' => 'Renamed',
     ])->assertStatus(403);
 });
@@ -141,7 +141,7 @@ test('admin can partially update a signatory', function () {
     $signatory = signatoryMake();
     signatoryMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson("/api/signatories/{$signatory->signatory_id}", [
+    $this->putJson("/api/v1/signatories/{$signatory->signatory_id}", [
         'position' => 'Updated Position',
     ])->assertOk()
       ->assertJsonPath('position', 'Updated Position')
@@ -151,7 +151,7 @@ test('admin can partially update a signatory', function () {
 test('update returns 404 for a missing signatory', function () {
     signatoryMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson('/api/signatories/999', [
+    $this->putJson('/api/v1/signatories/999', [
         'name' => 'Whatever',
     ])->assertStatus(404)
       ->assertJson(['message' => 'Signatory not found']);
@@ -161,7 +161,7 @@ test('update fails validation when name is sent empty', function () {
     $signatory = signatoryMake();
     signatoryMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson("/api/signatories/{$signatory->signatory_id}", [
+    $this->putJson("/api/v1/signatories/{$signatory->signatory_id}", [
         'name' => '',
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['name']);
@@ -175,14 +175,14 @@ test('student cannot delete a signatory', function () {
     $signatory = signatoryMake();
     signatoryMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->deleteJson("/api/signatories/{$signatory->signatory_id}")
+    $this->deleteJson("/api/v1/signatories/{$signatory->signatory_id}")
          ->assertStatus(403);
 });
 
 test('destroy returns 404 for a missing signatory', function () {
     signatoryMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->deleteJson('/api/signatories/999')
+    $this->deleteJson('/api/v1/signatories/999')
          ->assertStatus(404);
 });
 
@@ -190,7 +190,7 @@ test('admin can delete a signatory', function () {
     $signatory = signatoryMake();
     signatoryMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->deleteJson("/api/signatories/{$signatory->signatory_id}")
+    $this->deleteJson("/api/v1/signatories/{$signatory->signatory_id}")
          ->assertOk()
          ->assertJson(['message' => 'Signatory deleted']);
 

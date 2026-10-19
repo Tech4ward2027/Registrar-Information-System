@@ -53,14 +53,14 @@ test('ai-report returns 404 when analytics_ai_legacy is off', function () {
     config(['features.analytics_ai_legacy' => false]);
     p0ActingAs(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->postJson('/api/analytics/ai-report')->assertNotFound();
+    $this->postJson('/api/v1/analytics/ai-report')->assertNotFound();
 });
 
 test('ai-query returns 404 when analytics_ai_legacy is off', function () {
     config(['features.analytics_ai_legacy' => false]);
     p0ActingAs(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->postJson('/api/analytics/ai-query', ['question' => 'How many requests?'])->assertNotFound();
+    $this->postJson('/api/v1/analytics/ai-query', ['question' => 'How many requests?'])->assertNotFound();
 });
 
 test('ai-report and ai-query pass the feature gate when analytics_ai_legacy is on', function () {
@@ -70,15 +70,15 @@ test('ai-report and ai-query pass the feature gate when analytics_ai_legacy is o
 
     // Not asserting the AI result (that is the retired feature's own
     // behaviour); only that the feature gate no longer hides the routes.
-    expect($this->postJson('/api/analytics/ai-report')->status())->not->toBe(404);
-    expect($this->postJson('/api/analytics/ai-query', ['question' => 'How many requests?'])->status())->not->toBe(404);
+    expect($this->postJson('/api/v1/analytics/ai-report')->status())->not->toBe(404);
+    expect($this->postJson('/api/v1/analytics/ai-query', ['question' => 'How many requests?'])->status())->not->toBe(404);
 });
 
 test('a student still gets 403, not 404, on ai-report when the flag is on (role gate unchanged)', function () {
     config(['features.analytics_ai_legacy' => true]);
     p0ActingAs(SystemUser::ROLE_STUDENT);
 
-    $this->postJson('/api/analytics/ai-report')->assertForbidden();
+    $this->postJson('/api/v1/analytics/ai-report')->assertForbidden();
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -104,11 +104,11 @@ test('FeatureFlags::forClient never exposes flags outside the allow-list', funct
     expect(FeatureFlags::forClient())->not->toHaveKey('free_request_page');
 });
 
-test('GET /api/me reports the allow-listed feature flags', function () {
+test('GET /api/v1/me reports the allow-listed feature flags', function () {
     config(['features.analytics_ai_legacy' => true, 'features.system_health' => false]);
     p0ActingAs(SystemUser::ROLE_ADMIN);
 
-    $response = $this->getJson('/api/me')->assertOk();
+    $response = $this->getJson('/api/v1/me')->assertOk();
 
     expect($response->json('data.features.analytics_ai_legacy'))->toBeTrue()
         ->and($response->json('data.features.system_health'))->toBeFalse()

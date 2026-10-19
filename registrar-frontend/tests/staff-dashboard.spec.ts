@@ -13,7 +13,7 @@ test.describe('Staff Dashboard E2E Tests', () => {
     page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
 
     // 1. Mock /api/me to return an Admin user with correct dashboard permissions
-    await page.route('**/api/me', async (route) => {
+    await page.route(/\/api\/(v1\/)?me$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -33,7 +33,7 @@ test.describe('Staff Dashboard E2E Tests', () => {
     });
 
     // 2. Mock /api/document-requests lookup list
-    await page.route('**/api/document-requests*', async (route) => {
+    await page.route(/\/api\/(v1\/)?document-requests/, async (route) => {
       const url = route.request().url();
       const method = route.request().method();
 
@@ -168,7 +168,7 @@ test.describe('Staff Dashboard E2E Tests', () => {
     });
 
     // 3. Mock metadata endpoints
-    await page.route('**/api/request-statuses', async (route) => {
+    await page.route(/\/api\/(v1\/)?request-statuses/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -180,7 +180,7 @@ test.describe('Staff Dashboard E2E Tests', () => {
       });
     });
 
-    await page.route('**/api/document-types', async (route) => {
+    await page.route(/\/api\/(v1\/)?document-types/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -191,7 +191,7 @@ test.describe('Staff Dashboard E2E Tests', () => {
       });
     });
 
-    await page.route('**/api/certifications', async (route) => {
+    await page.route(/\/api\/(v1\/)?certifications/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -199,7 +199,7 @@ test.describe('Staff Dashboard E2E Tests', () => {
       });
     });
 
-    await page.route('**/api/request-purposes', async (route) => {
+    await page.route(/\/api\/(v1\/)?request-purposes/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -207,7 +207,7 @@ test.describe('Staff Dashboard E2E Tests', () => {
       });
     });
 
-    await page.route('**/api/programs', async (route) => {
+    await page.route(/\/api\/(v1\/)?programs/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -215,7 +215,7 @@ test.describe('Staff Dashboard E2E Tests', () => {
       });
     });
 
-    await page.route('**/api/notifications*', async (route) => {
+    await page.route(/\/api\/(v1\/)?notifications/, async (route) => {
       const url = route.request().url();
       if (url.includes('/unread-count')) {
         await route.fulfill({
@@ -244,7 +244,7 @@ test.describe('Staff Dashboard E2E Tests', () => {
     // 2. Test Text Search functionality
     const searchInput = page.getByPlaceholder('Search', { exact: true });
     const searchResponsePromise = page.waitForResponse(resp =>
-      resp.url().includes('/api/document-requests') && resp.url().includes('search=Juan')
+      resp.url().includes('/document-requests') && resp.url().includes('search=Juan')
     );
     await searchInput.fill('Juan');
     await searchResponsePromise;
@@ -254,7 +254,7 @@ test.describe('Staff Dashboard E2E Tests', () => {
 
     // Clear search
     const clearResponsePromise = page.waitForResponse(resp =>
-      resp.url().includes('/api/document-requests') && !resp.url().includes('search=Juan')
+      resp.url().includes('/document-requests') && !resp.url().includes('search=Juan')
     );
     await searchInput.fill('');
     await clearResponsePromise;

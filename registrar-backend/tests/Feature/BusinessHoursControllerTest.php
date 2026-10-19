@@ -14,7 +14,7 @@ test('is reachable without authentication', function () {
     // in the app that must work for a requester who hasn't logged in yet.
     Carbon::setTestNow(Carbon::parse('2026-03-10 10:00:00', 'Asia/Manila')); // Tue 10 AM
 
-    $this->getJson('/api/business-hours/status')
+    $this->getJson('/api/v1/business-hours/status')
         ->assertOk()
         ->assertJsonStructure(['is_open', 'next_open_at', 'closes_at', 'timezone']);
 
@@ -24,7 +24,7 @@ test('is reachable without authentication', function () {
 test('returns is_open true with a closes_at during office hours', function () {
     Carbon::setTestNow(Carbon::parse('2026-03-10 10:00:00', 'Asia/Manila')); // Tue 10 AM
 
-    $this->getJson('/api/business-hours/status')
+    $this->getJson('/api/v1/business-hours/status')
         ->assertOk()
         ->assertJson([
             'is_open'      => true,
@@ -39,7 +39,7 @@ test('returns is_open true with a closes_at during office hours', function () {
 test('returns is_open false with next_open_at outside office hours', function () {
     Carbon::setTestNow(Carbon::parse('2026-03-14 12:00:00', 'Asia/Manila')); // Saturday
 
-    $this->getJson('/api/business-hours/status')
+    $this->getJson('/api/v1/business-hours/status')
         ->assertOk()
         ->assertJson([
             'is_open'   => false,

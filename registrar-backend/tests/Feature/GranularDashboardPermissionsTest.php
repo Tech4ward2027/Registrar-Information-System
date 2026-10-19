@@ -114,7 +114,7 @@ test('Student Staff can list the dashboard queue', function () {
     granularSeedStatuses();
     makeStudentStaffAdmin();
 
-    $this->getJson('/api/document-requests')->assertOk();
+    $this->getJson('/api/v1/document-requests')->assertOk();
 });
 
 test('Student Staff can view a single document request', function () {
@@ -122,7 +122,7 @@ test('Student Staff can view a single document request', function () {
     $docReq = makeGranularDocRequest();
     makeStudentStaffAdmin();
 
-    $this->getJson("/api/document-requests/{$docReq->request_id}")
+    $this->getJson("/api/v1/document-requests/{$docReq->request_id}")
          ->assertOk()
          ->assertJsonPath('request_id', $docReq->request_id);
 });
@@ -132,7 +132,7 @@ test('Student Staff can mark a Ready-to-Claim request Completed (Done)', functio
     $docReq = makeGranularDocRequest(RequestStatusEnum::ReadyToClaim);
     makeStudentStaffAdmin();
 
-    $this->putJson("/api/document-requests/{$docReq->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$docReq->request_id}", [
         'status_id' => RequestStatusEnum::Completed->value,
     ])->assertOk()
       ->assertJsonPath('status.status_id', RequestStatusEnum::Completed->value);
@@ -148,7 +148,7 @@ test('Student Staff can complete a request through the claim endpoint (QR/claim_
     $docReq = makeGranularDocRequest(RequestStatusEnum::ReadyToClaim);
     makeStudentStaffAdmin();
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid])
          ->assertOk()
          ->assertJsonPath('status.status_id', RequestStatusEnum::Completed->value);
 });
@@ -164,7 +164,7 @@ test('Student Staff cannot set status_id to Ready-to-Claim via a direct PUT', fu
     $docReq = makeGranularDocRequest(RequestStatusEnum::Processing);
     makeStudentStaffAdmin();
 
-    $this->putJson("/api/document-requests/{$docReq->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$docReq->request_id}", [
         'status_id' => RequestStatusEnum::ReadyToClaim->value,
     ])->assertStatus(403);
 
@@ -179,7 +179,7 @@ test('Student Staff cannot set status_id to Pending Signature via a direct PUT',
     $docReq = makeGranularDocRequest(RequestStatusEnum::Processing);
     makeStudentStaffAdmin();
 
-    $this->putJson("/api/document-requests/{$docReq->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$docReq->request_id}", [
         'status_id' => RequestStatusEnum::PendingSignature->value,
     ])->assertStatus(403);
 });
@@ -189,7 +189,7 @@ test('Student Staff cannot forfeit a Ready-to-Claim request via a direct PUT', f
     $docReq = makeGranularDocRequest(RequestStatusEnum::ReadyToClaim);
     makeStudentStaffAdmin();
 
-    $this->putJson("/api/document-requests/{$docReq->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$docReq->request_id}", [
         'status_id' => RequestStatusEnum::Forfeited->value,
     ])->assertStatus(403);
 });
@@ -199,7 +199,7 @@ test('Student Staff cannot edit or_number via a direct PUT, even without a statu
     $docReq = makeGranularDocRequest(RequestStatusEnum::Processing);
     makeStudentStaffAdmin();
 
-    $this->putJson("/api/document-requests/{$docReq->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$docReq->request_id}", [
         'or_number' => 'OR-HAND-CRAFTED-1',
     ])->assertStatus(403);
 
@@ -214,7 +214,7 @@ test('Student Staff cannot edit receipt_date via a direct PUT', function () {
     $docReq = makeGranularDocRequest(RequestStatusEnum::Processing);
     makeStudentStaffAdmin();
 
-    $this->putJson("/api/document-requests/{$docReq->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$docReq->request_id}", [
         'receipt_date' => now()->toDateString(),
     ])->assertStatus(403);
 });
@@ -229,7 +229,7 @@ test('Student Staff cannot smuggle an or_number edit alongside an otherwise-allo
     $docReq = makeGranularDocRequest(RequestStatusEnum::ReadyToClaim);
     makeStudentStaffAdmin();
 
-    $this->putJson("/api/document-requests/{$docReq->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$docReq->request_id}", [
         'status_id' => RequestStatusEnum::Completed->value,
         'or_number' => 'OR-SMUGGLED-1',
     ])->assertStatus(403);
@@ -250,7 +250,7 @@ test('Registrar Staff can set status_id to Ready-to-Claim via a direct PUT', fun
     $docReq = makeGranularDocRequest(RequestStatusEnum::Processing);
     makeRegistrarStaffAdmin();
 
-    $this->putJson("/api/document-requests/{$docReq->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$docReq->request_id}", [
         'status_id' => RequestStatusEnum::ReadyToClaim->value,
     ])->assertOk()
       ->assertJsonPath('status.status_id', RequestStatusEnum::ReadyToClaim->value);
@@ -261,7 +261,7 @@ test('Registrar Staff can set status_id to Pending Signature via a direct PUT', 
     $docReq = makeGranularDocRequest(RequestStatusEnum::Processing);
     makeRegistrarStaffAdmin();
 
-    $this->putJson("/api/document-requests/{$docReq->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$docReq->request_id}", [
         'status_id' => RequestStatusEnum::PendingSignature->value,
     ])->assertOk();
 });
@@ -271,7 +271,7 @@ test('Registrar Staff can mark a request Completed', function () {
     $docReq = makeGranularDocRequest(RequestStatusEnum::ReadyToClaim);
     makeRegistrarStaffAdmin();
 
-    $this->putJson("/api/document-requests/{$docReq->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$docReq->request_id}", [
         'status_id' => RequestStatusEnum::Completed->value,
     ])->assertOk();
 });
@@ -281,7 +281,7 @@ test('Registrar Staff can edit or_number and receipt_date via a direct PUT', fun
     $docReq = makeGranularDocRequest(RequestStatusEnum::Processing);
     makeRegistrarStaffAdmin();
 
-    $this->putJson("/api/document-requests/{$docReq->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$docReq->request_id}", [
         'or_number'    => 'OR-REGISTRAR-EDIT-1',
         'receipt_date' => now()->toDateString(),
     ])->assertOk();
@@ -297,7 +297,7 @@ test('Registrar Staff can complete a request through the claim endpoint', functi
     $docReq = makeGranularDocRequest(RequestStatusEnum::ReadyToClaim);
     makeRegistrarStaffAdmin();
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid])
          ->assertOk();
 });
 
@@ -314,14 +314,14 @@ test('Student Staff can view the logbook endpoint', function () {
     granularSeedStatuses();
     makeStudentStaffAdmin();
 
-    $this->getJson('/api/document-requests/logbook')->assertOk();
+    $this->getJson('/api/v1/document-requests/logbook')->assertOk();
 });
 
 test('Student Staff can view the request-history endpoint', function () {
     granularSeedStatuses();
     makeStudentStaffAdmin();
 
-    $this->getJson('/api/request-history')->assertOk();
+    $this->getJson('/api/v1/request-history')->assertOk();
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -344,7 +344,7 @@ test('an admin with dashboard View only cannot update a request at all', functio
 
     $docReq = makeGranularDocRequest(RequestStatusEnum::ReadyToClaim);
 
-    $this->putJson("/api/document-requests/{$docReq->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$docReq->request_id}", [
         'status_id' => RequestStatusEnum::Completed->value,
     ])->assertStatus(403);
 });
@@ -364,7 +364,7 @@ test('an admin with dashboard View only cannot claim a request', function () {
 
     $docReq = makeGranularDocRequest(RequestStatusEnum::ReadyToClaim);
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid])
          ->assertStatus(403);
 });
 
@@ -404,7 +404,7 @@ test('creating a policy via the API drops the legacy Access token from dashboard
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN]);
     Sanctum::actingAs($superAdmin);
 
-    $response = $this->postJson('/api/policies', [
+    $response = $this->postJson('/api/v1/policies', [
         'name'        => 'Hand-Crafted Legacy Shape',
         'permissions' => [
             'dashboard' => ['Access', 'View'], // 'Access' is no longer valid here
@@ -423,7 +423,7 @@ test('creating a policy via the API rejects an action token that does not belong
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN]);
     Sanctum::actingAs($superAdmin);
 
-    $response = $this->postJson('/api/policies', [
+    $response = $this->postJson('/api/v1/policies', [
         'name'        => 'Cross-Module Token Attempt',
         'permissions' => [
             'dashboard' => ['Export'], // valid token, wrong module

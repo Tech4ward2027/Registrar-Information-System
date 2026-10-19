@@ -31,7 +31,7 @@ function bulkLayoutCert(array $overrides = []): CertificationType
     ], $overrides));
 }
 
-const BULK_LAYOUT_URL = '/api/certifications/layouts/bulk';
+const BULK_LAYOUT_URL = '/api/v1/certifications/layouts/bulk';
 
 // ── Success ──────────────────────────────────────────────────────────────────
 

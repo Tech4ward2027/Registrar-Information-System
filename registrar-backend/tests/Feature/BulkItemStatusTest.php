@@ -156,7 +156,7 @@ test('student cannot call bulk-ready', function () {
     $student = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
     Sanctum::actingAs($student);
 
-    $this->postJson('/api/document-requests/bulk-ready', ['request_ids' => [$docRequest->request_id]])
+    $this->postJson('/api/v1/document-requests/bulk-ready', ['request_ids' => [$docRequest->request_id]])
          ->assertStatus(403);
 });
 
@@ -165,7 +165,7 @@ test('student cannot call bulk-done', function () {
     $student = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
     Sanctum::actingAs($student);
 
-    $this->postJson('/api/document-requests/bulk-done', ['request_ids' => [$docRequest->request_id]])
+    $this->postJson('/api/v1/document-requests/bulk-done', ['request_ids' => [$docRequest->request_id]])
          ->assertStatus(403);
 });
 
@@ -175,7 +175,7 @@ test('an admin with no dashboard access at all gets 403 from bulk-ready', functi
     $admin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($admin);
 
-    $this->postJson('/api/document-requests/bulk-ready', ['request_ids' => [$docRequest->request_id]])
+    $this->postJson('/api/v1/document-requests/bulk-ready', ['request_ids' => [$docRequest->request_id]])
          ->assertStatus(403);
 });
 
@@ -186,7 +186,7 @@ test('a Complete-only admin (no Process) is rejected by the fine-grained gate on
     // Passes the coarse route middleware (module:dashboard,Process|Complete
     // accepts either action) but bulkAdvanceItems() -> authorizeItemStatusChange()
     // requires 'Process' specifically for a ReadyToClaim target.
-    $this->postJson('/api/document-requests/bulk-ready', ['request_ids' => [$docRequest->request_id]])
+    $this->postJson('/api/v1/document-requests/bulk-ready', ['request_ids' => [$docRequest->request_id]])
          ->assertStatus(403);
 });
 
@@ -194,7 +194,7 @@ test('a Complete-only admin can call bulk-done, which requires Complete not Proc
     $docRequest = bulkMakeRequestWithDocument(RequestStatusEnum::ReadyToClaim->value);
     bulkMakeCompleteOnlyAdmin();
 
-    $this->postJson('/api/document-requests/bulk-done', ['request_ids' => [$docRequest->request_id]])
+    $this->postJson('/api/v1/document-requests/bulk-done', ['request_ids' => [$docRequest->request_id]])
          ->assertOk();
 
     $this->assertDatabaseHas('request_document', [
@@ -210,7 +210,7 @@ test('a Complete-only admin can call bulk-done, which requires Complete not Proc
 test('bulk-ready fails validation on an empty request_ids array', function () {
     bulkMakeAdmin();
 
-    $this->postJson('/api/document-requests/bulk-ready', ['request_ids' => []])
+    $this->postJson('/api/v1/document-requests/bulk-ready', ['request_ids' => []])
          ->assertStatus(422)
          ->assertJsonValidationErrors(['request_ids']);
 });
@@ -218,7 +218,7 @@ test('bulk-ready fails validation on an empty request_ids array', function () {
 test('bulk-ready fails validation on duplicate ids', function () {
     bulkMakeAdmin();
 
-    $this->postJson('/api/document-requests/bulk-ready', ['request_ids' => [1, 1]])
+    $this->postJson('/api/v1/document-requests/bulk-ready', ['request_ids' => [1, 1]])
          ->assertStatus(422)
          ->assertJsonValidationErrors(['request_ids.0']);
 });
@@ -226,7 +226,7 @@ test('bulk-ready fails validation on duplicate ids', function () {
 test('bulk-ready fails validation past the 200-id cap', function () {
     bulkMakeAdmin();
 
-    $this->postJson('/api/document-requests/bulk-ready', [
+    $this->postJson('/api/v1/document-requests/bulk-ready', [
         'request_ids' => range(1, 201),
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['request_ids']);
@@ -240,7 +240,7 @@ test('bulk-ready advances an eligible Processing document item to ReadyToClaim',
     $docRequest = bulkMakeRequestWithDocument(RequestStatusEnum::Processing->value);
     $admin      = bulkMakeAdmin();
 
-    $response = $this->postJson('/api/document-requests/bulk-ready', [
+    $response = $this->postJson('/api/v1/document-requests/bulk-ready', [
         'request_ids' => [$docRequest->request_id],
     ])->assertOk();
 
@@ -272,7 +272,7 @@ test('bulk-ready is a no-op on an already-ReadyToClaim item — reported skipped
     $docRequest = bulkMakeRequestWithDocument(RequestStatusEnum::ReadyToClaim->value);
     bulkMakeAdmin();
 
-    $response = $this->postJson('/api/document-requests/bulk-ready', [
+    $response = $this->postJson('/api/v1/document-requests/bulk-ready', [
         'request_ids' => [$docRequest->request_id],
     ])->assertOk();
 
@@ -288,7 +288,7 @@ test('bulk-ready processes a mixed batch: eligible items update, ineligible item
     $ineligible = bulkMakeRequestWithDocument(RequestStatusEnum::ReadyToClaim->value); // already there
     $admin      = bulkMakeAdmin();
 
-    $response = $this->postJson('/api/document-requests/bulk-ready', [
+    $response = $this->postJson('/api/v1/document-requests/bulk-ready', [
         'request_ids' => [$eligible->request_id, $ineligible->request_id],
     ])->assertOk();
 
@@ -339,7 +339,7 @@ test('bulk-ready advances only the eligible items on a request that mixes an eli
 
     bulkMakeAdmin();
 
-    $response = $this->postJson('/api/document-requests/bulk-ready', [
+    $response = $this->postJson('/api/v1/document-requests/bulk-ready', [
         'request_ids' => [$docRequest->request_id],
     ])->assertOk();
 
@@ -365,7 +365,7 @@ test('bulk-ready also advances an eligible PendingSignature certificate item', f
     $docRequest = bulkMakeRequestWithCertificate(RequestStatusEnum::PendingSignature->value);
     bulkMakeAdmin();
 
-    $response = $this->postJson('/api/document-requests/bulk-ready', [
+    $response = $this->postJson('/api/v1/document-requests/bulk-ready', [
         'request_ids' => [$docRequest->request_id],
     ])->assertOk();
 
@@ -388,7 +388,7 @@ test('bulk-ready does not enforce certificate_not_generated today — the guard 
     $docRequest = bulkMakeRequestWithCertificate(RequestStatusEnum::Processing->value, generatedAt: null);
     bulkMakeAdmin();
 
-    $response = $this->postJson('/api/document-requests/bulk-ready', [
+    $response = $this->postJson('/api/v1/document-requests/bulk-ready', [
         'request_ids' => [$docRequest->request_id],
     ])->assertOk();
 
@@ -401,7 +401,7 @@ test('bulk-ready skips an archived request entirely and reports it', function ()
     $docRequest->update(['is_archived' => true, 'archived_on' => now()]);
     bulkMakeAdmin();
 
-    $response = $this->postJson('/api/document-requests/bulk-ready', [
+    $response = $this->postJson('/api/v1/document-requests/bulk-ready', [
         'request_ids' => [$docRequest->request_id],
     ])->assertOk();
 
@@ -420,7 +420,7 @@ test('bulk-ready reports a nonexistent request id as not_found without failing t
     $eligible = bulkMakeRequestWithDocument(RequestStatusEnum::Processing->value);
     bulkMakeAdmin();
 
-    $response = $this->postJson('/api/document-requests/bulk-ready', [
+    $response = $this->postJson('/api/v1/document-requests/bulk-ready', [
         'request_ids' => [$eligible->request_id, 999999],
     ])->assertOk();
 
@@ -438,7 +438,7 @@ test('bulk-done advances an eligible ReadyToClaim item to Completed', function (
     $docRequest = bulkMakeRequestWithDocument(RequestStatusEnum::ReadyToClaim->value);
     bulkMakeAdmin();
 
-    $response = $this->postJson('/api/document-requests/bulk-done', [
+    $response = $this->postJson('/api/v1/document-requests/bulk-done', [
         'request_ids' => [$docRequest->request_id],
     ])->assertOk();
 
@@ -453,7 +453,7 @@ test('bulk-done skips a Processing item — only ReadyToClaim is eligible for Co
     $docRequest = bulkMakeRequestWithDocument(RequestStatusEnum::Processing->value);
     bulkMakeAdmin();
 
-    $response = $this->postJson('/api/document-requests/bulk-done', [
+    $response = $this->postJson('/api/v1/document-requests/bulk-done', [
         'request_ids' => [$docRequest->request_id],
     ])->assertOk();
 
@@ -472,7 +472,7 @@ test('bulk-done processes a mixed batch of Ready and not-yet-Ready requests inde
     $notReady = bulkMakeRequestWithDocument(RequestStatusEnum::PendingSignature->value);
     bulkMakeAdmin();
 
-    $response = $this->postJson('/api/document-requests/bulk-done', [
+    $response = $this->postJson('/api/v1/document-requests/bulk-done', [
         'request_ids' => [$ready->request_id, $notReady->request_id],
     ])->assertOk();
 
@@ -512,7 +512,7 @@ test('bulk-ready rolls up a release group\'s own status_id as its member items a
 
     bulkMakeAdmin();
 
-    $this->postJson('/api/document-requests/bulk-ready', [
+    $this->postJson('/api/v1/document-requests/bulk-ready', [
         'request_ids' => [$docRequest->request_id],
     ])->assertOk();
 

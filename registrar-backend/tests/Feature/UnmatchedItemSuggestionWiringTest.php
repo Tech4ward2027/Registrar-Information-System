@@ -105,7 +105,7 @@ test('index returns suggestions as an array when the flag is on', function () {
         'suggestion_source' => 'rules', 'suggested_at' => now(),
     ]);
 
-    $row = $this->getJson('/api/unmatched-cashier-items')->assertOk()->json('data.0');
+    $row = $this->getJson('/api/v1/unmatched-cashier-items')->assertOk()->json('data.0');
 
     expect($row['suggestions'])->toBeArray()->and($row['suggestions'][0]['name'])->toBe('X')
         ->and($row['suggestion_source'])->toBe('rules');
@@ -116,7 +116,7 @@ test('index hides suggestion fields while the flag is off', function () {
     uw_admin();
     uw_item(['suggestions' => ([['type' => 'document', 'id' => 1]]), 'suggestion_source' => 'rules']);
 
-    $row = $this->getJson('/api/unmatched-cashier-items')->assertOk()->json('data.0');
+    $row = $this->getJson('/api/v1/unmatched-cashier-items')->assertOk()->json('data.0');
 
     expect($row)->not->toHaveKeys(['suggestions', 'suggestion_source', 'suggested_at', 'suggestion_accepted']);
 });
@@ -130,7 +130,7 @@ test('resolving to the top suggestion records suggestion_accepted = true', funct
         ['key' => 'd' . $doc->document_type_id, 'type' => 'document', 'id' => $doc->document_type_id, 'name' => $doc->document_name, 'score' => 0.9, 'matched_on' => 'name'],
     ]), 'suggestion_source' => 'rules']);
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
         'document_type_id' => $doc->document_type_id,
     ])->assertOk();
 
@@ -146,7 +146,7 @@ test('resolving to a different type than the top suggestion records false', func
         ['key' => 'd2', 'type' => 'document', 'id' => $other->document_type_id, 'name' => 'y', 'score' => 0.5, 'matched_on' => 'name'],
     ])]);
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
         'document_type_id' => $other->document_type_id,
     ])->assertOk();
 
@@ -164,7 +164,7 @@ test('a document id equal to the suggested certificate id is not counted as acce
         ['key' => 'c1', 'type' => 'certificate', 'id' => $doc->document_type_id, 'name' => 'x', 'score' => 0.9, 'matched_on' => 'name'],
     ])]);
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
         'document_type_id' => $doc->document_type_id,
     ])->assertOk();
 
@@ -176,7 +176,7 @@ test('resolving an item with no suggestions leaves suggestion_accepted null', fu
     $doc  = uw_doc('Informative Copy of Grades');
     $item = uw_item();
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
         'document_type_id' => $doc->document_type_id,
     ])->assertOk();
 

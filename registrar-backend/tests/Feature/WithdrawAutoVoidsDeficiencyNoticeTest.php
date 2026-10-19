@@ -68,7 +68,7 @@ test('withdrawing a request with an open Deficiency Notice auto-voids it', funct
     ]);
     autoVoidMakeUser(SystemUser::ROLE_ADMIN);
 
-    $response = $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $response = $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertOk();
 
@@ -95,7 +95,7 @@ test('the cascaded void_reason substitutes withdrawal_detail when the reason is 
     ]);
     autoVoidMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::Other->value,
         'withdrawal_detail' => 'Student confirmed by phone they no longer need any of this.',
     ])->assertOk();
@@ -109,7 +109,7 @@ test('withdrawing a request with no open Deficiency Notice reports no auto-void'
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     autoVoidMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertOk()
       ->assertJsonPath('auto_voided_deficiency_notice_id', null);
@@ -123,7 +123,7 @@ test('withdrawing a request does not touch an already-resolved (cleared) notice'
     ]);
     autoVoidMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertOk()
       ->assertJsonPath('auto_voided_deficiency_notice_id', null);
@@ -143,7 +143,7 @@ test('withdrawing a request with an already-voided notice does not double-void i
     ]);
     autoVoidMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertOk()
       ->assertJsonPath('auto_voided_deficiency_notice_id', null);
@@ -167,7 +167,7 @@ test('auto-voiding writes a distinct deficiency_notice_voided audit entry alongs
     ]);
     $admin = autoVoidMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertOk();
 
@@ -187,7 +187,7 @@ test('withdrawing with no open notice writes no deficiency_notice_voided audit e
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     autoVoidMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertOk();
 
@@ -213,7 +213,7 @@ test('auto-voiding a notice during withdrawal sends only the withdrawal notifica
     ]);
     autoVoidMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertOk();
 
@@ -243,7 +243,7 @@ test('a rejected withdrawal transition leaves an open notice untouched', functio
     ]);
     autoVoidMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertStatus(422);
 

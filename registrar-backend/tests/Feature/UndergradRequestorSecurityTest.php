@@ -58,7 +58,7 @@ test('self-declared PII is encrypted in the database but reads back as plaintext
 
     $payload = phase6Payload();
 
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
     $user    = SystemUser::where('email', $payload['email'])->firstOrFail();
     $profile = UndergradRequestorProfile::where('user_id', $user->user_id)->firstOrFail();
@@ -126,7 +126,7 @@ test('re-saving an encrypted value does not double-wrap it', function () {
     Mail::fake();
 
     $payload = phase6Payload();
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
     $user    = SystemUser::where('email', $payload['email'])->firstOrFail();
     $profile = UndergradRequestorProfile::where('user_id', $user->user_id)->firstOrFail();
@@ -146,11 +146,11 @@ test('re-saving an encrypted value does not double-wrap it', function () {
 test('registration is refused without explicit data privacy consent', function () {
     Mail::fake();
 
-    $this->postJson('/api/undergrad-requestors/register', phase6Payload([
+    $this->postJson('/api/v1/undergrad-requestors/register', phase6Payload([
         'data_privacy_consent' => false,
     ]))->assertStatus(422)->assertJsonValidationErrors('data_privacy_consent');
 
-    $this->postJson('/api/undergrad-requestors/register', array_diff_key(
+    $this->postJson('/api/v1/undergrad-requestors/register', array_diff_key(
         phase6Payload(),
         ['data_privacy_consent' => null],
     ))->assertStatus(422)->assertJsonValidationErrors('data_privacy_consent');
@@ -163,7 +163,7 @@ test('consent is recorded server-side with the configured notice version', funct
     config()->set('undergrad_requestor.data_privacy.consent_version', '2.7');
 
     $payload = phase6Payload();
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
     $user    = SystemUser::where('email', $payload['email'])->firstOrFail();
     $profile = UndergradRequestorProfile::where('user_id', $user->user_id)->firstOrFail();
@@ -179,7 +179,7 @@ test('consent is recorded server-side with the configured notice version', funct
 test('the registration notice endpoint serves the same version that gets recorded', function () {
     config()->set('undergrad_requestor.data_privacy.consent_version', '3.1');
 
-    $this->getJson('/api/undergrad-requestors/registration-notice')
+    $this->getJson('/api/v1/undergrad-requestors/registration-notice')
         ->assertOk()
         ->assertJsonPath('data.consent_version', '3.1')
         ->assertJsonPath('data.retention.unverified_submission_days', 14)
@@ -202,17 +202,17 @@ test('the per-email bucket blocks repeat submissions for one address across IPs'
     // which is the point. A failed attempt is exactly as expensive to
     // serve as a successful one, and mail-bombing does not care whether
     // the submission was valid.
-    $this->postJson('/api/undergrad-requestors/register', phase6Payload(['email' => $victim]))
+    $this->postJson('/api/v1/undergrad-requestors/register', phase6Payload(['email' => $victim]))
         ->assertCreated();
 
     $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.10'])
-        ->postJson('/api/undergrad-requestors/register', phase6Payload(['email' => $victim]))
+        ->postJson('/api/v1/undergrad-requestors/register', phase6Payload(['email' => $victim]))
         ->assertStatus(422);
 
     // Third attempt, third distinct IP — the per-IP buckets are nowhere
     // near their ceilings, so only the per-email bucket can catch this.
     $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.42'])
-        ->postJson('/api/undergrad-requestors/register', phase6Payload(['email' => $victim]))
+        ->postJson('/api/v1/undergrad-requestors/register', phase6Payload(['email' => $victim]))
         ->assertStatus(429);
 });
 
@@ -220,12 +220,12 @@ test('a tripped rate limit is recorded to security_events exactly once per windo
     Mail::fake();
     config()->set('undergrad_requestor.rate_limits.register_per_ip_per_minute', 1);
 
-    $this->postJson('/api/undergrad-requestors/register', phase6Payload())->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', phase6Payload())->assertCreated();
 
     // Several refusals in the same window.
-    $this->postJson('/api/undergrad-requestors/register', phase6Payload())->assertStatus(429);
-    $this->postJson('/api/undergrad-requestors/register', phase6Payload())->assertStatus(429);
-    $this->postJson('/api/undergrad-requestors/register', phase6Payload())->assertStatus(429);
+    $this->postJson('/api/v1/undergrad-requestors/register', phase6Payload())->assertStatus(429);
+    $this->postJson('/api/v1/undergrad-requestors/register', phase6Payload())->assertStatus(429);
+    $this->postJson('/api/v1/undergrad-requestors/register', phase6Payload())->assertStatus(429);
 
     $events = SecurityEvent::where('event_type', SecurityEvent::EVENT_TYPE_ONBOARDING_THROTTLED)
         ->where('reason', SecurityEvent::REASON_THROTTLED_REGISTER)
@@ -246,9 +246,9 @@ test('a bad confirmation token is vague to the caller and specific in security_e
     Mail::fake();
 
     $payload = phase6Payload();
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
-    $this->postJson('/api/undergrad-requestors/confirm-email', [
+    $this->postJson('/api/v1/undergrad-requestors/confirm-email', [
         'email' => $payload['email'],
         'token' => str_repeat('a', 40),
     ])->assertStatus(422);
@@ -265,7 +265,7 @@ test('a bad confirmation token is vague to the caller and specific in security_e
 test('confirming an unknown address is indistinguishable from a bad token to the caller', function () {
     $unknown = 'nobody-' . uniqid() . '@example.com';
 
-    $response = $this->postJson('/api/undergrad-requestors/confirm-email', [
+    $response = $this->postJson('/api/v1/undergrad-requestors/confirm-email', [
         'email' => $unknown,
         'token' => str_repeat('b', 40),
     ]);
@@ -292,7 +292,7 @@ test('confirming an unknown address is indistinguishable from a bad token to the
 test('email is canonicalised so one address cannot become two accounts', function () {
     Mail::fake();
 
-    $this->postJson('/api/undergrad-requestors/register', phase6Payload([
+    $this->postJson('/api/v1/undergrad-requestors/register', phase6Payload([
         'email' => '  Juan.Dela.Cruz@Example.COM ',
     ]))->assertCreated();
 
@@ -301,7 +301,7 @@ test('email is canonicalised so one address cannot become two accounts', functio
     // The same address in different clothes is rejected as a duplicate,
     // not accepted as a second account that could never be reconciled
     // with the first at IDP-login time (D4 matches on email).
-    $this->postJson('/api/undergrad-requestors/register', phase6Payload([
+    $this->postJson('/api/v1/undergrad-requestors/register', phase6Payload([
         'email' => 'JUAN.DELA.CRUZ@example.com',
     ]))->assertStatus(422)->assertJsonValidationErrors('email');
 });
@@ -309,7 +309,7 @@ test('email is canonicalised so one address cannot become two accounts', functio
 test('control characters are rejected in free-text fields', function () {
     Mail::fake();
 
-    $this->postJson('/api/undergrad-requestors/register', phase6Payload([
+    $this->postJson('/api/v1/undergrad-requestors/register', phase6Payload([
         'first_name' => "Juan\r\nBcc: someone@evil.test",
     ]))->assertStatus(422)->assertJsonValidationErrors('first_name');
 });

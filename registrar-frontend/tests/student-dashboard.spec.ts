@@ -9,7 +9,7 @@ test.describe('Student Dashboard E2E Tests', () => {
     });
 
     // 1. Mock the /me endpoint to authenticate as a Student (role: student)
-    await page.route('**/api/me', async (route) => {
+    await page.route(/\/api\/(v1\/)?me$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -26,7 +26,7 @@ test.describe('Student Dashboard E2E Tests', () => {
     });
 
     // 2. Mock reference status list
-    await page.route('**/api/request-statuses', async (route) => {
+    await page.route(/\/api\/(v1\/)?request-statuses$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -40,28 +40,28 @@ test.describe('Student Dashboard E2E Tests', () => {
     });
 
     // 3. Mock other lookup data
-    await page.route('**/api/document-types', async (route) => {
+    await page.route(/\/api\/(v1\/)?document-types$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: [] }),
       });
     });
-    await page.route('**/api/certifications', async (route) => {
+    await page.route(/\/api\/(v1\/)?certifications$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: [] }),
       });
     });
-    await page.route('**/api/request-purposes', async (route) => {
+    await page.route(/\/api\/(v1\/)?request-purposes$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: [] }),
       });
     });
-    await page.route('**/api/programs', async (route) => {
+    await page.route(/\/api\/(v1\/)?programs$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -70,7 +70,7 @@ test.describe('Student Dashboard E2E Tests', () => {
     });
 
     // 4. Mock announcements
-    await page.route('**/api/announcements*', async (route) => {
+    await page.route(/\/api\/(v1\/)?announcements/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -79,7 +79,7 @@ test.describe('Student Dashboard E2E Tests', () => {
     });
 
     // Mock notifications endpoints (which run inside NotificationsProvider on mount)
-    await page.route('**/api/notifications*', async (route) => {
+    await page.route(/\/api\/(v1\/)?notifications/, async (route) => {
       const url = route.request().url();
       if (url.includes('/unread-count')) {
         await route.fulfill({
@@ -97,7 +97,7 @@ test.describe('Student Dashboard E2E Tests', () => {
     });
 
     // 5. Mock document requests (one for user 42, one ready for user 42, and one for user 99)
-    await page.route('**/api/document-requests*', async (route) => {
+    await page.route(/\/api\/(v1\/)?document-requests(\?.*)?$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

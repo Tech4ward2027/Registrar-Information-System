@@ -30,7 +30,7 @@ test('a bad password on local login is recorded as a security event', function (
         'local_auth_enabled' => 1,
     ]);
 
-    $this->postJson('/api/auth/local-login', [
+    $this->postJson('/api/v1/auth/local-login', [
         'email'    => $user->email,
         'password' => 'WrongPassword1',
     ])->assertStatus(401);
@@ -43,7 +43,7 @@ test('a bad password on local login is recorded as a security event', function (
 });
 
 test('a login attempt against a non-existent email is recorded without a target user', function () {
-    $this->postJson('/api/auth/local-login', [
+    $this->postJson('/api/v1/auth/local-login', [
         'email'    => 'nobody@example.com',
         'password' => 'whatever123',
     ])->assertStatus(401);
@@ -63,7 +63,7 @@ test('a login attempt against an inactive account is recorded with the correct r
         'local_auth_enabled' => 1,
     ]);
 
-    $this->postJson('/api/auth/local-login', [
+    $this->postJson('/api/v1/auth/local-login', [
         'email'    => $user->email,
         'password' => 'CorrectPass1',
     ])->assertStatus(403);
@@ -83,7 +83,7 @@ test('a successful local login does not write a security event', function () {
         'local_auth_enabled' => 1,
     ]);
 
-    $this->postJson('/api/auth/local-login', [
+    $this->postJson('/api/v1/auth/local-login', [
         'email'    => $user->email,
         'password' => 'CorrectPass1',
     ])->assertOk();
@@ -116,7 +116,7 @@ test('crossing the failed-login threshold for one email fires exactly one alert'
     // so the alert should fire once on the 3rd attempt and NOT again on any
     // further attempt within the same window.
     for ($i = 0; $i < 5; $i++) {
-        $this->postJson('/api/auth/local-login', [
+        $this->postJson('/api/v1/auth/local-login', [
             'email'    => $email,
             'password' => 'wrong',
         ])->assertStatus(401);
@@ -133,7 +133,7 @@ test('failed attempts below the threshold do not fire an alert', function () {
     });
 
     for ($i = 0; $i < 2; $i++) {
-        $this->postJson('/api/auth/local-login', [
+        $this->postJson('/api/v1/auth/local-login', [
             'email'    => 'below-threshold@example.com',
             'password' => 'wrong',
         ])->assertStatus(401);
@@ -148,7 +148,7 @@ test('failed attempts against different emails do not combine toward one alert',
     });
 
     foreach (['a@example.com', 'b@example.com', 'c@example.com'] as $email) {
-        $this->postJson('/api/auth/local-login', [
+        $this->postJson('/api/v1/auth/local-login', [
             'email'    => $email,
             'password' => 'wrong',
         ])->assertStatus(401);
@@ -229,12 +229,12 @@ test('a non-super-admin cannot list security events', function () {
     $admin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN]);
 
     $this->actingAs($admin, 'sanctum')
-        ->getJson('/api/security-events')
+        ->getJson('/api/v1/security-events')
         ->assertStatus(403);
 });
 
 test('an unauthenticated request cannot list security events', function () {
-    $this->getJson('/api/security-events')->assertStatus(401);
+    $this->getJson('/api/v1/security-events')->assertStatus(401);
 });
 
 test('a super admin can list security events', function () {
@@ -248,7 +248,7 @@ test('a super admin can list security events', function () {
     ]);
 
     $this->actingAs($superAdmin, 'sanctum')
-        ->getJson('/api/security-events')
+        ->getJson('/api/v1/security-events')
         ->assertOk()
         ->assertJsonPath('data.0.email', 'someone@example.com')
         ->assertJsonPath('meta.total', 1);
@@ -265,7 +265,7 @@ test('an IDP-unreachable fallback records a security event regardless of the loc
             ->andThrow(new \App\Exceptions\IdpUnavailableException('Connection refused'));
     });
 
-    $this->postJson('/api/login', [
+    $this->postJson('/api/v1/login', [
         'email'    => 'someone@example.com',
         'password' => 'whatever123',
     ])->assertStatus(401);

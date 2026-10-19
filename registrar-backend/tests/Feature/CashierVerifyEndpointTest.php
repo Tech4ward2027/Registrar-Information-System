@@ -34,7 +34,7 @@ function makeVerifyOrStudent(): array
 test('verify-or requires or_number and receipt_date', function () {
     makeVerifyOrStudent();
 
-    $this->postJson('/api/document-requests/verify-or', [])
+    $this->postJson('/api/v1/document-requests/verify-or', [])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['or_number', 'receipt_date']);
 });
@@ -45,7 +45,7 @@ test('verify-or accepts a receipt_date older than 7 days', function () {
     config(['services.cashier.api_key' => '']);
     makeVerifyOrStudent();
 
-    $this->postJson('/api/document-requests/verify-or', [
+    $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number'    => '1234567',
         'receipt_date' => now()->subDays(10)->toDateString(),
     ])->assertOk()
@@ -55,7 +55,7 @@ test('verify-or accepts a receipt_date older than 7 days', function () {
 test('verify-or still rejects a receipt_date in the future', function () {
     makeVerifyOrStudent();
 
-    $this->postJson('/api/document-requests/verify-or', [
+    $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number'    => '1234567',
         'receipt_date' => now()->addDay()->toDateString(),
     ])->assertStatus(422)
@@ -66,7 +66,7 @@ test('a staff user (role 3) cannot call verify-or', function () {
     $admin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($admin);
 
-    $this->postJson('/api/document-requests/verify-or', [
+    $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number'    => '1234567',
         'receipt_date' => now()->toDateString(),
     ])->assertStatus(403);
@@ -80,7 +80,7 @@ test('verify-or succeeds in mock mode with empty suggestions', function () {
     config(['services.cashier.api_key' => '']);
     makeVerifyOrStudent();
 
-    $this->postJson('/api/document-requests/verify-or', [
+    $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number'    => '1234567',
         'receipt_date' => now()->toDateString(),
     ])->assertOk()
@@ -124,7 +124,7 @@ test('verify-or returns document suggestions derived from the cashier receipt', 
 
     makeVerifyOrStudent();
 
-    $response = $this->postJson('/api/document-requests/verify-or', [
+    $response = $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number'    => '1000001',
         'receipt_date' => now()->toDateString(),
     ])->assertOk();
@@ -156,7 +156,7 @@ test('verify-or reports unresolved receipt lines without failing the request', f
 
     makeVerifyOrStudent();
 
-    $this->postJson('/api/document-requests/verify-or', [
+    $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number'    => '1000001',
         'receipt_date' => now()->toDateString(),
     ])->assertOk()
@@ -171,7 +171,7 @@ test('verify-or fails with the same message as store() when the OR is not found'
 
     makeVerifyOrStudent();
 
-    $this->postJson('/api/document-requests/verify-or', [
+    $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number'    => '0000000',
         'receipt_date' => now()->toDateString(),
     ])->assertStatus(422)
@@ -185,7 +185,7 @@ test('verify-or fails when the cashier API is down', function () {
 
     makeVerifyOrStudent();
 
-    $this->postJson('/api/document-requests/verify-or', [
+    $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number'    => '1234567',
         'receipt_date' => now()->toDateString(),
     ])->assertStatus(422)
@@ -200,7 +200,7 @@ test('verify-or rejects an OR number already used on a previous request without 
     ['user' => $user] = makeVerifyOrStudent();
     DocumentRequest::factory()->create(['or_number' => '9999999', 'user_id' => $user->user_id]);
 
-    $this->postJson('/api/document-requests/verify-or', [
+    $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number'    => '9999999',
         'receipt_date' => now()->toDateString(),
     ])->assertStatus(422)
@@ -213,7 +213,7 @@ test('verify-or does NOT create a DocumentRequest even on success', function () 
     config(['services.cashier.api_key' => '']);
     makeVerifyOrStudent();
 
-    $this->postJson('/api/document-requests/verify-or', [
+    $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number'    => '1234567',
         'receipt_date' => now()->toDateString(),
     ])->assertOk();
@@ -225,7 +225,7 @@ test('verify-or writes the same cashier_verification audit log entry as store()'
     config(['services.cashier.api_key' => '']);
     makeVerifyOrStudent();
 
-    $this->postJson('/api/document-requests/verify-or', [
+    $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number'    => '1234567',
         'receipt_date' => now()->toDateString(),
     ])->assertOk();
@@ -247,8 +247,8 @@ test('verify-or is throttled after repeated calls', function () {
     $payload = ['or_number' => '1234567', 'receipt_date' => now()->toDateString()];
 
     for ($i = 0; $i < 10; $i++) {
-        $this->postJson('/api/document-requests/verify-or', $payload)->assertOk();
+        $this->postJson('/api/v1/document-requests/verify-or', $payload)->assertOk();
     }
 
-    $this->postJson('/api/document-requests/verify-or', $payload)->assertStatus(429);
+    $this->postJson('/api/v1/document-requests/verify-or', $payload)->assertStatus(429);
 });

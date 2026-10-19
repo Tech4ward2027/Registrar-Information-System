@@ -61,12 +61,12 @@ test('the register endpoint holds at its real configured per-IP-per-minute defau
     expect($limit)->toBeGreaterThan(0);
 
     for ($i = 0; $i < $limit; $i++) {
-        $this->postJson('/api/undergrad-requestors/register', ratelimitBurstPayload())
+        $this->postJson('/api/v1/undergrad-requestors/register', ratelimitBurstPayload())
             ->assertCreated();
     }
 
     // One request past the ceiling, same window, same IP: blocked.
-    $this->postJson('/api/undergrad-requestors/register', ratelimitBurstPayload())
+    $this->postJson('/api/v1/undergrad-requestors/register', ratelimitBurstPayload())
         ->assertStatus(429)
         ->assertJsonStructure(['message'])
         ->assertJsonMissingPath('bucket'); // never leak which bucket tripped to the caller
@@ -80,16 +80,16 @@ test('the register endpoint recovers once the per-minute window rolls over', fun
     $limit = (int) config('undergrad_requestor.rate_limits.register_per_ip_per_minute');
 
     for ($i = 0; $i < $limit; $i++) {
-        $this->postJson('/api/undergrad-requestors/register', ratelimitBurstPayload())
+        $this->postJson('/api/v1/undergrad-requestors/register', ratelimitBurstPayload())
             ->assertCreated();
     }
 
-    $this->postJson('/api/undergrad-requestors/register', ratelimitBurstPayload())
+    $this->postJson('/api/v1/undergrad-requestors/register', ratelimitBurstPayload())
         ->assertStatus(429);
 
     $this->travel(61)->seconds();
 
-    $this->postJson('/api/undergrad-requestors/register', ratelimitBurstPayload())
+    $this->postJson('/api/v1/undergrad-requestors/register', ratelimitBurstPayload())
         ->assertCreated();
 });
 
@@ -103,19 +103,19 @@ test('the confirm-email endpoint throttles a burst of guesses against one addres
     config()->set('undergrad_requestor.rate_limits.confirm_per_ip_per_minute', 3);
 
     $payload = ratelimitBurstPayload();
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
     // Each guess is deliberately wrong — the limiter must count attempts,
     // not successes, since a token-guessing attacker only ever produces
     // failures until the one guess that matters.
     for ($i = 0; $i < 3; $i++) {
-        $this->postJson('/api/undergrad-requestors/confirm-email', [
+        $this->postJson('/api/v1/undergrad-requestors/confirm-email', [
             'email' => $payload['email'],
             'token' => str_repeat((string) $i, 40),
         ])->assertUnprocessable();
     }
 
-    $this->postJson('/api/undergrad-requestors/confirm-email', [
+    $this->postJson('/api/v1/undergrad-requestors/confirm-email', [
         'email' => $payload['email'],
         'token' => str_repeat('9', 40),
     ])->assertStatus(429);
@@ -134,15 +134,15 @@ test('the confirm-email per-email-per-hour bucket survives the caller switching 
     config()->set('undergrad_requestor.rate_limits.confirm_per_email_per_hour', 2);
 
     $payload = ratelimitBurstPayload();
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
-    $this->postJson('/api/undergrad-requestors/confirm-email', [
+    $this->postJson('/api/v1/undergrad-requestors/confirm-email', [
         'email' => $payload['email'],
         'token' => str_repeat('a', 40),
     ])->assertUnprocessable();
 
     $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.20'])
-        ->postJson('/api/undergrad-requestors/confirm-email', [
+        ->postJson('/api/v1/undergrad-requestors/confirm-email', [
             'email' => $payload['email'],
             'token' => str_repeat('b', 40),
         ])->assertUnprocessable();
@@ -150,7 +150,7 @@ test('the confirm-email per-email-per-hour bucket survives the caller switching 
     // Third guess against the same address, third distinct IP — only the
     // per-email bucket can still be watching at this point.
     $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.55'])
-        ->postJson('/api/undergrad-requestors/confirm-email', [
+        ->postJson('/api/v1/undergrad-requestors/confirm-email', [
             'email' => $payload['email'],
             'token' => str_repeat('c', 40),
         ])->assertStatus(429);
@@ -164,10 +164,10 @@ test('the registration-notice endpoint throttles a burst but never writes a secu
     config()->set('undergrad_requestor.rate_limits.notice_per_ip_per_minute', 3);
 
     for ($i = 0; $i < 3; $i++) {
-        $this->getJson('/api/undergrad-requestors/registration-notice')->assertOk();
+        $this->getJson('/api/v1/undergrad-requestors/registration-notice')->assertOk();
     }
 
-    $this->getJson('/api/undergrad-requestors/registration-notice')->assertStatus(429);
+    $this->getJson('/api/v1/undergrad-requestors/registration-notice')->assertStatus(429);
 
     // Deliberate: this bucket has no ->response() hook (see
     // AppServiceProvider::registerRateLimiters()'s docblock on the

@@ -38,7 +38,7 @@ test('a Super Admin cannot revoke their own role assignment', function () {
 
     Sanctum::actingAs($superAdmin);
 
-    $this->postJson("/api/role-assignments/{$ownAssignment->id}/revoke", ['reason' => 'testing'])
+    $this->postJson("/api/v1/role-assignments/{$ownAssignment->id}/revoke", ['reason' => 'testing'])
         ->assertStatus(403)
         ->assertJson(['message' => 'You cannot revoke your own role assignment.']);
 
@@ -65,7 +65,7 @@ test('a Super Admin can revoke another users role assignment', function () {
 
     Sanctum::actingAs($superAdmin);
 
-    $this->postJson("/api/role-assignments/{$adminAssignment->id}/revoke", ['reason' => 'testing'])
+    $this->postJson("/api/v1/role-assignments/{$adminAssignment->id}/revoke", ['reason' => 'testing'])
         ->assertOk();
 
     expect($adminAssignment->fresh()->status)->toBe(RoleAssignment::STATUS_REVOKED);
@@ -91,7 +91,7 @@ test('a Super Admin can edit the policy on an Active Admin role assignment in pl
 
     Sanctum::actingAs($superAdmin);
 
-    $this->patchJson("/api/role-assignments/{$assignment->id}/policy", ['policy_id' => $newPolicy->policy_id])
+    $this->patchJson("/api/v1/role-assignments/{$assignment->id}/policy", ['policy_id' => $newPolicy->policy_id])
         ->assertOk()
         ->assertJsonPath('data.policy.policy_id', $newPolicy->policy_id);
 
@@ -112,7 +112,7 @@ test('editing the policy on a non-Admin role assignment is rejected', function (
 
     Sanctum::actingAs($superAdmin);
 
-    $this->patchJson("/api/role-assignments/{$assignment->id}/policy", ['policy_id' => $policy->policy_id])
+    $this->patchJson("/api/v1/role-assignments/{$assignment->id}/policy", ['policy_id' => $policy->policy_id])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['role_id']);
 });
@@ -130,7 +130,7 @@ test('editing the policy fails validation for a nonexistent policy_id', function
 
     Sanctum::actingAs($superAdmin);
 
-    $this->patchJson("/api/role-assignments/{$assignment->id}/policy", ['policy_id' => 999])
+    $this->patchJson("/api/v1/role-assignments/{$assignment->id}/policy", ['policy_id' => 999])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['policy_id']);
 });
@@ -151,6 +151,6 @@ test('a non-Super-Admin cannot edit a role assignment policy', function () {
 
     // Route middleware 'role:4' rejects this before it ever reaches the
     // controller/policy — 403, same as any other role:4 group route.
-    $this->patchJson("/api/role-assignments/{$assignment->id}/policy", ['policy_id' => $policy->policy_id])
+    $this->patchJson("/api/v1/role-assignments/{$assignment->id}/policy", ['policy_id' => $policy->policy_id])
         ->assertStatus(403);
 });

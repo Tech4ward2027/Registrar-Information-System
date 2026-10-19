@@ -60,14 +60,14 @@ test('student cannot close a request as unable to process', function () {
     RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertStatus(403);
 });
 
 test('close-unable-to-process returns 404 for a missing request', function () {
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/999999/close-unable-to-process', cutpValidPayload())
+    $this->postJson('/api/v1/document-requests/999999/close-unable-to-process', cutpValidPayload())
         ->assertStatus(404);
 });
 
@@ -80,7 +80,7 @@ test('cannot close a request with no Deficiency Notice at all', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertStatus(422);
 
     $this->assertDatabaseHas('document_request', [
@@ -95,7 +95,7 @@ test('cannot close a request whose only notice is already cleared', function () 
     RequestRemark::factory()->cleared()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertStatus(422);
 });
 
@@ -105,7 +105,7 @@ test('cannot close a request whose only notice is already voided', function () {
     RequestRemark::factory()->voided()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertStatus(422);
 });
 
@@ -115,7 +115,7 @@ test('admin can close a request that has an open Deficiency Notice', function ()
     $notice = RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     $admin  = cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertOk()
         ->assertJsonPath('status_id', RequestStatusEnum::ClosedUnableToProcess->value)
         ->assertJsonPath('closure_reason', ClosureReasonEnum::RequestorDeceased->value);
@@ -143,7 +143,7 @@ test('admin can close a request from AwaitingSubmission', function () {
     RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertOk()
         ->assertJsonPath('status_id', RequestStatusEnum::ClosedUnableToProcess->value);
 });
@@ -154,7 +154,7 @@ test('admin can close a request from PendingSignature', function () {
     RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertOk()
         ->assertJsonPath('status_id', RequestStatusEnum::ClosedUnableToProcess->value);
 });
@@ -169,7 +169,7 @@ test('cannot close a request that is ReadyToClaim, even with an open notice', fu
     RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertStatus(422);
 });
 
@@ -178,7 +178,7 @@ test('cannot close an already-Withdrawn request', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Withdrawn->value]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertStatus(422);
 });
 
@@ -191,7 +191,7 @@ test('cannot close an archived request', function () {
     ]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertStatus(404); // ExcludeArchivedScope, same as withdraw()
 });
 
@@ -205,7 +205,7 @@ test('closure_reason is required', function () {
     RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", [
         'closure_proof_reference' => 'Death certificate on file.',
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['closure_reason']);
@@ -217,7 +217,7 @@ test('closure_reason must be a valid enum value', function () {
     RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload([
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload([
         'closure_reason' => 'not_a_real_reason',
     ]))->assertStatus(422)
        ->assertJsonValidationErrors(['closure_reason']);
@@ -229,7 +229,7 @@ test('closure_proof_reference is required regardless of reason', function () {
     RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", [
         'closure_reason' => ClosureReasonEnum::RequestorDeceased->value,
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['closure_proof_reference']);
@@ -241,7 +241,7 @@ test('other requires closure_detail', function () {
     RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload([
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload([
         'closure_reason' => ClosureReasonEnum::Other->value,
     ]))->assertStatus(422)
        ->assertJsonValidationErrors(['closure_detail']);
@@ -253,7 +253,7 @@ test('other with closure_detail succeeds', function () {
     RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload([
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload([
         'closure_reason' => ClosureReasonEnum::Other->value,
         'closure_detail' => 'Requestor confirmed incompetent by court order; guardian cannot comply.',
     ]))->assertOk()
@@ -274,7 +274,7 @@ test('closing a request notifies the owner with the resolved closure reason', fu
     RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertOk();
 
     $notification = Notification::where('notifiable_id', $owner->user_id)
@@ -293,7 +293,7 @@ test('closing writes ACTION_REQUEST_CLOSED_UNABLE_TO_PROCESS and a distinct void
     $notice = RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     $admin  = cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertOk();
 
     $this->assertDatabaseHas('audit_logs', [
@@ -313,7 +313,7 @@ test('closing a request writes a request_history row', function () {
     RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertOk();
 
     $this->assertDatabaseHas('request_history', [
@@ -336,7 +336,7 @@ test('a ClosedUnableToProcess request is excluded from processing-time averages 
     RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     cutpMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/close-unable-to-process", cutpValidPayload())
         ->assertOk();
 
     $range   = [now()->subDay(), now()->addDay()];

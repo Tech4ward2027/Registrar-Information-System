@@ -227,7 +227,7 @@ test('filing with more than 20 certificate line items is rejected with a 422 val
     // SIZE, not the content of each item.
     $certificates = array_fill(0, 21, ['certificate_type_id' => $certType->certificate_type_id, 'number_of_copies' => 1]);
 
-    $this->postJson('/api/free-requests', [
+    $this->postJson('/api/v1/free-requests', [
         'target_user_id'     => $alumni->user_id,
         'request_purpose_id' => frhPurposeId(),
         'certificates'       => $certificates,
@@ -242,7 +242,7 @@ test('the eligibility pre-check applies the same 20-item cap as filing', functio
 
     $certificates = array_fill(0, 21, ['certificate_type_id' => $certType->certificate_type_id]);
 
-    $this->postJson('/api/free-requests/eligibility', [
+    $this->postJson('/api/v1/free-requests/eligibility', [
         'target_user_id' => $alumni->user_id,
         'certificates'   => $certificates,
     ])->assertStatus(422)
@@ -263,9 +263,9 @@ test('filing more than 10 free requests within a minute is throttled with a 429'
     ];
 
     for ($i = 0; $i < 10; $i++) {
-        $this->postJson('/api/free-requests', $payload)->assertCreated();
+        $this->postJson('/api/v1/free-requests', $payload)->assertCreated();
     }
 
     // The 11th request in the same minute, from the same admin, must be throttled.
-    $this->postJson('/api/free-requests', $payload)->assertStatus(429);
+    $this->postJson('/api/v1/free-requests', $payload)->assertStatus(429);
 });

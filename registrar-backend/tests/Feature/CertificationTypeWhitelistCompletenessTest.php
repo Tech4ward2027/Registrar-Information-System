@@ -98,7 +98,7 @@ test('the certifications index endpoint actually returns is_free_eligible and fr
         'free_issuance_limit'        => 1,
     ]);
 
-    $response = $this->getJson('/api/certifications');
+    $response = $this->getJson('/api/v1/certifications');
 
     $response->assertOk();
 

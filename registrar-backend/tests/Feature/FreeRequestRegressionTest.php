@@ -23,7 +23,7 @@ uses(RefreshDatabase::class);
  *     pre-existing call site (chiefly DocumentRequestController::store())
  *     that only ever passes ($user, $validated) keeps creating
  *     self_service requests exactly as before.
- *   - The real self-service HTTP endpoint (POST /api/document-requests)
+ *   - The real self-service HTTP endpoint (POST /api/v1/document-requests)
  *     still works end-to-end for a student/alumni submitting for
  *     themselves, with no free-request machinery (FreeRequestService,
  *     FreeRequestEligibilityService, graduate_verifications) touched
@@ -73,7 +73,7 @@ test('createRequest() defaults to the self_service channel when called without a
     expect($documentRequest->graduateVerification)->toBeNull();
 });
 
-test('a plain self-service submission via POST /api/document-requests (no OR number) still succeeds and is channeled self_service', function () {
+test('a plain self-service submission via POST /api/v1/document-requests (no OR number) still succeeds and is channeled self_service', function () {
     $student = frrMakeStudent();
     $docType = DocumentType::create([
         'document_name'           => 'Test Fixture Regression HTTP Doc',
@@ -82,7 +82,7 @@ test('a plain self-service submission via POST /api/document-requests (no OR num
         'access_id'               => 3,
     ]);
 
-    $response = $this->postJson('/api/document-requests', [
+    $response = $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => frrPurposeId(),
         'documents'          => [['document_type_id' => $docType->document_type_id, 'number_of_copies' => 1]],
     ]);

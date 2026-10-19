@@ -54,7 +54,7 @@ test('student cannot issue a deficiency notice', function () {
         'status_id' => RequestStatusEnum::Processing->value,
     ]);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::MissingSignature->value,
     ])->assertStatus(403);
 });
@@ -62,7 +62,7 @@ test('student cannot issue a deficiency notice', function () {
 test('issuing a notice on a missing request returns 404', function () {
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/999999/deficiency-notices', [
+    $this->postJson('/api/v1/document-requests/999999/deficiency-notices', [
         'item_key' => DeficiencyItemEnum::MissingSignature->value,
     ])->assertStatus(404);
 });
@@ -76,7 +76,7 @@ test('admin can issue a deficiency notice', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     $admin  = deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::MissingSignature->value,
     ])
         ->assertCreated()
@@ -102,7 +102,7 @@ test('issuing a notice does not change document_request.status_id', function () 
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::MissingValidId->value,
     ])->assertCreated();
 
@@ -121,7 +121,7 @@ test('item_key is required', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [])
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['item_key']);
 });
@@ -131,7 +131,7 @@ test('item_key must be a valid enum value', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => 'not_a_real_item',
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['item_key']);
@@ -142,7 +142,7 @@ test('other requires detail', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::Other->value,
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['detail']);
@@ -153,7 +153,7 @@ test('other with detail succeeds', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::Other->value,
         'detail'   => 'Missing notarized affidavit of loss.',
     ])->assertCreated()
@@ -165,7 +165,7 @@ test('item_label cannot be supplied by the client', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key'   => DeficiencyItemEnum::MissingSignature->value,
         'item_label' => 'Something else entirely',
     ])->assertCreated()
@@ -181,11 +181,11 @@ test('cannot issue a second open notice while one is already open', function () 
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::MissingSignature->value,
     ])->assertCreated();
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::MissingValidId->value,
     ])->assertStatus(422);
 
@@ -197,13 +197,13 @@ test('a new notice can be issued once the prior one is cleared', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $first = $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $first = $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::MissingSignature->value,
     ])->assertCreated()->json();
 
-    $this->postJson("/api/deficiency-notices/{$first['remark_id']}/clear")->assertOk();
+    $this->postJson("/api/v1/deficiency-notices/{$first['remark_id']}/clear")->assertOk();
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::MissingValidId->value,
     ])->assertCreated();
 
@@ -221,7 +221,7 @@ test('cannot issue a notice against an archived request', function () {
 
     // ExcludeArchivedScope means the route's implicit binding 404s on an
     // archived request — same as every other write route on this model.
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::MissingSignature->value,
     ])->assertStatus(404);
 });
@@ -231,7 +231,7 @@ test('cannot issue a notice against a withdrawn request', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Withdrawn->value]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::MissingSignature->value,
     ])->assertStatus(422);
 
@@ -247,7 +247,7 @@ test('student cannot clear a deficiency notice', function () {
     $remark = RequestRemark::factory()->create();
     deficiencyMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/clear")->assertStatus(403);
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/clear")->assertStatus(403);
 });
 
 test('admin can clear an open notice', function () {
@@ -255,7 +255,7 @@ test('admin can clear an open notice', function () {
     $remark = RequestRemark::factory()->create();
     $admin  = deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/clear")
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/clear")
         ->assertOk()
         ->assertJsonPath('status', RequestRemark::STATUS_CLEARED);
 
@@ -276,7 +276,7 @@ test('cannot clear an already-cleared notice', function () {
     $remark = RequestRemark::factory()->cleared()->create();
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/clear")->assertStatus(422);
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/clear")->assertStatus(422);
 });
 
 test('cannot clear an already-voided notice', function () {
@@ -284,7 +284,7 @@ test('cannot clear an already-voided notice', function () {
     $remark = RequestRemark::factory()->voided()->create();
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/clear")->assertStatus(422);
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/clear")->assertStatus(422);
 });
 
 test('clearing a notice does not change document_request.status_id', function () {
@@ -293,7 +293,7 @@ test('clearing a notice does not change document_request.status_id', function ()
     $remark = RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/clear")->assertOk();
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/clear")->assertOk();
 
     $this->assertDatabaseHas('document_request', [
         'request_id' => $docReq->request_id,
@@ -310,7 +310,7 @@ test('admin can void an open notice with a reason', function () {
     $remark = RequestRemark::factory()->create();
     $admin  = deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/void", [
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/void", [
         'void_reason' => 'Student confirmed deceased; family notified the office.',
     ])
         ->assertOk()
@@ -328,7 +328,7 @@ test('void_reason is required', function () {
     $remark = RequestRemark::factory()->create();
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/void", [])
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/void", [])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['void_reason']);
 });
@@ -338,7 +338,7 @@ test('cannot void an already-resolved notice', function () {
     $remark = RequestRemark::factory()->cleared()->create();
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/void", [
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/void", [
         'void_reason' => 'Too late, already cleared.',
     ])->assertStatus(422);
 });
@@ -349,7 +349,7 @@ test('voiding a notice does not auto-transition the parent request status', func
     $remark = RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/void", [
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/void", [
         'void_reason' => 'Student unreachable after repeated attempts.',
     ])->assertOk();
 
@@ -372,7 +372,7 @@ test('issuing a notice notifies the owner with the item label', function () {
     ]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::MissingSignature->value,
     ])->assertCreated();
 
@@ -395,7 +395,7 @@ test('issuing a notice with item_key "other" substitutes the staff-entered detai
     ]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::Other->value,
         'detail'   => 'Missing notarized affidavit of loss.',
     ])->assertCreated();
@@ -416,7 +416,7 @@ test('clearing a notice notifies the owner that processing has resumed', functio
     $remark = RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/clear")->assertOk();
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/clear")->assertOk();
 
     $notification = Notification::where('notifiable_id', $owner->user_id)
         ->where('notifiable_type', SystemUser::class)
@@ -435,7 +435,7 @@ test('voiding a notice notifies the owner with the void reason', function () {
     $remark = RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/void", [
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/void", [
         'void_reason' => 'Student confirmed deceased; family notified the office.',
     ])->assertOk();
 
@@ -459,7 +459,7 @@ test('show() includes the open deficiency notice', function () {
     RequestRemark::factory()->create(['request_id' => $docReq->request_id]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->getJson("/api/document-requests/{$docReq->request_id}")
+    $this->getJson("/api/v1/document-requests/{$docReq->request_id}")
         ->assertOk()
         ->assertJsonPath('open_deficiency_notice.status', RequestRemark::STATUS_OPEN)
         ->assertJsonPath('open_deficiency_notice.item_key', DeficiencyItemEnum::MissingSignature->value);
@@ -471,7 +471,7 @@ test('show() omits the notice once cleared', function () {
     RequestRemark::factory()->cleared()->create(['request_id' => $docReq->request_id]);
     deficiencyMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->getJson("/api/document-requests/{$docReq->request_id}")
+    $this->getJson("/api/v1/document-requests/{$docReq->request_id}")
         ->assertOk()
         ->assertJsonPath('open_deficiency_notice', null);
 });

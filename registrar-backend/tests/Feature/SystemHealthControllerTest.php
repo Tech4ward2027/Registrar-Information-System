@@ -42,9 +42,9 @@ function shAlert(array $overrides = []): SystemAlert
 }
 
 $endpoints = [
-    '/api/system-analytics/cashier-trend',
-    '/api/system-analytics/provisioning-health',
-    '/api/system-analytics/alerts',
+    '/api/v1/system-analytics/cashier-trend',
+    '/api/v1/system-analytics/provisioning-health',
+    '/api/v1/system-analytics/alerts',
 ];
 
 test('system health endpoints reject unauthenticated, student and plain-admin callers', function () use ($endpoints) {
@@ -67,7 +67,7 @@ test('a plain admin cannot acknowledge an alert', function () {
     $alert = shAlert();
     shActAs(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/system-analytics/alerts/{$alert->system_alert_id}/acknowledge")->assertForbidden();
+    $this->postJson("/api/v1/system-analytics/alerts/{$alert->system_alert_id}/acknowledge")->assertForbidden();
     expect($alert->fresh()->status)->toBe(SystemAlert::STATUS_OPEN);
 });
 
@@ -79,7 +79,7 @@ test('every system health route is 404 while the feature flag is off', function 
     foreach ($endpoints as $url) {
         $this->getJson($url)->assertNotFound();
     }
-    $this->postJson("/api/system-analytics/alerts/{$alert->system_alert_id}/acknowledge")->assertNotFound();
+    $this->postJson("/api/v1/system-analytics/alerts/{$alert->system_alert_id}/acknowledge")->assertNotFound();
 });
 
 test('alerts lists open alerts by default and filters by status', function () {
@@ -87,21 +87,21 @@ test('alerts lists open alerts by default and filters by status', function () {
     shAlert();
     shAlert(['status' => SystemAlert::STATUS_ACKNOWLEDGED]);
 
-    $open = $this->getJson('/api/system-analytics/alerts')->assertOk();
+    $open = $this->getJson('/api/v1/system-analytics/alerts')->assertOk();
     expect($open->json('data'))->toHaveCount(1)
         ->and($open->json('meta.total'))->toBe(1);
 
-    $all = $this->getJson('/api/system-analytics/alerts?status=all')->assertOk();
+    $all = $this->getJson('/api/v1/system-analytics/alerts?status=all')->assertOk();
     expect($all->json('data'))->toHaveCount(2);
 
-    $this->getJson('/api/system-analytics/alerts?status=bogus')->assertUnprocessable();
+    $this->getJson('/api/v1/system-analytics/alerts?status=bogus')->assertUnprocessable();
 });
 
 test('acknowledge moves an open alert to acknowledged, records who, and writes an audit row', function () {
     $admin = shActAs(SystemUser::ROLE_SUPER_ADMIN);
     $alert = shAlert();
 
-    $this->postJson("/api/system-analytics/alerts/{$alert->system_alert_id}/acknowledge")
+    $this->postJson("/api/v1/system-analytics/alerts/{$alert->system_alert_id}/acknowledge")
         ->assertOk()
         ->assertJsonPath('data.status', SystemAlert::STATUS_ACKNOWLEDGED);
 
@@ -119,9 +119,9 @@ test('acknowledging twice, or an unknown alert, is rejected cleanly', function (
     shActAs(SystemUser::ROLE_SUPER_ADMIN);
     $alert = shAlert();
 
-    $this->postJson("/api/system-analytics/alerts/{$alert->system_alert_id}/acknowledge")->assertOk();
-    $this->postJson("/api/system-analytics/alerts/{$alert->system_alert_id}/acknowledge")->assertStatus(409);
-    $this->postJson('/api/system-analytics/alerts/999999/acknowledge')->assertNotFound();
+    $this->postJson("/api/v1/system-analytics/alerts/{$alert->system_alert_id}/acknowledge")->assertOk();
+    $this->postJson("/api/v1/system-analytics/alerts/{$alert->system_alert_id}/acknowledge")->assertStatus(409);
+    $this->postJson('/api/v1/system-analytics/alerts/999999/acknowledge')->assertNotFound();
 
     expect(AuditLog::where('action', AuditLog::ACTION_SYSTEM_ALERT_ACKNOWLEDGED)->count())->toBe(1);
 });
@@ -129,19 +129,19 @@ test('acknowledging twice, or an unknown alert, is rejected cleanly', function (
 test('cashier-trend returns a zero-filled series for the requested window and clamps days', function () {
     shActAs(SystemUser::ROLE_SUPER_ADMIN);
 
-    $r = $this->getJson('/api/system-analytics/cashier-trend?days=7')->assertOk();
+    $r = $this->getJson('/api/v1/system-analytics/cashier-trend?days=7')->assertOk();
     expect($r->json('data.series'))->toHaveCount(7)
         ->and($r->json('data.series.0.failure_rate'))->toBeNull()
         ->and($r->json('data.unresolved_labels'))->toBe(0);
 
-    $big = $this->getJson('/api/system-analytics/cashier-trend?days=5000')->assertOk();
+    $big = $this->getJson('/api/v1/system-analytics/cashier-trend?days=5000')->assertOk();
     expect($big->json('data.series'))->toHaveCount(90);
 });
 
 test('provisioning-health returns per-system series', function () {
     shActAs(SystemUser::ROLE_SUPER_ADMIN);
 
-    $r = $this->getJson('/api/system-analytics/provisioning-health?days=5')->assertOk();
+    $r = $this->getJson('/api/v1/system-analytics/provisioning-health?days=5')->assertOk();
     expect($r->json('data.series'))->toHaveCount(5)
         ->and($r->json('data.series.0'))->toHaveKeys(['date', 'ogos', 'puptaps']);
 });

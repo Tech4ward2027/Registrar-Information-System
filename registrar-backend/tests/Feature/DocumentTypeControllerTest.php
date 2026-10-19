@@ -63,7 +63,7 @@ test('any authenticated role can list document types', function () {
     $type = docTypeMakeType();
     docTypeMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->getJson('/api/document-types')
+    $this->getJson('/api/v1/document-types')
          ->assertOk()
          ->assertJsonFragment(['document_type_id' => $type->document_type_id]);
 });
@@ -71,7 +71,7 @@ test('any authenticated role can list document types', function () {
 test('show returns 404 for a missing document type', function () {
     docTypeMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->getJson('/api/document-types/999')
+    $this->getJson('/api/v1/document-types/999')
          ->assertStatus(404)
          ->assertJson(['message' => 'Document type not found']);
 });
@@ -80,7 +80,7 @@ test('show returns the document type for a valid id', function () {
     $docType = docTypeMakeType();
     docTypeMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->getJson("/api/document-types/{$docType->document_type_id}")
+    $this->getJson("/api/v1/document-types/{$docType->document_type_id}")
          ->assertOk()
          ->assertJsonPath('document_type_id', $docType->document_type_id);
 });
@@ -93,7 +93,7 @@ test('student cannot create a document type', function () {
     docTypeSeedAccessType();
     docTypeMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->postJson('/api/document-types', [
+    $this->postJson('/api/v1/document-types', [
         'document_name' => 'Certificate of Good Moral Character',
         'access_id'     => 1,
     ])->assertStatus(403);
@@ -103,7 +103,7 @@ test('admin can create a document type with valid data', function () {
     docTypeSeedAccessType();
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-types', [
+    $this->postJson('/api/v1/document-types', [
         'document_name'           => 'Certificate of Good Moral Character',
         'document_description'    => 'For employment purposes',
         'document_requirements'   => 'None',
@@ -116,7 +116,7 @@ test('admin can create a document type with valid data', function () {
 test('store fails validation when document_name is missing', function () {
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-types', [
+    $this->postJson('/api/v1/document-types', [
         'access_id' => 1,
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['document_name']);
@@ -125,7 +125,7 @@ test('store fails validation when document_name is missing', function () {
 test('store fails validation when document_name exceeds max length', function () {
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-types', [
+    $this->postJson('/api/v1/document-types', [
         'document_name' => str_repeat('a', 101),
         'access_id'     => 1,
     ])->assertStatus(422)
@@ -135,7 +135,7 @@ test('store fails validation when document_name exceeds max length', function ()
 test('store fails validation when access_id does not reference an existing access type', function () {
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-types', [
+    $this->postJson('/api/v1/document-types', [
         'document_name' => 'Certificate of Good Moral Character',
         'access_id'     => 999, // no access_type row with this id
     ])->assertStatus(422)
@@ -150,7 +150,7 @@ test('student cannot update a document type', function () {
     $docType = docTypeMakeType();
     docTypeMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->putJson("/api/document-types/{$docType->document_type_id}", [
+    $this->putJson("/api/v1/document-types/{$docType->document_type_id}", [
         'document_name' => 'Renamed',
     ])->assertStatus(403);
 });
@@ -159,7 +159,7 @@ test('admin can partially update a document type', function () {
     $docType = docTypeMakeType();
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson("/api/document-types/{$docType->document_type_id}", [
+    $this->putJson("/api/v1/document-types/{$docType->document_type_id}", [
         'document_name' => 'Updated Name',
     ])->assertOk()
       ->assertJsonPath('document_name', 'Updated Name');
@@ -168,7 +168,7 @@ test('admin can partially update a document type', function () {
 test('update returns 404 for a missing document type', function () {
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson('/api/document-types/999', [
+    $this->putJson('/api/v1/document-types/999', [
         'document_name' => 'Whatever',
     ])->assertStatus(404);
 });
@@ -177,7 +177,7 @@ test('update fails validation when document_name is too long', function () {
     $docType = docTypeMakeType();
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson("/api/document-types/{$docType->document_type_id}", [
+    $this->putJson("/api/v1/document-types/{$docType->document_type_id}", [
         'document_name' => str_repeat('a', 101),
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['document_name']);
@@ -187,7 +187,7 @@ test('update fails validation when access_id does not reference an existing acce
     $docType = docTypeMakeType();
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson("/api/document-types/{$docType->document_type_id}", [
+    $this->putJson("/api/v1/document-types/{$docType->document_type_id}", [
         'access_id' => 999,
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['access_id']);
@@ -200,7 +200,7 @@ test('update fails validation when access_id does not reference an existing acce
 test('destroy returns 404 for a missing document type', function () {
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->deleteJson('/api/document-types/999')
+    $this->deleteJson('/api/v1/document-types/999')
          ->assertStatus(404);
 });
 
@@ -208,7 +208,7 @@ test('admin can delete an unreferenced document type', function () {
     $docType = docTypeMakeType();
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->deleteJson("/api/document-types/{$docType->document_type_id}")
+    $this->deleteJson("/api/v1/document-types/{$docType->document_type_id}")
          ->assertOk()
          ->assertJson(['message' => 'Document type deleted']);
 
@@ -232,7 +232,7 @@ test('archive fails validation when reason exceeds max length', function () {
     $docType = docTypeMakeType();
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson("/api/document-types/{$docType->document_type_id}/archive", [
+    $this->patchJson("/api/v1/document-types/{$docType->document_type_id}/archive", [
         'reason' => str_repeat('a', 501),
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['reason']);
@@ -242,7 +242,7 @@ test('admin can archive a document type with no active requests', function () {
     $docType = docTypeMakeType();
     $admin = docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson("/api/document-types/{$docType->document_type_id}/archive", [
+    $this->patchJson("/api/v1/document-types/{$docType->document_type_id}/archive", [
         'reason' => 'No longer offered',
     ])->assertOk()
       ->assertJsonPath('is_archived', true);
@@ -266,7 +266,7 @@ test('archiving is blocked while an active request still uses the document type'
 
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson("/api/document-types/{$docType->document_type_id}/archive", [])
+    $this->patchJson("/api/v1/document-types/{$docType->document_type_id}/archive", [])
          ->assertStatus(422)
          ->assertJsonPath('active_requests', 1);
 
@@ -280,7 +280,7 @@ test('archiving an already-archived document type is a no-op that returns 200', 
     $docType = docTypeMakeType(['is_archived' => true, 'archived_on' => now(), 'archived_by' => null]);
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson("/api/document-types/{$docType->document_type_id}/archive", [])
+    $this->patchJson("/api/v1/document-types/{$docType->document_type_id}/archive", [])
          ->assertOk()
          ->assertJsonPath('is_archived', true);
 });
@@ -289,7 +289,7 @@ test('admin can restore an archived document type', function () {
     $docType = docTypeMakeType(['is_archived' => true, 'archived_on' => now(), 'archived_by' => null]);
     docTypeMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson("/api/document-types/{$docType->document_type_id}/restore")
+    $this->patchJson("/api/v1/document-types/{$docType->document_type_id}/restore")
          ->assertOk()
          ->assertJsonPath('is_archived', false);
 });

@@ -151,7 +151,7 @@ services:
       # talks to localhost:5173. Vite's dev-server proxy (vite.config.js)
       # forwards /api, /broadcasting, and /app to the real backend/reverb
       # containers behind the scenes — same trick CloudFront does in prod.
-      VITE_API_URL: /api
+      VITE_API_URL: /api/v1
       VITE_REVERB_APP_KEY: local
       VITE_REVERB_HOST: localhost
       VITE_REVERB_PORT: "5173"

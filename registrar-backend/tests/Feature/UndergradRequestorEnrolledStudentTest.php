@@ -38,7 +38,7 @@ uses(RefreshDatabase::class);
 
 function esrRequest(): Request
 {
-    return Request::create('/api/auth/callback', 'POST');
+    return Request::create('/api/v1/auth/callback', 'POST');
 }
 
 function esrFakeLookup(OgosEnrollmentLookupResult $result): void
@@ -276,7 +276,7 @@ test('registration is refused when OGOS reports the email as currently enrolled'
     $payload = esrRegistrationPayload();
     esrFakeLookup(esrEnrolledResult($payload['email']));
 
-    $this->postJson('/api/undergrad-requestors/register', $payload)
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)
         ->assertStatus(422)
         ->assertJsonValidationErrors(['email']);
 
@@ -289,7 +289,7 @@ test('registration still succeeds when OGOS does not know the email', function (
     $payload = esrRegistrationPayload();
     esrFakeLookup(OgosEnrollmentLookupResult::noMatch());
 
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
     $this->assertDatabaseHas('users', ['email' => $payload['email']]);
 });
@@ -299,7 +299,7 @@ test('registration fails open when OGOS cannot be asked', function () {
     $payload = esrRegistrationPayload();
     esrFakeLookup(OgosEnrollmentLookupResult::unavailable('OGOS was unreachable at review time.'));
 
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
     $this->assertDatabaseHas('users', ['email' => $payload['email']]);
 });

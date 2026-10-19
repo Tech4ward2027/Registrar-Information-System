@@ -97,36 +97,36 @@ function opcCompletedRequest(DocumentType $type, int $minutesToSignature): Docum
 // ── Access & validation ──────────────────────────────────────────────────────
 
 test('the report requires authentication', function () {
-    $this->getJson('/api/opcr/performance?from=2026-01-01&to=2026-06-30')->assertUnauthorized();
+    $this->getJson('/api/v1/opcr/performance?from=2026-01-01&to=2026-06-30')->assertUnauthorized();
 });
 
 test('a student account cannot read the report', function () {
     $student = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
     Sanctum::actingAs($student);
 
-    $this->getJson('/api/opcr/performance?from=2026-01-01&to=2026-06-30')->assertForbidden();
+    $this->getJson('/api/v1/opcr/performance?from=2026-01-01&to=2026-06-30')->assertForbidden();
 });
 
 test('an admin without the logbook module cannot read the report', function () {
     $admin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($admin);
 
-    $this->getJson('/api/opcr/performance?from=2026-01-01&to=2026-06-30')->assertForbidden();
+    $this->getJson('/api/v1/opcr/performance?from=2026-01-01&to=2026-06-30')->assertForbidden();
 });
 
 test('both dates are required and must be ordered', function () {
     opcStaff();
 
-    $this->getJson('/api/opcr/performance')->assertUnprocessable()->assertJsonValidationErrors(['from', 'to']);
-    $this->getJson('/api/opcr/performance?from=2026-06-30&to=2026-01-01')->assertUnprocessable()->assertJsonValidationErrors(['to']);
-    $this->getJson('/api/opcr/performance?from=2026/01/01&to=2026-06-30')->assertUnprocessable()->assertJsonValidationErrors(['from']);
+    $this->getJson('/api/v1/opcr/performance')->assertUnprocessable()->assertJsonValidationErrors(['from', 'to']);
+    $this->getJson('/api/v1/opcr/performance?from=2026-06-30&to=2026-01-01')->assertUnprocessable()->assertJsonValidationErrors(['to']);
+    $this->getJson('/api/v1/opcr/performance?from=2026/01/01&to=2026-06-30')->assertUnprocessable()->assertJsonValidationErrors(['from']);
 });
 
 test('a range longer than the configured maximum is rejected', function () {
     opcStaff();
     config(['opcr.max_range_days' => 100]);
 
-    $this->getJson('/api/opcr/performance?from=2026-01-01&to=2026-12-31')
+    $this->getJson('/api/v1/opcr/performance?from=2026-01-01&to=2026-12-31')
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['to']);
 });
@@ -136,7 +136,7 @@ test('a range longer than the configured maximum is rejected', function () {
 test('an empty period returns a well-formed empty report', function () {
     opcStaff();
 
-    $this->getJson('/api/opcr/performance?from=2026-01-01&to=2026-06-30')
+    $this->getJson('/api/v1/opcr/performance?from=2026-01-01&to=2026-06-30')
         ->assertOk()
         ->assertJsonPath('categories', [])
         ->assertJsonPath('totals.processed_transactions', 0)
@@ -151,7 +151,7 @@ test('the mean is total counted minutes over processed transactions and ignores 
     opcCompletedRequest($type, 30);
     opcCompletedRequest($type, 90);
 
-    $response = $this->getJson('/api/opcr/performance?from=2026-03-01&to=2026-03-31')->assertOk();
+    $response = $this->getJson('/api/v1/opcr/performance?from=2026-03-01&to=2026-03-31')->assertOk();
 
     $category = $response->json('categories.0');
 
@@ -172,7 +172,7 @@ test('a mean above the target does not meet it', function () {
 
     opcCompletedRequest(opcDocType('Certificate of Grades', '45 minute/s'), 90);
 
-    $this->getJson('/api/opcr/performance?from=2026-03-01&to=2026-03-31')
+    $this->getJson('/api/v1/opcr/performance?from=2026-03-01&to=2026-03-31')
         ->assertOk()
         ->assertJsonPath('categories.0.target_minutes', 45)
         ->assertJsonPath('categories.0.meets_target', false);
@@ -188,11 +188,11 @@ test('forfeited requests and requests outside the period are not counted', funct
 
     opcCompletedRequest($type, 60);
 
-    $this->getJson('/api/opcr/performance?from=2026-04-01&to=2026-06-30')
+    $this->getJson('/api/v1/opcr/performance?from=2026-04-01&to=2026-06-30')
         ->assertOk()
         ->assertJsonPath('totals.processed_transactions', 0);
 
-    $this->getJson('/api/opcr/performance?from=2026-03-01&to=2026-03-31')
+    $this->getJson('/api/v1/opcr/performance?from=2026-03-01&to=2026-03-31')
         ->assertOk()
         ->assertJsonPath('totals.processed_transactions', 1)
         ->assertJsonPath('totals.total_minutes', 60);
@@ -205,7 +205,7 @@ test('a transaction with no usable history is flagged as unmeasured, not average
     $request = opcCompletedRequest($type, 30);
     RequestHistory::where('request_id', $request->request_id)->delete();
 
-    $this->getJson('/api/opcr/performance?from=2026-03-01&to=2026-03-31')
+    $this->getJson('/api/v1/opcr/performance?from=2026-03-01&to=2026-03-31')
         ->assertOk()
         ->assertJsonPath('categories.0.processed_transactions', 0)
         ->assertJsonPath('categories.0.unmeasured_transactions', 1)
@@ -220,7 +220,7 @@ test('the logbook returns the official processing time per request and per item'
     $type    = opcDocType();
     $request = opcCompletedRequest($type, 45);
 
-    $row = collect($this->getJson('/api/document-requests/logbook')->assertOk()->json('data'))
+    $row = collect($this->getJson('/api/v1/document-requests/logbook')->assertOk()->json('data'))
         ->firstWhere('request_id', $request->request_id);
 
     expect($row['processing']['minutes'])->toBe(45)

@@ -45,7 +45,7 @@ function arsRequest(): Request
     // which has one attached by the auth middleware. Sanctum::actingAs()
     // authenticates the guard, but $request->user() on this object still
     // needs to be told to ask it explicitly.
-    $request = Request::create('/api/access-requests', 'POST');
+    $request = Request::create('/api/v1/access-requests', 'POST');
     $request->setUserResolver(fn () => auth()->user());
     return $request;
 }
@@ -357,7 +357,7 @@ test('reject() flushes the analytics cache', function () {
 test('a regular admin with the access_requests module can submit but cannot approve', function () {
     arsActingAdmin();
 
-    $this->postJson('/api/access-requests', [
+    $this->postJson('/api/v1/access-requests', [
         'target_email'      => 'viaapi@example.com',
         'target_first_name' => 'Via',
         'target_last_name'  => 'Api',
@@ -367,7 +367,7 @@ test('a regular admin with the access_requests module can submit but cannot appr
 
     $accessRequest = AccessRequest::where('target_email', 'viaapi@example.com')->firstOrFail();
 
-    $this->postJson("/api/access-requests/{$accessRequest->id}/approve")
+    $this->postJson("/api/v1/access-requests/{$accessRequest->id}/approve")
         ->assertStatus(403);
 });
 
@@ -376,7 +376,7 @@ test('an admin without the access_requests module cannot submit a request', func
     $actor = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated', 'policy_id' => null]);
     Sanctum::actingAs($actor);
 
-    $this->postJson('/api/access-requests', [
+    $this->postJson('/api/v1/access-requests', [
         'target_email'      => 'blocked@example.com',
         'target_first_name' => 'Blocked',
         'target_last_name'  => 'Admin',

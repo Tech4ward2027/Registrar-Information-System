@@ -23,7 +23,7 @@ function ausRequest(): Request
     // has no user resolver bound, so AdminUserService::create()'s call to
     // $request->user() would otherwise return null even after
     // Sanctum::actingAs() authenticates the guard.
-    $request = Request::create('/api/system-users', 'POST');
+    $request = Request::create('/api/v1/system-users', 'POST');
     $request->setUserResolver(fn () => auth()->user());
     return $request;
 }

@@ -44,7 +44,7 @@ test('register creates a Pending Verification user, profile, and verification ro
 
     $payload = undergradRegistrationPayload();
 
-    $response = $this->postJson('/api/undergrad-requestors/register', $payload);
+    $response = $this->postJson('/api/v1/undergrad-requestors/register', $payload);
 
     $response->assertCreated();
     // UndergradRequestorRegistrationResource is a plain JsonResource,
@@ -82,7 +82,7 @@ test('register creates a Pending Verification user, profile, and verification ro
 test('register never exposes the email verification token hash in the response', function () {
     Mail::fake();
 
-    $response = $this->postJson('/api/undergrad-requestors/register', undergradRegistrationPayload());
+    $response = $this->postJson('/api/v1/undergrad-requestors/register', undergradRegistrationPayload());
 
     $response->assertCreated();
     $response->assertJsonMissing(['email_verification_token_hash']);
@@ -97,7 +97,7 @@ test('register rejects a duplicate email with a 422', function () {
 
     $existing = SystemUser::factory()->create(['email' => 'taken@example.com']);
 
-    $response = $this->postJson('/api/undergrad-requestors/register', undergradRegistrationPayload([
+    $response = $this->postJson('/api/v1/undergrad-requestors/register', undergradRegistrationPayload([
         'email' => $existing->email,
     ]));
 
@@ -110,7 +110,7 @@ test('register rejects a duplicate email with a 422', function () {
 test('register rejects an implausible date of birth', function () {
     Mail::fake();
 
-    $response = $this->postJson('/api/undergrad-requestors/register', undergradRegistrationPayload([
+    $response = $this->postJson('/api/v1/undergrad-requestors/register', undergradRegistrationPayload([
         'date_of_birth' => now()->subYears(5)->toDateString(),
     ]));
 
@@ -121,12 +121,12 @@ test('register rejects an implausible date of birth', function () {
 test('register allows a duplicate student number but does not block submission', function () {
     Mail::fake();
 
-    $first = $this->postJson('/api/undergrad-requestors/register', undergradRegistrationPayload([
+    $first = $this->postJson('/api/v1/undergrad-requestors/register', undergradRegistrationPayload([
         'student_number' => '2019-00999-MN-0',
     ]));
     $first->assertCreated();
 
-    $second = $this->postJson('/api/undergrad-requestors/register', undergradRegistrationPayload([
+    $second = $this->postJson('/api/v1/undergrad-requestors/register', undergradRegistrationPayload([
         'student_number' => '2019-00999-MN-0',
     ]));
     $second->assertCreated();
@@ -169,7 +169,7 @@ test('confirmEmail marks the profile verified and makes it eligible for the Admi
     Mail::fake();
 
     $payload = undergradRegistrationPayload();
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
     // Capture the actual token the way the person would — from the sent
     // mail's verification URL — rather than reaching into
@@ -183,7 +183,7 @@ test('confirmEmail marks the profile verified and makes it eligible for the Admi
 
     parse_str(parse_url($capturedUrl, PHP_URL_QUERY), $query);
 
-    $response = $this->postJson('/api/undergrad-requestors/confirm-email', [
+    $response = $this->postJson('/api/v1/undergrad-requestors/confirm-email', [
         'email' => $query['email'],
         'token' => $query['token'],
     ]);
@@ -205,9 +205,9 @@ test('confirmEmail rejects an invalid token without revealing which part was wro
     Mail::fake();
 
     $payload = undergradRegistrationPayload();
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
-    $response = $this->postJson('/api/undergrad-requestors/confirm-email', [
+    $response = $this->postJson('/api/v1/undergrad-requestors/confirm-email', [
         'email' => $payload['email'],
         'token' => str_repeat('x', 40),
     ]);
@@ -223,7 +223,7 @@ test('confirmEmail rejects an expired token', function () {
     Mail::fake();
 
     $payload = undergradRegistrationPayload();
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
     $profile = UndergradRequestorProfile::where('student_number', $payload['student_number'])->first();
     $profile->update(['email_verification_expires_at' => now()->subMinute()]);
@@ -235,7 +235,7 @@ test('confirmEmail rejects an expired token', function () {
     });
     parse_str(parse_url($capturedUrl, PHP_URL_QUERY), $query);
 
-    $response = $this->postJson('/api/undergrad-requestors/confirm-email', [
+    $response = $this->postJson('/api/v1/undergrad-requestors/confirm-email', [
         'email' => $query['email'],
         'token' => $query['token'],
     ]);
@@ -248,7 +248,7 @@ test('confirmEmail rejects an expired token', function () {
 test('unverified submissions are excluded from the emailVerified() scope', function () {
     Mail::fake();
 
-    $this->postJson('/api/undergrad-requestors/register', undergradRegistrationPayload())->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', undergradRegistrationPayload())->assertCreated();
 
     expect(UndergradRequestorProfile::count())->toBe(1);
     expect(UndergradRequestorProfile::emailVerified()->count())->toBe(0);

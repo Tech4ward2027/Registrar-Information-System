@@ -115,14 +115,14 @@ function itmWithdrawUrl(DocumentRequest $r, $item): string
 {
     $seg = $item instanceof RequestDocument ? "documents/{$item->request_document_id}" : "certificates/{$item->request_certificate_id}";
 
-    return "/api/document-requests/{$r->request_id}/{$seg}/withdraw";
+    return "/api/v1/document-requests/{$r->request_id}/{$seg}/withdraw";
 }
 
 function itmCloseUrl(DocumentRequest $r, $item): string
 {
     $seg = $item instanceof RequestDocument ? "documents/{$item->request_document_id}" : "certificates/{$item->request_certificate_id}";
 
-    return "/api/document-requests/{$r->request_id}/{$seg}/close-unable-to-process";
+    return "/api/v1/document-requests/{$r->request_id}/{$seg}/close-unable-to-process";
 }
 
 // ── The aggregate rule (pure) ────────────────────────────────────────────────
@@ -248,7 +248,7 @@ test('the plain item status endpoint cannot withdraw an item without a reason', 
     itmStaff();
     [$request, $a] = itmTwoProcessing();
 
-    $this->putJson("/api/document-requests/{$request->request_id}/documents/{$a->request_document_id}", [
+    $this->putJson("/api/v1/document-requests/{$request->request_id}/documents/{$a->request_document_id}", [
         'status_id' => RequestStatusEnum::Withdrawn->value,
     ])->assertStatus(422);
 
@@ -320,7 +320,7 @@ test('the remaining ready item can still be claimed after the other was withdraw
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertOk();
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $request->fresh()->uuid])->assertOk();
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $request->fresh()->uuid])->assertOk();
 
     expect($ready->fresh()->status_id)->toBe(RequestStatusEnum::Completed->value)
         ->and($slow->fresh()->status_id)->toBe(RequestStatusEnum::Withdrawn->value)
@@ -390,7 +390,7 @@ test('withdrawing a whole request withdraws its open items and records why on ea
     [$request, $a, $b] = itmTwoProcessing();
     $cert = itmCertificate($request, 1);
 
-    $this->postJson("/api/document-requests/{$request->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$request->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertOk();
 
@@ -406,7 +406,7 @@ test('a whole-request withdraw is refused while an item is already Ready to Clai
     $ready = itmDocument($request, 2, 'Transcript of Records');
     $slow  = itmDocument($request, 1, 'Diploma');
 
-    $this->postJson("/api/document-requests/{$request->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$request->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertStatus(422);
 
@@ -422,7 +422,7 @@ test('closing a whole request closes its open items', function () {
     [$request, $a, $b] = itmTwoProcessing();
     itmOpenNotice($request);
 
-    $this->postJson("/api/document-requests/{$request->request_id}/close-unable-to-process", itmClosePayload())->assertOk();
+    $this->postJson("/api/v1/document-requests/{$request->request_id}/close-unable-to-process", itmClosePayload())->assertOk();
 
     expect($a->fresh()->status_id)->toBe(14)
         ->and($b->fresh()->status_id)->toBe(14)
@@ -434,7 +434,7 @@ test('a request with an item that already left is still withdrawable as a whole'
     [$request, $a, $b] = itmTwoProcessing();
 
     $this->postJson(itmWithdrawUrl($request, $a), ['withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value])->assertOk();
-    $this->postJson("/api/document-requests/{$request->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$request->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertOk();
 
