@@ -109,7 +109,7 @@ test('a category selects its types by exact label and never by a substring', fun
     $doctor      = lgbRequest(lgbDocType('Doctor Visit Form'));   // contains "tor", must not match
     $factor      = lgbRequest(lgbDocType('Factor Analysis Sheet')); // contains "tor", must not match
 
-    $ids = lgbIds($this->getJson('/api/document-requests/logbook?' . http_build_query([
+    $ids = lgbIds($this->getJson('/api/v1/document-requests/logbook?' . http_build_query([
         'categories' => ['Transcript of Records'],
     ]))->assertOk());
 
@@ -123,7 +123,7 @@ test('a type without a category is matched by its own name, case-insensitively',
     $fee   = lgbRequest(lgbDocType('Completion Fee'));
     $other = lgbRequest(lgbDocType('Diploma'));
 
-    $ids = lgbIds($this->getJson('/api/document-requests/logbook?' . http_build_query([
+    $ids = lgbIds($this->getJson('/api/v1/document-requests/logbook?' . http_build_query([
         'categories' => ['completion fee'],
     ]))->assertOk());
 
@@ -137,11 +137,11 @@ test('several selected categories are combined, and All Document means no restri
     $b = lgbRequest(lgbDocType('Good Moral'));
     $c = lgbRequest(lgbDocType('Honorable Dismissal'));
 
-    $two = lgbIds($this->getJson('/api/document-requests/logbook?' . http_build_query([
+    $two = lgbIds($this->getJson('/api/v1/document-requests/logbook?' . http_build_query([
         'categories' => ['Diploma', 'Good Moral'],
     ]))->assertOk());
 
-    $all = lgbIds($this->getJson('/api/document-requests/logbook?' . http_build_query([
+    $all = lgbIds($this->getJson('/api/v1/document-requests/logbook?' . http_build_query([
         'categories' => ['All Document'],
     ]))->assertOk());
 
@@ -156,11 +156,11 @@ test('certification mode filters by the certification label, or any certificate'
     $enrol = lgbRequest(null, lgbCertType('Certificate of Enrollment'));
     $docOnly = lgbRequest(lgbDocType('Diploma'));
 
-    $one = lgbIds($this->getJson('/api/document-requests/logbook?' . http_build_query([
+    $one = lgbIds($this->getJson('/api/v1/document-requests/logbook?' . http_build_query([
         'mode' => 'certifications', 'certification' => 'Certificate of Graduation',
     ]))->assertOk());
 
-    $any = lgbIds($this->getJson('/api/document-requests/logbook?' . http_build_query([
+    $any = lgbIds($this->getJson('/api/v1/document-requests/logbook?' . http_build_query([
         'mode' => 'certifications', 'certification' => 'All Certification',
     ]))->assertOk());
 
@@ -180,8 +180,8 @@ test('search finds a request by OR number prefix and by account e-mail prefix', 
     $byMail = lgbRequest($type, null, ['user_id' => $user->user_id, 'or_number' => '1111111']);
     $other = lgbRequest($type, null, ['or_number' => '2222222']);
 
-    $orIds = lgbIds($this->getJson('/api/document-requests/logbook?search=98765')->assertOk());
-    $mailIds = lgbIds($this->getJson('/api/document-requests/logbook?search=zelda.finder')->assertOk());
+    $orIds = lgbIds($this->getJson('/api/v1/document-requests/logbook?search=98765')->assertOk());
+    $mailIds = lgbIds($this->getJson('/api/v1/document-requests/logbook?search=zelda.finder')->assertOk());
 
     expect($orIds)->toBe([$byOr->request_id])
         ->and($mailIds)->toBe([$byMail->request_id])
@@ -193,7 +193,7 @@ test('search treats LIKE wildcards as plain text', function () {
 
     lgbRequest(lgbDocType('Diploma'), null, ['or_number' => '1234567']);
 
-    $this->getJson('/api/document-requests/logbook?search=' . urlencode('%'))
+    $this->getJson('/api/v1/document-requests/logbook?search=' . urlencode('%'))
         ->assertOk()
         ->assertJsonCount(0, 'data');
 });
@@ -209,7 +209,7 @@ test('the response total is the filtered record count across all pages', functio
     }
     lgbRequest(lgbDocType('Good Moral'));
 
-    $response = $this->getJson('/api/document-requests/logbook?' . http_build_query([
+    $response = $this->getJson('/api/v1/document-requests/logbook?' . http_build_query([
         'categories' => ['Diploma'], 'per_page' => 2, 'page' => 2,
     ]))->assertOk();
 
@@ -225,7 +225,7 @@ test('only Completed requests are listed', function () {
     $done = lgbRequest($type);
     lgbRequest($type, null, ['status_id' => RequestStatusEnum::Processing->value]);
 
-    expect(lgbIds($this->getJson('/api/document-requests/logbook')->assertOk()))->toBe([$done->request_id]);
+    expect(lgbIds($this->getJson('/api/v1/document-requests/logbook')->assertOk()))->toBe([$done->request_id]);
 });
 
 test('the date range filters on the requested date', function () {
@@ -235,7 +235,7 @@ test('the date range filters on the requested date', function () {
     $in   = lgbRequest($type, null, ['requested_at' => '2026-03-10 02:00:00']);
     lgbRequest($type, null, ['requested_at' => '2026-05-10 02:00:00']);
 
-    expect(lgbIds($this->getJson('/api/document-requests/logbook?from=2026-03-01&to=2026-03-31')->assertOk()))
+    expect(lgbIds($this->getJson('/api/v1/document-requests/logbook?from=2026-03-01&to=2026-03-31')->assertOk()))
         ->toBe([$in->request_id]);
 });
 
@@ -244,11 +244,11 @@ test('the date range filters on the requested date', function () {
 test('invalid filter input is rejected', function () {
     lgbStaff();
 
-    $this->getJson('/api/document-requests/logbook?from=not-a-date')->assertStatus(422);
-    $this->getJson('/api/document-requests/logbook?from=2026-04-01&to=2026-03-01')->assertStatus(422);
-    $this->getJson('/api/document-requests/logbook?mode=everything')->assertStatus(422);
-    $this->getJson('/api/document-requests/logbook?categories=Diploma')->assertStatus(422);
-    $this->getJson('/api/document-requests/logbook?search=' . str_repeat('a', 101))->assertStatus(422);
+    $this->getJson('/api/v1/document-requests/logbook?from=not-a-date')->assertStatus(422);
+    $this->getJson('/api/v1/document-requests/logbook?from=2026-04-01&to=2026-03-01')->assertStatus(422);
+    $this->getJson('/api/v1/document-requests/logbook?mode=everything')->assertStatus(422);
+    $this->getJson('/api/v1/document-requests/logbook?categories=Diploma')->assertStatus(422);
+    $this->getJson('/api/v1/document-requests/logbook?search=' . str_repeat('a', 101))->assertStatus(422);
 });
 
 // ── E-mail ───────────────────────────────────────────────────────────────────
@@ -259,7 +259,7 @@ test('the e-mail falls back to the filing account when the requester has no prof
     $user    = SystemUser::factory()->create(['email' => 'filer@example.com']);
     $request = lgbRequest(lgbDocType('Diploma'), null, ['user_id' => $user->user_id]);
 
-    $row = collect($this->getJson('/api/document-requests/logbook')->assertOk()->json('data'))
+    $row = collect($this->getJson('/api/v1/document-requests/logbook')->assertOk()->json('data'))
         ->firstWhere('request_id', $request->request_id);
 
     expect($row['email'])->toBe('filer@example.com');
@@ -277,7 +277,7 @@ test('the e-mail prefers the profile owner account over the filing account', fun
         'student_profile_id' => $profile->student_profile_id,
     ]);
 
-    $row = collect($this->getJson('/api/document-requests/logbook')->assertOk()->json('data'))
+    $row = collect($this->getJson('/api/v1/document-requests/logbook')->assertOk()->json('data'))
         ->firstWhere('request_id', $request->request_id);
 
     expect($row['email'])->toBe('owner@example.com');
@@ -287,5 +287,5 @@ test('a student account cannot read the logbook', function () {
     $student = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
     Sanctum::actingAs($student);
 
-    $this->getJson('/api/document-requests/logbook')->assertForbidden();
+    $this->getJson('/api/v1/document-requests/logbook')->assertForbidden();
 });

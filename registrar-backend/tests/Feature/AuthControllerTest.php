@@ -111,7 +111,7 @@ test('login fallback fails with idp_offline flag when local credentials are also
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// GET /api/me — unaffected by the FormRequest conversion, kept as a smoke test
+// GET /api/v1/me — unaffected by the FormRequest conversion, kept as a smoke test
 // ═════════════════════════════════════════════════════════════════════════════
 
 test('unauthenticated /me returns 401', function () {
@@ -252,7 +252,7 @@ test('setPassword rejects a target user who is not a super admin', function () {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// POST /api/auth/switch-role — Step 3 of Multi-Role Assignments
+// POST /api/v1/auth/switch-role — Step 3 of Multi-Role Assignments
 // (AuthController::switchRole / RoleAssignmentService::switchTo)
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -366,7 +366,7 @@ test('the tokens cookie issued by switch-role immediately unlocks the newly assu
     // the lifetime of the guard instance, and that instance persists
     // across every HTTP call made within this single test method. Without
     // forgetting it here, the switch-role request below would reuse the
-    // pre-switch (Student) user cached by the /api/audit-logs call above
+    // pre-switch (Student) user cached by the /api/v1/audit-logs call above
     // instead of re-resolving from the bearer token — a Laravel/Sanctum
     // testing quirk that never occurs in production.
     $this->app['auth']->forgetGuards();

@@ -317,7 +317,7 @@ test('matcher sums quantities when same label appears multiple times on receipt'
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// INTEGRATION — OR validation via POST /api/document-requests
+// INTEGRATION — OR validation via POST /api/v1/document-requests
 // ═════════════════════════════════════════════════════════════════════════════
 
 test('document request is accepted in mock mode without a real OR', function () {

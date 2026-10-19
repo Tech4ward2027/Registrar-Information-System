@@ -39,7 +39,7 @@ function leaPayload(array $overrides = []): array
     ], $overrides);
 }
 
-const LEA_URL = '/api/document-requests/logbook/export-audit';
+const LEA_URL = '/api/v1/document-requests/logbook/export-audit';
 
 it('records a logbook export with metadata only', function () {
     $admin = leaStaff(['View', 'Export']);

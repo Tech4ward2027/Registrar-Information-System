@@ -217,7 +217,7 @@ test('super admin can search and receives matching results', function () {
 
     $juan = searchTestStudent('Juan', 'Dela Cruz');
 
-    $this->getJson('/api/role-assignments/search-users?q=Juan')
+    $this->getJson('/api/v1/role-assignments/search-users?q=Juan')
         ->assertOk()
         ->assertJsonFragment(['user_id' => $juan->user_id]);
 });
@@ -226,7 +226,7 @@ test('a plain admin is forbidden from searching', function () {
     $admin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($admin);
 
-    $this->getJson('/api/role-assignments/search-users?q=Juan')
+    $this->getJson('/api/v1/role-assignments/search-users?q=Juan')
         ->assertStatus(403);
 });
 
@@ -234,12 +234,12 @@ test('a student is forbidden from searching', function () {
     $student = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
     Sanctum::actingAs($student);
 
-    $this->getJson('/api/role-assignments/search-users?q=Juan')
+    $this->getJson('/api/v1/role-assignments/search-users?q=Juan')
         ->assertStatus(403);
 });
 
 test('an unauthenticated request is rejected', function () {
-    $this->getJson('/api/role-assignments/search-users?q=Juan')
+    $this->getJson('/api/v1/role-assignments/search-users?q=Juan')
         ->assertStatus(401);
 });
 
@@ -247,7 +247,7 @@ test('rejects a missing search term', function () {
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($superAdmin);
 
-    $this->getJson('/api/role-assignments/search-users')
+    $this->getJson('/api/v1/role-assignments/search-users')
         ->assertStatus(422)
         ->assertJsonValidationErrors('q');
 });
@@ -256,7 +256,7 @@ test('rejects a search term shorter than the minimum length', function () {
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($superAdmin);
 
-    $this->getJson('/api/role-assignments/search-users?q=J')
+    $this->getJson('/api/v1/role-assignments/search-users?q=J')
         ->assertStatus(422)
         ->assertJsonValidationErrors('q');
 });
@@ -267,7 +267,7 @@ test('response never leaks sensitive account fields', function () {
 
     searchTestStudent('Juan', 'Dela Cruz');
 
-    $response = $this->getJson('/api/role-assignments/search-users?q=Juan')->assertOk();
+    $response = $this->getJson('/api/v1/role-assignments/search-users?q=Juan')->assertOk();
 
     $payload = json_encode($response->json());
 
@@ -286,7 +286,7 @@ test('response shape includes the fields the picker relies on', function () {
 
     searchTestAdmin('Maria', 'Santos', ['email' => 'msantos@registrar.edu']);
 
-    $this->getJson('/api/role-assignments/search-users?q=Maria')
+    $this->getJson('/api/v1/role-assignments/search-users?q=Maria')
         ->assertOk()
         ->assertJsonStructure([
             'data' => [

@@ -133,7 +133,7 @@ test('an Approved Undergrad Requestor can file a document request through the sa
     [$docType, $purpose] = p5Catalog();
     $user = p5ApprovedRequestor();
 
-    $response = $this->postJson('/api/document-requests', [
+    $response = $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'documents'           => [['document_type_id' => $docType->document_type_id, 'number_of_copies' => 1]],
         'certificates'        => [],
@@ -156,7 +156,7 @@ test('a still-Pending Undergrad Requestor is blocked with a review-pending messa
     [$docType, $purpose] = p5Catalog();
     p5PendingRequestor();
 
-    $response = $this->postJson('/api/document-requests', [
+    $response = $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'documents'           => [['document_type_id' => $docType->document_type_id, 'number_of_copies' => 1]],
         'certificates'        => [],
@@ -170,7 +170,7 @@ test('a Rejected Undergrad Requestor is blocked with a rejected-specific message
     [$docType, $purpose] = p5Catalog();
     p5RejectedRequestor();
 
-    $response = $this->postJson('/api/document-requests', [
+    $response = $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'documents'           => [['document_type_id' => $docType->document_type_id, 'number_of_copies' => 1]],
         'certificates'        => [],
@@ -190,7 +190,7 @@ test('the gate is a no-op for Student and Alumni', function () {
     ]);
     Sanctum::actingAs($student);
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'documents'           => [['document_type_id' => $docType->document_type_id, 'number_of_copies' => 1]],
         'certificates'        => [],
@@ -220,7 +220,7 @@ test('request-documents line-item store is also gated', function () {
     // No parent request exists (blocked above), so this also fails —
     // but via the same role/approval gate before it would even reach
     // the ownership lookup.
-    $this->postJson('/api/request-documents', [
+    $this->postJson('/api/v1/request-documents', [
         'request_id'        => 999999,
         'document_type_id'  => $docType->document_type_id,
         'number_of_copies'  => 1,
@@ -244,7 +244,7 @@ test('Undergrad Requestor is not a grantable role_assignment target — the onbo
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($superAdmin);
 
-    $this->postJson('/api/role-assignments', [
+    $this->postJson('/api/v1/role-assignments', [
         'user_id' => $admin->user_id,
         'role_id' => SystemUser::ROLE_UNDERGRAD_REQUESTOR,
     ])->assertStatus(422)
@@ -261,7 +261,7 @@ test('an Approved Undergrad Requestor can still be found BY NAME as a role-assig
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($superAdmin);
 
-    $this->getJson('/api/role-assignments/search-users?q=Santos')
+    $this->getJson('/api/v1/role-assignments/search-users?q=Santos')
         ->assertOk()
         ->assertJsonFragment(['user_id' => $requestor->user_id]);
 });
@@ -271,7 +271,7 @@ test('CashierOrOverrideController surfaces Undergrad Requestor accounts in its p
     $admin     = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($admin);
 
-    $this->getJson('/api/cashier-overrides/search-users?q=Santos')
+    $this->getJson('/api/v1/cashier-overrides/search-users?q=Santos')
         ->assertOk()
         ->assertJsonFragment(['user_id' => $requestor->user_id]);
 });
@@ -281,7 +281,7 @@ test('a cashier OR override can be issued for an Undergrad Requestor account', f
     $admin     = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($admin);
 
-    $this->postJson('/api/cashier-overrides', [
+    $this->postJson('/api/v1/cashier-overrides', [
         'or_number' => 'OR-TEST-0001',
         'user_id'   => $requestor->user_id,
         'reason'    => 'Verified physical receipt at the counter for this fixture test.',
@@ -293,7 +293,7 @@ test('a cashier OR override still cannot be issued for a staff account', functio
     $admin  = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($admin);
 
-    $this->postJson('/api/cashier-overrides', [
+    $this->postJson('/api/v1/cashier-overrides', [
         'or_number' => 'OR-TEST-0002',
         'user_id'   => $target->user_id,
         'reason'    => 'Should not be allowed for a staff account under test.',
@@ -310,7 +310,7 @@ test('an Undergrad Requestor is excluded from the failed-login-burst security al
     ]);
 
     $logger  = app(\App\Services\SecurityEventLogger::class);
-    $request = \Illuminate\Http\Request::create('/api/auth/local-login', 'POST');
+    $request = \Illuminate\Http\Request::create('/api/v1/auth/local-login', 'POST');
 
     // Drive the burst through the real public API
     // (recordLoginFailure() -> private maybeAlertOnBurst()), same as

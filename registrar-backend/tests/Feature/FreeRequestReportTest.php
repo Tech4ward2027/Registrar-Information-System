@@ -337,7 +337,7 @@ test('an ineligible-but-overridden filing is still counted once claimed, same as
 test('the report endpoint requires the free_requests View capability', function () {
     frvMakeAdmin([]); // no actions at all
 
-    $this->getJson('/api/free-requests/reports/monthly-volume?year=2026')
+    $this->getJson('/api/v1/free-requests/reports/monthly-volume?year=2026')
         ->assertStatus(403);
 });
 
@@ -353,7 +353,7 @@ test('the report endpoint returns claimed volume grouped by month and type', fun
     ]);
     frvClaimAt($result->documentRequest, Carbon::create(2026, 4, 5, 9, 0, 0, 'Asia/Manila'));
 
-    $response = $this->getJson('/api/free-requests/reports/monthly-volume?year=2026')
+    $response = $this->getJson('/api/v1/free-requests/reports/monthly-volume?year=2026')
         ->assertStatus(200)
         ->assertJson(['year' => 2026]);
 
@@ -366,6 +366,6 @@ test('the report endpoint returns claimed volume grouped by month and type', fun
 test('an out-of-range year is rejected with a validation error, not silently clamped', function () {
     frvMakeAdmin(['View']);
 
-    $this->getJson('/api/free-requests/reports/monthly-volume?year=1899')
+    $this->getJson('/api/v1/free-requests/reports/monthly-volume?year=1899')
         ->assertStatus(422);
 });

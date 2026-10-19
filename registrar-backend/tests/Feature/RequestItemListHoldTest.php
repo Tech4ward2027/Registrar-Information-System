@@ -54,7 +54,7 @@ it('flags only the held item on the per-document list', function () {
         'detail'              => 'private free text',
     ]);
 
-    $rows = collect($this->getJson('/api/document-requests/items?all_statuses=1')->assertOk()->json('data'))
+    $rows = collect($this->getJson('/api/v1/document-requests/items?all_statuses=1')->assertOk()->json('data'))
         ->keyBy('id');
 
     expect($rows[$held->request_document_id]['on_hold'])->toBeTrue()
@@ -76,7 +76,7 @@ it('does not flag an item whose notice was cleared', function () {
         'status'              => RequestRemark::STATUS_CLEARED,
     ]);
 
-    $row = collect($this->getJson('/api/document-requests/items?all_statuses=1')->assertOk()->json('data'))->first();
+    $row = collect($this->getJson('/api/v1/document-requests/items?all_statuses=1')->assertOk()->json('data'))->first();
 
     expect($row['on_hold'])->toBeFalse();
 });

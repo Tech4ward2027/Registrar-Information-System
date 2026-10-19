@@ -200,29 +200,29 @@ test('Student Staff admin gets 403 from analytics endpoints', function () {
     ['studentStaff' => $studentStaff] = seedStudentStaffAndRegistrarPolicies();
     makeAdmin($studentStaff->policy_id);
 
-    $this->getJson('/api/analytics/overview')->assertStatus(403);
+    $this->getJson('/api/v1/analytics/overview')->assertStatus(403);
 });
 
 test('Student Staff admin gets 403 from the logbook endpoint', function () {
     ['studentStaff' => $studentStaff] = seedStudentStaffAndRegistrarPolicies();
     makeAdmin($studentStaff->policy_id);
 
-    $this->getJson('/api/document-requests/logbook')->assertStatus(403);
+    $this->getJson('/api/v1/document-requests/logbook')->assertStatus(403);
 });
 
 test('Registrar Staff admin can reach analytics and logbook', function () {
     ['registrarStaff' => $registrarStaff] = seedStudentStaffAndRegistrarPolicies();
     makeAdmin($registrarStaff->policy_id);
 
-    $this->getJson('/api/analytics/overview')->assertStatus(200);
-    $this->getJson('/api/document-requests/logbook')->assertStatus(200);
+    $this->getJson('/api/v1/analytics/overview')->assertStatus(200);
+    $this->getJson('/api/v1/document-requests/logbook')->assertStatus(200);
 });
 
 test('super admin reaches analytics even with no policy row in the system at all', function () {
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN]);
     Sanctum::actingAs($superAdmin);
 
-    $this->getJson('/api/analytics/overview')->assertStatus(200);
+    $this->getJson('/api/v1/analytics/overview')->assertStatus(200);
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -233,7 +233,7 @@ test('creating a policy silently drops unknown module keys', function () {
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN]);
     Sanctum::actingAs($superAdmin);
 
-    $response = $this->postJson('/api/policies', [
+    $response = $this->postJson('/api/v1/policies', [
         'name'        => 'Custom Policy',
         'permissions' => [
             // 'dashboard' is a granular module (Policy::MODULE_ACTIONS),
@@ -260,7 +260,7 @@ test('creating a policy drops action tokens the module does not recognize', func
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN]);
     Sanctum::actingAs($superAdmin);
 
-    $response = $this->postJson('/api/policies', [
+    $response = $this->postJson('/api/v1/policies', [
         'name'        => 'Custom Policy 2',
         'permissions' => [
             'profile' => ['Process'], // not a valid token for 'profile'
@@ -279,7 +279,7 @@ test('granting Process or Complete on dashboard without View backfills View', fu
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN]);
     Sanctum::actingAs($superAdmin);
 
-    $response = $this->postJson('/api/policies', [
+    $response = $this->postJson('/api/v1/policies', [
         'name'        => 'Process Without View',
         'permissions' => [
             'dashboard' => ['Process'], // View deliberately omitted
@@ -299,7 +299,7 @@ test('an empty dashboard grant stays empty rather than backfilling View', functi
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN]);
     Sanctum::actingAs($superAdmin);
 
-    $response = $this->postJson('/api/policies', [
+    $response = $this->postJson('/api/v1/policies', [
         'name'        => 'No Dashboard Access',
         'permissions' => [
             'dashboard' => [],
@@ -323,14 +323,14 @@ test('Student Staff admin gets 403 from document-requests counts without dashboa
     ]);
     makeAdmin($noAccess->policy_id);
 
-    $this->getJson('/api/document-requests/counts')->assertStatus(403);
+    $this->getJson('/api/v1/document-requests/counts')->assertStatus(403);
 });
 
 test('Registrar Staff admin can reach document-requests counts', function () {
     ['registrarStaff' => $registrarStaff] = seedStudentStaffAndRegistrarPolicies();
     makeAdmin($registrarStaff->policy_id);
 
-    $this->getJson('/api/document-requests/counts')->assertStatus(200);
+    $this->getJson('/api/v1/document-requests/counts')->assertStatus(200);
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -361,7 +361,7 @@ test('a super admin can save a policy that grants cashier_reconciliation', funct
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN]);
     Sanctum::actingAs($superAdmin);
 
-    $this->postJson('/api/policies', [
+    $this->postJson('/api/v1/policies', [
         'name'        => 'Reconciliation Only',
         'permissions' => ['cashier_reconciliation' => ['Access']],
     ])->assertStatus(201);

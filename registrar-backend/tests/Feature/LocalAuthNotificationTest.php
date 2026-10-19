@@ -38,7 +38,7 @@ test('a successful local (break-glass) login fires an admin-facing notification'
             });
     });
 
-    $this->postJson('/api/auth/local-login', [
+    $this->postJson('/api/v1/auth/local-login', [
         'email'    => $user->email,
         'password' => 'CorrectPass1',
     ])->assertOk();
@@ -56,7 +56,7 @@ test('a failed local login does not fire the break-glass notification', function
         $mock->shouldReceive('sendToAllExcept')->never();
     });
 
-    $this->postJson('/api/auth/local-login', [
+    $this->postJson('/api/v1/auth/local-login', [
         'email'    => $user->email,
         'password' => 'WrongPassword1',
     ])->assertStatus(401);

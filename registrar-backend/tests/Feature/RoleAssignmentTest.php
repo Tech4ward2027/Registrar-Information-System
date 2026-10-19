@@ -667,10 +667,10 @@ test('a session that switched to a role loses that live token the instant the as
     $plainTextToken = $result['token'];
 
     // Prove the switch actually unlocked a Super-Admin-only route
-    // (GET /api/audit-logs is behind 'role:4') using the real bearer
+    // (GET /api/v1/audit-logs is behind 'role:4') using the real bearer
     // token, not Sanctum::actingAs().
     $this->withHeader('Authorization', "Bearer {$plainTextToken}")
-        ->getJson('/api/audit-logs')
+        ->getJson('/api/v1/audit-logs')
         ->assertOk();
 
     $offboardingSuperAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN]);
@@ -690,13 +690,13 @@ test('a session that switched to a role loses that live token the instant the as
     // the lifetime of the guard instance, and that instance persists
     // across every HTTP call made within this single test method. Without
     // forgetting it here, this call would return the user cached by the
-    // /api/audit-logs call above instead of re-validating the (now
+    // /api/v1/audit-logs call above instead of re-validating the (now
     // deleted) token against the database — a Laravel/Sanctum testing
     // quirk that never occurs in production.
     $this->app['auth']->forgetGuards();
 
     $this->withHeader('Authorization', "Bearer {$plainTextToken}")
-        ->getJson('/api/audit-logs')
+        ->getJson('/api/v1/audit-logs')
         ->assertStatus(401);
 });
 
@@ -722,7 +722,7 @@ test('a role assignment that lapses via the daily sweep invalidates its live tok
     $plainTextToken = $result['token'];
 
     $this->withHeader('Authorization', "Bearer {$plainTextToken}")
-        ->getJson('/api/audit-logs')
+        ->getJson('/api/v1/audit-logs')
         ->assertOk();
 
     $this->travel(2)->seconds();
@@ -735,6 +735,6 @@ test('a role assignment that lapses via the daily sweep invalidates its live tok
     $this->app['auth']->forgetGuards();
 
     $this->withHeader('Authorization', "Bearer {$plainTextToken}")
-        ->getJson('/api/audit-logs')
+        ->getJson('/api/v1/audit-logs')
         ->assertStatus(401);
 });

@@ -108,7 +108,7 @@ test('lookup by an item code returns only that item and changes nothing', functi
     iclStaff();
     [$request, $a, $b] = iclTwoItemRequest();
 
-    $res = $this->postJson('/api/document-requests/claim/lookup', ['claim_code' => $a->claim_code])->assertOk();
+    $res = $this->postJson('/api/v1/document-requests/claim/lookup', ['claim_code' => $a->claim_code])->assertOk();
 
     expect($res->json('matched'))->toBe('item')
         ->and($res->json('items'))->toHaveCount(1)
@@ -125,7 +125,7 @@ test('lookup by the request code lists every item with whether it can be claimed
     iclStaff();
     [$request, $a, $b] = iclTwoItemRequest();
 
-    $items = collect($this->postJson('/api/document-requests/claim/lookup', ['uuid' => $request->uuid])
+    $items = collect($this->postJson('/api/v1/document-requests/claim/lookup', ['uuid' => $request->uuid])
         ->assertOk()->json('items'))->keyBy('uuid');
 
     expect($items[$a->uuid]['claimable'])->toBeTrue()
@@ -137,10 +137,10 @@ test('an unknown code is a generic 404 and an archived request cannot be looked 
     iclStaff();
     [$request, $a] = iclTwoItemRequest();
 
-    $this->postJson('/api/document-requests/claim/lookup', ['claim_code' => 'ZZZZZZ'])->assertNotFound();
+    $this->postJson('/api/v1/document-requests/claim/lookup', ['claim_code' => 'ZZZZZZ'])->assertNotFound();
 
     $request->update(['is_archived' => true]);
-    $this->postJson('/api/document-requests/claim/lookup', ['claim_code' => $a->claim_code])->assertNotFound();
+    $this->postJson('/api/v1/document-requests/claim/lookup', ['claim_code' => $a->claim_code])->assertNotFound();
 });
 
 // ── Confirm ──────────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ test('confirming one Ready item completes only that item and leaves the parent P
     iclStaff();
     [$request, $a, $b] = iclTwoItemRequest();
 
-    $res = $this->postJson('/api/document-requests/claim/confirm', ['uuid' => $a->uuid])->assertOk();
+    $res = $this->postJson('/api/v1/document-requests/claim/confirm', ['uuid' => $a->uuid])->assertOk();
 
     expect($a->fresh()->status_id)->toBe(RequestStatusEnum::Completed->value)
         ->and($a->fresh()->completed_at)->not->toBeNull()
@@ -170,7 +170,7 @@ test('claiming the last item completes the parent exactly once', function () {
     $a = iclDocument($request, RequestStatusEnum::Completed->value, 'Transcript of Records');
     $b = iclDocument($request, RequestStatusEnum::ReadyToClaim->value, 'Diploma');
 
-    $this->postJson('/api/document-requests/claim/confirm', ['uuid' => $b->uuid])->assertOk();
+    $this->postJson('/api/v1/document-requests/claim/confirm', ['uuid' => $b->uuid])->assertOk();
 
     expect($request->fresh()->status_id)->toBe(RequestStatusEnum::Completed->value);
     expect(RequestHistory::where('request_id', $request->request_id)->whereNull('request_document_id')
@@ -184,7 +184,7 @@ test('confirming from the request ticket releases only the selected items, and r
     $c = iclCertificate($request, RequestStatusEnum::ReadyToClaim->value);
     $b = iclDocument($request, RequestStatusEnum::Processing->value, 'Diploma');
 
-    $res = $this->postJson('/api/document-requests/claim/confirm', [
+    $res = $this->postJson('/api/v1/document-requests/claim/confirm', [
         'uuid'       => $request->uuid,
         'item_uuids' => [$a->uuid, $b->uuid],
     ])->assertOk();
@@ -201,10 +201,10 @@ test('a second confirm for the same item is refused and writes nothing more', fu
     iclStaff();
     [$request, $a] = iclTwoItemRequest();
 
-    $this->postJson('/api/document-requests/claim/confirm', ['uuid' => $a->uuid])->assertOk();
+    $this->postJson('/api/v1/document-requests/claim/confirm', ['uuid' => $a->uuid])->assertOk();
     $before = RequestHistory::where('request_id', $request->request_id)->count();
 
-    $this->postJson('/api/document-requests/claim/confirm', ['uuid' => $a->uuid])->assertStatus(422);
+    $this->postJson('/api/v1/document-requests/claim/confirm', ['uuid' => $a->uuid])->assertStatus(422);
 
     expect(RequestHistory::where('request_id', $request->request_id)->count())->toBe($before);
 });
@@ -213,7 +213,7 @@ test('an item that is not Ready cannot be claimed', function () {
     iclStaff();
     [$request, $a, $b] = iclTwoItemRequest();
 
-    $this->postJson('/api/document-requests/claim/confirm', ['uuid' => $b->uuid])->assertStatus(422);
+    $this->postJson('/api/v1/document-requests/claim/confirm', ['uuid' => $b->uuid])->assertStatus(422);
 
     expect($b->fresh()->status_id)->toBe(RequestStatusEnum::Processing->value);
 });
@@ -224,7 +224,7 @@ test('an item uuid from a different request is rejected', function () {
     $other = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::ReadyToClaim->value]);
     $foreign = iclDocument($other, RequestStatusEnum::ReadyToClaim->value, 'Foreign Doc');
 
-    $this->postJson('/api/document-requests/claim/confirm', [
+    $this->postJson('/api/v1/document-requests/claim/confirm', [
         'uuid' => $request->uuid, 'item_uuids' => [$foreign->uuid],
     ])->assertStatus(422);
 
@@ -235,7 +235,7 @@ test('the request ticket needs an explicit selection', function () {
     iclStaff();
     [$request] = iclTwoItemRequest();
 
-    $this->postJson('/api/document-requests/claim/confirm', ['uuid' => $request->uuid])->assertStatus(422);
+    $this->postJson('/api/v1/document-requests/claim/confirm', ['uuid' => $request->uuid])->assertStatus(422);
 });
 
 test('claiming is refused on a terminal request and on an archived request', function () {
@@ -243,12 +243,12 @@ test('claiming is refused on a terminal request and on an archived request', fun
 
     $withdrawn = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Withdrawn->value]);
     $stale = iclDocument($withdrawn, RequestStatusEnum::ReadyToClaim->value, 'Stale Doc');
-    $this->postJson('/api/document-requests/claim/confirm', ['uuid' => $stale->uuid])->assertStatus(422);
+    $this->postJson('/api/v1/document-requests/claim/confirm', ['uuid' => $stale->uuid])->assertStatus(422);
     expect($stale->fresh()->status_id)->toBe(RequestStatusEnum::ReadyToClaim->value);
 
     [$archived, $a] = iclTwoItemRequest();
     $archived->update(['is_archived' => true]);
-    $this->postJson('/api/document-requests/claim/confirm', ['uuid' => $a->uuid])->assertNotFound();
+    $this->postJson('/api/v1/document-requests/claim/confirm', ['uuid' => $a->uuid])->assertNotFound();
 });
 
 test('a user without staff access cannot look up or confirm', function () {
@@ -256,8 +256,8 @@ test('a user without staff access cannot look up or confirm', function () {
     $student = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
     Sanctum::actingAs($student);
 
-    $this->postJson('/api/document-requests/claim/lookup', ['uuid' => $a->uuid])->assertForbidden();
-    $this->postJson('/api/document-requests/claim/confirm', ['uuid' => $a->uuid])->assertForbidden();
+    $this->postJson('/api/v1/document-requests/claim/lookup', ['uuid' => $a->uuid])->assertForbidden();
+    $this->postJson('/api/v1/document-requests/claim/confirm', ['uuid' => $a->uuid])->assertForbidden();
 });
 
 // ── Per-document list (GET /document-requests/items) ─────────────────────────
@@ -269,7 +269,7 @@ test('the items list returns one row per document and certificate, with totals t
     iclDocument($request, RequestStatusEnum::Processing->value, 'Diploma');
     iclCertificate($request, RequestStatusEnum::Processing->value);
 
-    $res = $this->getJson('/api/document-requests/items?per_page=2')->assertOk();
+    $res = $this->getJson('/api/v1/document-requests/items?per_page=2')->assertOk();
 
     expect($res->json('total'))->toBe(3)
         ->and($res->json('last_page'))->toBe(2)
@@ -284,7 +284,7 @@ test('searching a document name returns only that document, not its siblings', f
     iclDocument($request, RequestStatusEnum::Processing->value, 'Transcript of Records');
     iclDocument($request, RequestStatusEnum::Processing->value, 'Diploma');
 
-    $rows = $this->getJson('/api/document-requests/items?search=' . urlencode('Diploma'))->assertOk()->json('data');
+    $rows = $this->getJson('/api/v1/document-requests/items?search=' . urlencode('Diploma'))->assertOk()->json('data');
 
     expect($rows)->toHaveCount(1)->and($rows[0]['name'])->toBe('Diploma');
 });
@@ -295,7 +295,7 @@ test('searching a requester returns all of their documents', function () {
     iclDocument($request, RequestStatusEnum::Processing->value, 'Transcript of Records');
     iclDocument($request, RequestStatusEnum::Processing->value, 'Diploma');
 
-    $this->getJson('/api/document-requests/items?search=' . $request->claim_code)
+    $this->getJson('/api/v1/document-requests/items?search=' . $request->claim_code)
         ->assertOk()->assertJsonCount(2, 'data');
 });
 
@@ -307,11 +307,11 @@ test('the default window hides documents completed over 24h ago, judged per docu
     $open  = iclDocument($request, RequestStatusEnum::Processing->value, 'Open Doc');
     RequestDocument::whereKey($old->request_document_id)->update(['completed_at' => now()->subDays(3)]);
 
-    $names = collect($this->getJson('/api/document-requests/items')->assertOk()->json('data'))->pluck('name')->all();
+    $names = collect($this->getJson('/api/v1/document-requests/items')->assertOk()->json('data'))->pluck('name')->all();
 
     expect($names)->toContain('Fresh Doc', 'Open Doc')->not->toContain('Old Doc');
 
-    $all = collect($this->getJson('/api/document-requests/items?all_statuses=true')->json('data'))->pluck('name')->all();
+    $all = collect($this->getJson('/api/v1/document-requests/items?all_statuses=true')->json('data'))->pluck('name')->all();
     expect($all)->toContain('Old Doc');
 });
 
@@ -321,18 +321,18 @@ test('finished documents sort last, and status and document filters apply to the
     $done = iclDocument($request, RequestStatusEnum::Completed->value, 'Done Doc');
     $ready = iclDocument($request, RequestStatusEnum::ReadyToClaim->value, 'Ready Doc');
 
-    $order = collect($this->getJson('/api/document-requests/items?sort=' . urlencode('Recent Requests'))->json('data'))->pluck('name')->all();
+    $order = collect($this->getJson('/api/v1/document-requests/items?sort=' . urlencode('Recent Requests'))->json('data'))->pluck('name')->all();
     expect($order)->toBe(['Ready Doc', 'Done Doc']);
 
-    $filtered = $this->getJson('/api/document-requests/items?status=' . urlencode('Ready to Claim'))->json('data');
+    $filtered = $this->getJson('/api/v1/document-requests/items?status=' . urlencode('Ready to Claim'))->json('data');
     expect($filtered)->toHaveCount(1)->and($filtered[0]['uuid'])->toBe($ready->uuid);
 });
 
 test('the items list rejects bad params and does not leak undergrad PII', function () {
     iclStaff();
 
-    $this->getJson('/api/document-requests/items?sort=' . urlencode('x; DROP TABLE y'))->assertStatus(422);
-    $this->getJson('/api/document-requests/items?per_page=500')->assertStatus(422);
+    $this->getJson('/api/v1/document-requests/items?sort=' . urlencode('x; DROP TABLE y'))->assertStatus(422);
+    $this->getJson('/api/v1/document-requests/items?per_page=500')->assertStatus(422);
 
     $profile = \App\Models\UndergradRequestorProfile::factory()->create([
         'phone' => '09171234567', 'present_address' => '12 Confidential Street',
@@ -340,7 +340,7 @@ test('the items list rejects bad params and does not leak undergrad PII', functi
     $request = DocumentRequest::factory()->create(['user_id' => $profile->user_id, 'status_id' => RequestStatusEnum::Processing->value]);
     iclDocument($request, RequestStatusEnum::Processing->value);
 
-    $body = $this->getJson('/api/document-requests/items')->assertOk()->getContent();
+    $body = $this->getJson('/api/v1/document-requests/items')->assertOk()->getContent();
     expect($body)->not->toContain('09171234567')->not->toContain('Confidential Street');
 });
 
@@ -348,5 +348,5 @@ test('only staff can use the items list', function () {
     $student = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
     Sanctum::actingAs($student);
 
-    $this->getJson('/api/document-requests/items')->assertForbidden();
+    $this->getJson('/api/v1/document-requests/items')->assertForbidden();
 });

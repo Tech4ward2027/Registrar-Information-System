@@ -107,7 +107,7 @@ test('register stores the declared gender', function () {
 
     $payload = uggRegistrationPayload(['gender' => 'Female']);
 
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
     $user = SystemUser::where('email', $payload['email'])->firstOrFail();
 
@@ -119,7 +119,7 @@ test('register normalises gender casing and whitespace before validating', funct
 
     $payload = uggRegistrationPayload(['gender' => $input]);
 
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
     $user = SystemUser::where('email', $payload['email'])->firstOrFail();
 
@@ -133,7 +133,7 @@ test('register normalises gender casing and whitespace before validating', funct
 test('register rejects a gender outside the allowed values', function (mixed $input) {
     Mail::fake();
 
-    $response = $this->postJson('/api/undergrad-requestors/register', uggRegistrationPayload(['gender' => $input]));
+    $response = $this->postJson('/api/v1/undergrad-requestors/register', uggRegistrationPayload(['gender' => $input]));
 
     $response->assertUnprocessable()
         ->assertJsonValidationErrors(['gender'])
@@ -155,7 +155,7 @@ test('register still succeeds without a gender and stores NULL', function (mixed
         $payload['gender'] = $absent;
     }
 
-    $this->postJson('/api/undergrad-requestors/register', $payload)->assertCreated();
+    $this->postJson('/api/v1/undergrad-requestors/register', $payload)->assertCreated();
 
     $user = SystemUser::where('email', $payload['email'])->firstOrFail();
 
@@ -170,7 +170,7 @@ test('register still succeeds without a gender and stores NULL', function (mixed
 test('the registration response does not echo gender back to the public caller', function () {
     Mail::fake();
 
-    $this->postJson('/api/undergrad-requestors/register', uggRegistrationPayload(['gender' => 'Male']))
+    $this->postJson('/api/v1/undergrad-requestors/register', uggRegistrationPayload(['gender' => 'Male']))
         ->assertCreated()
         ->assertJsonMissingPath('data.gender');
 });
@@ -181,7 +181,7 @@ test('the logbook returns an undergrad requestor\'s gender on the row and on the
     uggStaff();
     [$request] = uggUndergradRequest('Female');
 
-    $row = collect($this->getJson('/api/document-requests/logbook')->assertOk()->json('data'))
+    $row = collect($this->getJson('/api/v1/document-requests/logbook')->assertOk()->json('data'))
         ->firstWhere('request_id', $request->request_id);
 
     expect($row)->not->toBeNull()
@@ -194,7 +194,7 @@ test('the logbook returns null gender for an undergrad with no declared gender',
     uggStaff();
     [$request] = uggUndergradRequest(null);
 
-    $row = collect($this->getJson('/api/document-requests/logbook')->assertOk()->json('data'))
+    $row = collect($this->getJson('/api/v1/document-requests/logbook')->assertOk()->json('data'))
         ->firstWhere('request_id', $request->request_id);
 
     expect($row['gender'])->toBeNull()
@@ -205,7 +205,7 @@ test('the logbook leaves top-level gender null for student rows so sex_at_birth 
     uggStaff();
     $request = uggStudentRequest();
 
-    $row = collect($this->getJson('/api/document-requests/logbook')->assertOk()->json('data'))
+    $row = collect($this->getJson('/api/v1/document-requests/logbook')->assertOk()->json('data'))
         ->firstWhere('request_id', $request->request_id);
 
     expect($row['requester_type'])->toBe('Student')
@@ -217,7 +217,7 @@ test('the staff dashboard list also carries the undergrad gender', function () {
     uggStaff();
     [$request] = uggUndergradRequest('Male');
 
-    $row = collect($this->getJson('/api/document-requests?all_statuses=true')->assertOk()->json('data'))
+    $row = collect($this->getJson('/api/v1/document-requests?all_statuses=true')->assertOk()->json('data'))
         ->firstWhere('request_id', $request->request_id);
 
     expect($row['gender'])->toBe('Male');
@@ -227,7 +227,7 @@ test('adding gender does not leak encrypted undergrad PII into the logbook', fun
     uggStaff();
     uggUndergradRequest('Female');
 
-    $response = $this->getJson('/api/document-requests/logbook')->assertOk();
+    $response = $this->getJson('/api/v1/document-requests/logbook')->assertOk();
     $body     = $response->getContent();
 
     expect($body)->not->toContain('09171234567')
@@ -242,7 +242,7 @@ test('the logbook still requires logbook access', function () {
     $user = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
     Sanctum::actingAs($user);
 
-    $this->getJson('/api/document-requests/logbook')->assertForbidden();
+    $this->getJson('/api/v1/document-requests/logbook')->assertForbidden();
 });
 
 // ── Migration ────────────────────────────────────────────────────────────────

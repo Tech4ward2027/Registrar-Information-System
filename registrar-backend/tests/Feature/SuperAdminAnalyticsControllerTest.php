@@ -114,27 +114,27 @@ function saWriteJobRun(string $jobName, string $status, Carbon $startedAgo, ?str
 test('a plain admin cannot reach system-analytics endpoints', function () {
     saMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->getJson('/api/system-analytics/admin-roster-health')->assertForbidden();
-    $this->getJson('/api/system-analytics/access-request-throughput')->assertForbidden();
-    $this->getJson('/api/system-analytics/cashier-verification-health')->assertForbidden();
+    $this->getJson('/api/v1/system-analytics/admin-roster-health')->assertForbidden();
+    $this->getJson('/api/v1/system-analytics/access-request-throughput')->assertForbidden();
+    $this->getJson('/api/v1/system-analytics/cashier-verification-health')->assertForbidden();
 });
 
 test('a student cannot reach system-analytics endpoints', function () {
     saMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->getJson('/api/system-analytics/admin-roster-health')->assertForbidden();
+    $this->getJson('/api/v1/system-analytics/admin-roster-health')->assertForbidden();
 });
 
 test('an unauthenticated request is rejected', function () {
-    $this->getJson('/api/system-analytics/admin-roster-health')->assertUnauthorized();
+    $this->getJson('/api/v1/system-analytics/admin-roster-health')->assertUnauthorized();
 });
 
 test('a super admin can reach every system-analytics endpoint', function () {
     saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->getJson('/api/system-analytics/admin-roster-health')->assertOk();
-    $this->getJson('/api/system-analytics/access-request-throughput')->assertOk();
-    $this->getJson('/api/system-analytics/cashier-verification-health')->assertOk();
+    $this->getJson('/api/v1/system-analytics/admin-roster-health')->assertOk();
+    $this->getJson('/api/v1/system-analytics/access-request-throughput')->assertOk();
+    $this->getJson('/api/v1/system-analytics/cashier-verification-health')->assertOk();
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -161,7 +161,7 @@ test('role breakdown only counts admin/super-admin role assignments, not student
         'status'  => RoleAssignment::STATUS_ACTIVE,
     ]);
 
-    $response = $this->getJson('/api/system-analytics/admin-roster-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/admin-roster-health')->assertOk();
 
     $adminRow = collect($response->json('role_breakdown'))->firstWhere('role_id', SystemUser::ROLE_ADMIN);
     expect($adminRow['active_count'])->toBe(1);
@@ -185,7 +185,7 @@ test('an Active row whose expires_at has already elapsed is bucketed as due_to_e
         'expires_at' => now()->subHour(),
     ]);
 
-    $response = $this->getJson('/api/system-analytics/admin-roster-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/admin-roster-health')->assertOk();
     $adminRow = collect($response->json('role_breakdown'))->firstWhere('role_id', SystemUser::ROLE_ADMIN);
 
     expect($adminRow['active_count'])->toBe(0);
@@ -209,7 +209,7 @@ test('revoked and expired role assignments are counted in their own buckets', fu
         'status'  => RoleAssignment::STATUS_EXPIRED,
     ]);
 
-    $response = $this->getJson('/api/system-analytics/admin-roster-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/admin-roster-health')->assertOk();
     $adminRow = collect($response->json('role_breakdown'))->firstWhere('role_id', SystemUser::ROLE_ADMIN);
 
     expect($adminRow['revoked_count'])->toBe(1);
@@ -231,7 +231,7 @@ test('pending activations are listed and flagged when expiring within 3 days', f
         'pending_expires_at' => now()->addDays(10),
     ]);
 
-    $response = $this->getJson('/api/system-analytics/admin-roster-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/admin-roster-health')->assertOk();
 
     expect($response->json('pending_activations.total'))->toBe(2);
     expect($response->json('pending_activations.expiring_soon'))->toBe(1);
@@ -249,7 +249,7 @@ test('IDP sync failures older than 30 days are excluded from the count', functio
         'created_at'   => now()->subDays(45),
     ]);
 
-    $response = $this->getJson('/api/system-analytics/admin-roster-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/admin-roster-health')->assertOk();
 
     expect($response->json('idp_sync_failures.count_last_30_days'))->toBe(1);
     expect($response->json('idp_sync_failures.recent.0.target_email'))->toBe('recent@example.com');
@@ -272,7 +272,7 @@ test('approval_rate is computed from fulfilled vs rejected, not the unused Appro
         saAccessRequest(['status' => AccessRequest::STATUS_REQUESTED]);
     }
 
-    $response = $this->getJson('/api/system-analytics/access-request-throughput?range=all')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/access-request-throughput?range=all')->assertOk();
 
     expect($response->json('total'))->toBe(6);
     expect($response->json('fulfilled'))->toBe(3);
@@ -292,7 +292,7 @@ test('avg_time_to_review_hours is null when nothing has been reviewed yet', func
 
     saAccessRequest(['status' => AccessRequest::STATUS_REQUESTED, 'reviewed_at' => null]);
 
-    $response = $this->getJson('/api/system-analytics/access-request-throughput?range=all')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/access-request-throughput?range=all')->assertOk();
 
     expect($response->json('avg_time_to_review_hours'))->toBeNull();
     expect($response->json('approval_rate'))->toBeNull();
@@ -309,7 +309,7 @@ test('match rate is computed from cashier_verification audit entries', function 
     saWriteAuditLog(AuditLog::ACTION_CASHIER_VERIFICATION, ['metadata' => ['final_approved' => true]]);
     saWriteAuditLog(AuditLog::ACTION_CASHIER_VERIFICATION, ['metadata' => ['final_approved' => false]]);
 
-    $response = $this->getJson('/api/system-analytics/cashier-verification-health?range=all')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/cashier-verification-health?range=all')->assertOk();
 
     expect($response->json('total_attempts'))->toBe(3);
     expect($response->json('matched'))->toBe(2);
@@ -337,7 +337,7 @@ test('unresolved backlog counts only unmatched cashier items with no resolved_at
         'resolved_at'       => now(),
     ]);
 
-    $response = $this->getJson('/api/system-analytics/cashier-verification-health?range=all')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/cashier-verification-health?range=all')->assertOk();
 
     expect($response->json('unresolved_backlog'))->toBe(1);
     expect($response->json('top_backlog_items.0.raw_label'))->toBe('Transcript Fee');
@@ -361,7 +361,7 @@ test('a job with no rows at all is reported as never_run and counted in needs_at
         saWriteJobRun($jobName, JobRunLog::STATUS_SUCCESS, now()->subMinute());
     }
 
-    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertOk();
 
     $job = collect($response->json('jobs'))->firstWhere('job_name', 'audit:verify');
     expect($job['status'])->toBe('never_run');
@@ -377,7 +377,7 @@ test('a run still sitting in running well past the stalled ceiling is reported a
     // of these commands normally finishes in well under a minute.
     saWriteJobRun('notifications:shred-expired-requests', JobRunLog::STATUS_RUNNING, now()->subMinutes(45));
 
-    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertOk();
 
     $job = collect($response->json('jobs'))->firstWhere('job_name', 'notifications:shred-expired-requests');
     expect($job['status'])->toBe('stalled');
@@ -391,7 +391,7 @@ test('a run still sitting in running within the stalled ceiling is reported as r
     // in progress right now must never be flagged as either.
     saWriteJobRun('role-assignments:expire', JobRunLog::STATUS_RUNNING, now()->subMinutes(10));
 
-    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertOk();
 
     $job = collect($response->json('jobs'))->firstWhere('job_name', 'role-assignments:expire');
     expect($job['status'])->toBe('running');
@@ -412,7 +412,7 @@ test('a failed run is reported as failed with its error message, even long after
         'Connection refused: database unreachable.',
     );
 
-    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertOk();
 
     $job = collect($response->json('jobs'))->firstWhere('job_name', 'notifications:shred-expired-requests');
     expect($job['status'])->toBe('failed');
@@ -426,7 +426,7 @@ test('a successful run well within its expected interval is reported as success,
     // overdue threshold.
     saWriteJobRun('role-assignments:expire', JobRunLog::STATUS_SUCCESS, now()->subMinutes(20));
 
-    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertOk();
 
     $job = collect($response->json('jobs'))->firstWhere('job_name', 'role-assignments:expire');
     expect($job['status'])->toBe('success');
@@ -444,7 +444,7 @@ test('a successful run whose gap has exceeded its expected interval is reported 
     // Hourly job (120-minute threshold), last successful run 3 hours ago.
     saWriteJobRun('notifications:shred-expired-requests', JobRunLog::STATUS_SUCCESS, now()->subHours(3));
 
-    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertOk();
 
     $job = collect($response->json('jobs'))->firstWhere('job_name', 'notifications:shred-expired-requests');
     expect($job['status'])->toBe('overdue');
@@ -459,7 +459,7 @@ test('a daily job successful 20 hours ago is still success, not overdue, per its
     // calendar day doesn't false-positive.
     saWriteJobRun('notifications:send-unclaimed-reminders', JobRunLog::STATUS_SUCCESS, now()->subHours(20));
 
-    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertOk();
 
     $job = collect($response->json('jobs'))->firstWhere('job_name', 'notifications:send-unclaimed-reminders');
     expect($job['status'])->toBe('success');
@@ -470,7 +470,7 @@ test('a daily job successful 30 hours ago is overdue, past its 26-hour grace win
 
     saWriteJobRun('notifications:send-unclaimed-reminders', JobRunLog::STATUS_SUCCESS, now()->subHours(30));
 
-    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertOk();
 
     $job = collect($response->json('jobs'))->firstWhere('job_name', 'notifications:send-unclaimed-reminders');
     expect($job['status'])->toBe('overdue');
@@ -483,7 +483,7 @@ test('a weekly job successful 5 days ago is still success, not overdue', functio
     // within its normal cadence.
     saWriteJobRun('break-glass:test', JobRunLog::STATUS_SUCCESS, now()->subDays(5));
 
-    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertOk();
 
     $job = collect($response->json('jobs'))->firstWhere('job_name', 'break-glass:test');
     expect($job['status'])->toBe('success');
@@ -494,7 +494,7 @@ test('a weekly job successful 9 days ago is overdue, past its 8-day grace window
 
     saWriteJobRun('break-glass:test', JobRunLog::STATUS_SUCCESS, now()->subDays(9));
 
-    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertOk();
 
     $job = collect($response->json('jobs'))->firstWhere('job_name', 'break-glass:test');
     expect($job['status'])->toBe('overdue');
@@ -527,7 +527,7 @@ test('needs_attention counts failed, stalled, overdue, and never_run jobs togeth
         }
     }
 
-    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertOk();
 
     // failed + stalled + overdue + never_run (audit:verify) + never_run
     // (requests:check-consistency, not seeded here) = 5.
@@ -543,7 +543,7 @@ test('only the latest row per job is considered, not an older healthy or unhealt
     saWriteJobRun('role-assignments:expire', JobRunLog::STATUS_FAILED, now()->subHours(2), 'old failure');
     saWriteJobRun('role-assignments:expire', JobRunLog::STATUS_SUCCESS, now()->subMinutes(5));
 
-    $response = $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertOk();
+    $response = $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertOk();
 
     $job = collect($response->json('jobs'))->firstWhere('job_name', 'role-assignments:expire');
     expect($job['status'])->toBe('success');
@@ -553,5 +553,5 @@ test('only the latest row per job is considered, not an older healthy or unhealt
 test('a plain admin cannot reach the scheduled-jobs-health endpoint', function () {
     saMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->getJson('/api/system-analytics/scheduled-jobs-health')->assertForbidden();
+    $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertForbidden();
 });
