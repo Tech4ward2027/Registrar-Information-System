@@ -65,6 +65,8 @@ services:
       # variables through explicitly, so every flag a service reads must be
       # listed here. Fail-closed default (see config/features.php): a missing
       # or empty value keeps the feature OFF.
+      # free_request_page gates the admin Free Document/Certificate Request page.
+      FEATURE_FREE_REQUEST_PAGE: ${FEATURE_FREE_REQUEST_PAGE:-false}
       # system_health gates the System Health / Failed Verifications API.
       FEATURE_SYSTEM_HEALTH: ${FEATURE_SYSTEM_HEALTH:-false}
     ports:
