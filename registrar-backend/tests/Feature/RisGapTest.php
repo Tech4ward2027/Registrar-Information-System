@@ -111,7 +111,7 @@ test('student cannot view another students document request', function () {
     StudentAcademicRecord::factory()->create(['student_profile_id' => $otherProfile->student_profile_id]);
     Sanctum::actingAs($other);
 
-    $this->getJson("/api/document-requests/{$docRequest->request_id}")
+    $this->getJson("/api/v1/document-requests/{$docRequest->request_id}")
          ->assertStatus(403);
 });
 
@@ -125,7 +125,7 @@ test('student can view their own document request', function () {
     $docRequest = DocumentRequest::factory()->create(['user_id' => $user->user_id]);
     Sanctum::actingAs($user);
 
-    $this->getJson("/api/document-requests/{$docRequest->request_id}")
+    $this->getJson("/api/v1/document-requests/{$docRequest->request_id}")
          ->assertOk()
          ->assertJsonPath('request_id', $docRequest->request_id);
 });
@@ -138,7 +138,7 @@ test('admin can view any students document request', function () {
 
     gapMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->getJson("/api/document-requests/{$docRequest->request_id}")
+    $this->getJson("/api/v1/document-requests/{$docRequest->request_id}")
          ->assertOk()
          // The JSON uses 'request_id' (the model's $primaryKey), not 'id'
          ->assertJsonPath('request_id', $docRequest->request_id);
@@ -156,7 +156,7 @@ test('alumni can submit a document request in mock mode', function () {
     ['user' => $user] = gapMakeAlumniWithProfile();
     ['purpose' => $purpose, 'docType' => $docType] = gapSeedRefData();
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'          => '7654321',
         'receipt_date'       => now()->toDateString(),
@@ -173,7 +173,7 @@ test('alumni request is rejected when OR is not found in cashier API', function 
     gapMakeAlumniWithProfile();
     ['purpose' => $purpose, 'docType' => $docType] = gapSeedRefData();
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'          => '0000000',
         'receipt_date'       => now()->toDateString(),
@@ -190,7 +190,7 @@ test('alumni request is rejected when cashier API is down', function () {
     gapMakeAlumniWithProfile();
     ['purpose' => $purpose, 'docType' => $docType] = gapSeedRefData();
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'          => '1234567',
         'receipt_date'       => now()->toDateString(),
@@ -219,7 +219,7 @@ test('document request is rejected with generic message on unknown cashier reaso
 
     ['purpose' => $purpose, 'docType' => $docType] = gapSeedRefData();
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'          => '1234567',
         'receipt_date'       => now()->toDateString(),
@@ -240,7 +240,7 @@ test('document request is rejected with generic message on unknown cashier reaso
 test('student cannot create an announcement', function () {
     gapMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->postJson('/api/announcements', [
+    $this->postJson('/api/v1/announcements', [
         'title'   => 'Test',
         'content' => 'Should not be allowed',
     ])->assertStatus(403);
@@ -249,7 +249,7 @@ test('student cannot create an announcement', function () {
 test('alumni cannot create an announcement', function () {
     gapMakeAlumniWithProfile();
 
-    $this->postJson('/api/announcements', [
+    $this->postJson('/api/v1/announcements', [
         'title'   => 'Alumni Announcement',
         'content' => 'Should be rejected',
     ])->assertStatus(403);
@@ -259,7 +259,7 @@ test('admin cannot create an announcement', function () {
     // Announcement write routes are role:4 (superadmin) only, not role:3 (admin)
     gapMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/announcements', [
+    $this->postJson('/api/v1/announcements', [
         'title'   => 'Admin Attempt',
         'content' => 'Should also be rejected',
     ])->assertStatus(403);
@@ -268,7 +268,7 @@ test('admin cannot create an announcement', function () {
 test('superadmin can create an announcement', function () {
     gapMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->postJson('/api/announcements', [
+    $this->postJson('/api/v1/announcements', [
         'title'   => 'Office Hours Update',
         'content' => 'The registrar office will be closed on Friday.',
     ])->assertCreated();
@@ -278,12 +278,12 @@ test('superadmin can delete an announcement', function () {
     // Create via API as superadmin so created_by is set correctly
     gapMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $created = $this->postJson('/api/announcements', [
+    $created = $this->postJson('/api/v1/announcements', [
         'title'   => 'To Be Deleted',
         'content' => 'Content',
     ])->assertCreated()->json();
 
-    $this->deleteJson("/api/announcements/{$created['id']}")
+    $this->deleteJson("/api/v1/announcements/{$created['id']}")
          ->assertOk();
 });
 
@@ -292,7 +292,7 @@ test('student cannot delete an announcement', function () {
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($superAdmin);
 
-    $created = $this->postJson('/api/announcements', [
+    $created = $this->postJson('/api/v1/announcements', [
         'title'   => 'Existing',
         'content' => 'Content',
     ])->assertCreated()->json();
@@ -300,6 +300,6 @@ test('student cannot delete an announcement', function () {
     // Now act as student
     gapMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->deleteJson("/api/announcements/{$created['id']}")
+    $this->deleteJson("/api/v1/announcements/{$created['id']}")
          ->assertStatus(403);
 });

@@ -76,7 +76,7 @@ test('student cannot reach the withdraw route', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     permRegressionMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertStatus(403);
 
@@ -91,7 +91,7 @@ test('alumni cannot reach the withdraw route', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     permRegressionMakeUser(SystemUser::ROLE_ALUMNI);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertStatus(403);
 });
@@ -105,7 +105,7 @@ test('student cannot reach the issue-deficiency-notice route', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     permRegressionMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::MissingSignature->value,
     ])->assertStatus(403);
 
@@ -117,7 +117,7 @@ test('alumni cannot reach the issue-deficiency-notice route', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     permRegressionMakeUser(SystemUser::ROLE_ALUMNI);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/deficiency-notices", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/deficiency-notices", [
         'item_key' => DeficiencyItemEnum::MissingSignature->value,
     ])->assertStatus(403);
 });
@@ -131,7 +131,7 @@ test('student cannot reach the clear-deficiency-notice route', function () {
     $remark = RequestRemark::factory()->create();
     permRegressionMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/clear")
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/clear")
         ->assertStatus(403);
 
     $this->assertDatabaseHas('request_remarks', [
@@ -145,7 +145,7 @@ test('alumni cannot reach the clear-deficiency-notice route', function () {
     $remark = RequestRemark::factory()->create();
     permRegressionMakeUser(SystemUser::ROLE_ALUMNI);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/clear")
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/clear")
         ->assertStatus(403);
 });
 
@@ -158,7 +158,7 @@ test('student cannot reach the void-deficiency-notice route', function () {
     $remark = RequestRemark::factory()->create();
     permRegressionMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/void", [
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/void", [
         'void_reason' => 'Attempting an unauthorized void.',
     ])->assertStatus(403);
 
@@ -173,7 +173,7 @@ test('alumni cannot reach the void-deficiency-notice route', function () {
     $remark = RequestRemark::factory()->create();
     permRegressionMakeUser(SystemUser::ROLE_ALUMNI);
 
-    $this->postJson("/api/deficiency-notices/{$remark->remark_id}/void", [
+    $this->postJson("/api/v1/deficiency-notices/{$remark->remark_id}/void", [
         'void_reason' => 'Attempting an unauthorized void.',
     ])->assertStatus(403);
 });
@@ -188,7 +188,7 @@ test('an unauthenticated request to withdraw is rejected before role checking', 
     permRegressionSeedStatuses();
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertStatus(401);
 });

@@ -196,7 +196,7 @@ test('a suffixed student can be OR-verified once their suffix has synced from OG
         return Http::response(['valid' => false, 'reason' => 'NOT_FOUND', 'data' => null], 200);
     });
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'          => '1234567',
         'receipt_date'       => now()->toDateString(),
@@ -219,7 +219,7 @@ test('admin can set a suffix when updating a student profile', function () {
 
     $profile = StudentProfile::factory()->create(['suffix' => null]);
 
-    $this->putJson("/api/students/{$profile->student_profile_id}", [
+    $this->putJson("/api/v1/students/{$profile->student_profile_id}", [
         'suffix' => 'Jr.',
     ])->assertStatus(200);
 
@@ -231,7 +231,7 @@ test('admin can set a suffix when creating a student profile', function () {
 
     $user = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT]);
 
-    $response = $this->postJson('/api/students', [
+    $response = $this->postJson('/api/v1/students', [
         'user_id'       => $user->user_id,
         'first_name'    => 'Joege',
         'last_name'     => 'Nono',
@@ -251,7 +251,7 @@ test('suffix is rejected past the column width', function () {
 
     $profile = StudentProfile::factory()->create();
 
-    $this->putJson("/api/students/{$profile->student_profile_id}", [
+    $this->putJson("/api/v1/students/{$profile->student_profile_id}", [
         'suffix' => str_repeat('X', 21),
     ])->assertStatus(422);
 });

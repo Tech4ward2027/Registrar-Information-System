@@ -50,7 +50,7 @@ test('admin (role 3) is blocked from system-users by route middleware', function
     // Blocked at role:4 middleware, before the controller/Policy ever run —
     // hence Laravel's raw 'Forbidden' from RoleMiddleware, not the Policy's
     // default authorization message.
-    $this->getJson('/api/system-users')
+    $this->getJson('/api/v1/system-users')
          ->assertStatus(403)
          ->assertJson(['message' => 'Forbidden']);
 });
@@ -60,7 +60,7 @@ test('superadmin can list system users, scoped to admin/super-admin roles only',
     suMakeTarget(SystemUser::ROLE_ADMIN);
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $response = $this->getJson('/api/system-users')->assertOk();
+    $response = $this->getJson('/api/v1/system-users')->assertOk();
 
     $emails = collect($response->json('data'))->pluck('role_id');
     expect($emails->every(fn ($r) => in_array($r, [SystemUser::ROLE_ADMIN, SystemUser::ROLE_SUPER_ADMIN])))->toBeTrue();
@@ -73,7 +73,7 @@ test('superadmin can list system users, scoped to admin/super-admin roles only',
 test('show returns 404 for a missing user', function () {
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->getJson('/api/system-users/999')->assertStatus(404);
+    $this->getJson('/api/v1/system-users/999')->assertStatus(404);
 });
 
 test('show is forbidden when the target is not an admin/super-admin account', function () {
@@ -83,7 +83,7 @@ test('show is forbidden when the target is not an admin/super-admin account', fu
     // Policy::view() returns false for non-manageable targets — this is a
     // genuine authorize() failure (not the route middleware), so it's
     // Laravel's default message rather than 'Forbidden'.
-    $this->getJson("/api/system-users/{$student->user_id}")
+    $this->getJson("/api/v1/system-users/{$student->user_id}")
          ->assertStatus(403)
          ->assertJson(['message' => 'This action is unauthorized.']);
 });
@@ -92,7 +92,7 @@ test('superadmin can view an admin account', function () {
     $admin = suMakeTarget(SystemUser::ROLE_ADMIN);
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->getJson("/api/system-users/{$admin->user_id}")
+    $this->getJson("/api/v1/system-users/{$admin->user_id}")
          ->assertOk()
          ->assertJsonPath('data.user_id', $admin->user_id)
          ->assertJsonPath('data.role_name', 'admin');
@@ -110,7 +110,7 @@ test('superadmin can view an admin account', function () {
 test('store fails validation on bad role_id', function () {
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->postJson('/api/system-users', [
+    $this->postJson('/api/v1/system-users', [
         'email'      => 'newadmin@example.com',
         'role_id'    => 1,           // not in:3,4
         'first_name' => 'New',
@@ -123,7 +123,7 @@ test('store fails validation when email is already taken', function () {
     $existing = suMakeTarget(SystemUser::ROLE_ADMIN);
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->postJson('/api/system-users', [
+    $this->postJson('/api/v1/system-users', [
         'email'      => $existing->email,
         'role_id'    => 3,
         'first_name' => 'New',
@@ -143,7 +143,7 @@ test('store rejects a password field on create — it is no longer accepted', fu
     // a 422 — this asserts the *effect* (no password ever lands in the DB)
     // rather than asserting a specific validation error that no longer
     // applies.
-    $this->postJson('/api/system-users', [
+    $this->postJson('/api/v1/system-users', [
         'email'      => 'newadmin@example.com',
         'password'   => 'Password123',
         'role_id'    => 3,
@@ -165,7 +165,7 @@ test('superadmin can pre-register a new admin account — no IdP call, Pending A
         $mock->shouldNotReceive('createUser');
     });
 
-    $this->postJson('/api/system-users', [
+    $this->postJson('/api/v1/system-users', [
         'email'      => 'newadmin@example.com',
         'role_id'    => 3,
         'first_name' => 'New',
@@ -193,7 +193,7 @@ test('policy_id is silently ignored when creating a super-admin account', functi
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
     $policy = suMakePolicy();
 
-    $response = $this->postJson('/api/system-users', [
+    $response = $this->postJson('/api/v1/system-users', [
         'email'      => 'newsuperadmin@example.com',
         'role_id'    => 4,
         'first_name' => 'New',
@@ -209,7 +209,7 @@ test('a status field sent on create is ignored — it is always server-set to Pe
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
     // StoreSystemUserRequest no longer declares a 'status' rule either.
-    $this->postJson('/api/system-users', [
+    $this->postJson('/api/v1/system-users', [
         'email'      => 'triedtoactivate@example.com',
         'status'     => 'Activated',
         'role_id'    => 3,
@@ -228,14 +228,14 @@ test('creating a new admin or super-admin never enables break-glass (local) auth
     // off regardless of what's submitted, for both roles.
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->postJson('/api/system-users', [
+    $this->postJson('/api/v1/system-users', [
         'email'      => 'newadmin2@example.com',
         'role_id'    => 3,
         'first_name' => 'New',
         'last_name'  => 'Admin',
     ])->assertCreated();
 
-    $this->postJson('/api/system-users', [
+    $this->postJson('/api/v1/system-users', [
         'email'      => 'newsuperadmin2@example.com',
         'role_id'    => 4,
         'first_name' => 'New',
@@ -253,7 +253,7 @@ test('creating a new admin or super-admin never enables break-glass (local) auth
 test('update returns 404 for a missing user', function () {
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->putJson('/api/system-users/999', ['first_name' => 'X'])
+    $this->putJson('/api/v1/system-users/999', ['first_name' => 'X'])
          ->assertStatus(404);
 });
 
@@ -261,7 +261,7 @@ test('update is forbidden when the target is not an admin/super-admin account', 
     $student = suMakeTarget(SystemUser::ROLE_STUDENT);
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->putJson("/api/system-users/{$student->user_id}", ['first_name' => 'X'])
+    $this->putJson("/api/v1/system-users/{$student->user_id}", ['first_name' => 'X'])
          ->assertStatus(403);
 });
 
@@ -270,7 +270,7 @@ test('update fails validation when email is already taken by someone else', func
     $target = suMakeTarget(SystemUser::ROLE_ADMIN);
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->putJson("/api/system-users/{$target->user_id}", ['email' => $other->email])
+    $this->putJson("/api/v1/system-users/{$target->user_id}", ['email' => $other->email])
          ->assertStatus(422)
          ->assertJsonValidationErrors(['email'])
          // QA bug #2 — Edit User hits the same unique rule as Add New
@@ -282,7 +282,7 @@ test('update allows keeping the same email for the same user (unique rule exclud
     $target = suMakeTarget(SystemUser::ROLE_ADMIN);
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->putJson("/api/system-users/{$target->user_id}", [
+    $this->putJson("/api/v1/system-users/{$target->user_id}", [
         'email'      => $target->email,
         'first_name' => 'Updated',
     ])->assertOk()
@@ -296,7 +296,7 @@ test('superadmin can update an admin account status without touching the IdP', f
     $target = suMakeTarget(SystemUser::ROLE_ADMIN);
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->putJson("/api/system-users/{$target->user_id}", [
+    $this->putJson("/api/v1/system-users/{$target->user_id}", [
         'status' => 'Deactivated',
     ])->assertOk()
       ->assertJsonPath('data.status', 'Deactivated');
@@ -308,7 +308,7 @@ test('update fails validation on an invalid status value', function () {
     $target = suMakeTarget(SystemUser::ROLE_ADMIN);
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->putJson("/api/system-users/{$target->user_id}", ['status' => 'Suspended'])
+    $this->putJson("/api/v1/system-users/{$target->user_id}", ['status' => 'Suspended'])
          ->assertStatus(422)
          ->assertJsonValidationErrors(['status']);
 });
@@ -327,7 +327,7 @@ test('the retired Manage Access policy-attachment route no longer exists', funct
     $target = suMakeTarget(SystemUser::ROLE_ADMIN);
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->patchJson("/api/system-users/{$target->user_id}/policy", ['policy_id' => null])
+    $this->patchJson("/api/v1/system-users/{$target->user_id}/policy", ['policy_id' => null])
          ->assertStatus(404);
 });
 
@@ -340,7 +340,7 @@ test('update() silently ignores role_id even on a direct API call — Edit User 
     $target = suMakeTarget(SystemUser::ROLE_ADMIN);
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->putJson("/api/system-users/{$target->user_id}", [
+    $this->putJson("/api/v1/system-users/{$target->user_id}", [
         'role_id'    => SystemUser::ROLE_SUPER_ADMIN,
         'first_name' => 'Unchanged',
     ])->assertOk()
@@ -360,13 +360,13 @@ test('update() silently ignores role_id even on a direct API call — Edit User 
 test('destroy returns 404 for a missing user', function () {
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->deleteJson('/api/system-users/999')->assertStatus(404);
+    $this->deleteJson('/api/v1/system-users/999')->assertStatus(404);
 });
 
 test('superadmin cannot delete their own account', function () {
     $self = suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->deleteJson("/api/system-users/{$self->user_id}")
+    $this->deleteJson("/api/v1/system-users/{$self->user_id}")
          ->assertStatus(403)
          ->assertJson(['message' => 'You cannot delete your own account.']);
 
@@ -377,7 +377,7 @@ test('superadmin can delete another admin account', function () {
     $target = suMakeTarget(SystemUser::ROLE_ADMIN);
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->deleteJson("/api/system-users/{$target->user_id}")
+    $this->deleteJson("/api/v1/system-users/{$target->user_id}")
          ->assertOk()
          ->assertJson(['message' => 'User deleted successfully']);
 
@@ -410,7 +410,7 @@ test('a student with an active Student Staff grant appears in Admin Accounts', f
 
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $response = $this->getJson('/api/system-users')->assertOk();
+    $response = $this->getJson('/api/v1/system-users')->assertOk();
 
     $row = collect($response->json('data'))->firstWhere('user_id', $student->user_id);
 
@@ -435,7 +435,7 @@ test('a student with an expired Student Staff grant does not appear in Admin Acc
 
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $response = $this->getJson('/api/system-users')->assertOk();
+    $response = $this->getJson('/api/v1/system-users')->assertOk();
 
     $row = collect($response->json('data'))->firstWhere('user_id', $student->user_id);
 
@@ -456,7 +456,7 @@ test('a student with a revoked Student Staff grant does not appear in Admin Acco
 
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $response = $this->getJson('/api/system-users')->assertOk();
+    $response = $this->getJson('/api/v1/system-users')->assertOk();
 
     $row = collect($response->json('data'))->firstWhere('user_id', $student->user_id);
 
@@ -467,7 +467,7 @@ test('a student with no administrative grant at all does not appear in Admin Acc
     suMakeTarget(SystemUser::ROLE_STUDENT);
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $response = $this->getJson('/api/system-users')->assertOk();
+    $response = $this->getJson('/api/v1/system-users')->assertOk();
 
     $roleIds = collect($response->json('data'))->pluck('base_role_id');
 
@@ -490,7 +490,7 @@ test('an existing admin account with a live baseline role_assignment displays un
 
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $response = $this->getJson('/api/system-users')->assertOk();
+    $response = $this->getJson('/api/v1/system-users')->assertOk();
     $row = collect($response->json('data'))->firstWhere('user_id', $admin->user_id);
 
     expect($row['base_role_id'])->toBe(SystemUser::ROLE_ADMIN);
@@ -517,7 +517,7 @@ test('a deactivated admin whose baseline role_assignment was cascade-revoked sti
 
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $response = $this->getJson('/api/system-users')->assertOk();
+    $response = $this->getJson('/api/v1/system-users')->assertOk();
     $row = collect($response->json('data'))->firstWhere('user_id', $admin->user_id);
 
     // Still listed — this is the "existing rows unaffected" guarantee.
@@ -545,7 +545,7 @@ test('superadmin can view a student staff account', function () {
 
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->getJson("/api/system-users/{$student->user_id}")
+    $this->getJson("/api/v1/system-users/{$student->user_id}")
          ->assertOk()
          ->assertJsonPath('data.user_id', $student->user_id)
          ->assertJsonPath('data.base_role_name', 'student');
@@ -563,7 +563,7 @@ test('superadmin can update the Status of a student staff account', function () 
 
     suMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
-    $this->putJson("/api/system-users/{$student->user_id}", ['status' => 'Deactivated'])
+    $this->putJson("/api/v1/system-users/{$student->user_id}", ['status' => 'Deactivated'])
          ->assertOk()
          ->assertJsonPath('data.status', 'Deactivated');
 });
@@ -574,7 +574,7 @@ test('a student with no administrative grant still cannot be viewed via system-u
 
     // Unchanged pre-#3 behavior — this policy is still not a general
     // student/alumni lookup endpoint.
-    $this->getJson("/api/system-users/{$student->user_id}")
+    $this->getJson("/api/v1/system-users/{$student->user_id}")
          ->assertStatus(403)
          ->assertJson(['message' => 'This action is unauthorized.']);
 });
@@ -594,7 +594,7 @@ test('a student staff account cannot be deleted via DELETE /system-users', funct
     // delete() was deliberately NOT extended — see SystemUserPolicy::delete()
     // docblock. A student staff account's ADMIN grant is revoked via Manage
     // Roles; the account itself is not deletable from this screen.
-    $this->deleteJson("/api/system-users/{$student->user_id}")
+    $this->deleteJson("/api/v1/system-users/{$student->user_id}")
          ->assertStatus(403)
          ->assertJson(['message' => 'This action is unauthorized.']);
 

@@ -104,7 +104,7 @@ test('the queue lists email-verified pending submissions oldest first', function
 
     Sanctum::actingAs(urvReviewer());
 
-    $response = $this->getJson('/api/admin/undergrad-requestors?status=pending')
+    $response = $this->getJson('/api/v1/admin/undergrad-requestors?status=pending')
         ->assertOk()
         ->assertJsonCount(2, 'data');
 
@@ -118,7 +118,7 @@ test('a submission whose email is unconfirmed never appears in the queue (D10)',
 
     Sanctum::actingAs(urvReviewer());
 
-    $this->getJson('/api/admin/undergrad-requestors?status=pending')
+    $this->getJson('/api/v1/admin/undergrad-requestors?status=pending')
         ->assertOk()
         ->assertJsonCount(0, 'data');
 });
@@ -126,7 +126,7 @@ test('a submission whose email is unconfirmed never appears in the queue (D10)',
 test('an unknown status filter is rejected rather than silently defaulting', function () {
     Sanctum::actingAs(urvReviewer());
 
-    $this->getJson('/api/admin/undergrad-requestors?status=bogus')
+    $this->getJson('/api/v1/admin/undergrad-requestors?status=bogus')
         ->assertStatus(422);
 });
 
@@ -138,7 +138,7 @@ test('a non-admin cannot reach the queue at all', function () {
 
     Sanctum::actingAs($student);
 
-    $this->getJson('/api/admin/undergrad-requestors')->assertForbidden();
+    $this->getJson('/api/v1/admin/undergrad-requestors')->assertForbidden();
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -156,7 +156,7 @@ test('opening a record persists both advisory checks', function () {
 
     Sanctum::actingAs(urvReviewer());
 
-    $this->getJson("/api/admin/undergrad-requestors/{$user->user_id}")
+    $this->getJson("/api/v1/admin/undergrad-requestors/{$user->user_id}")
         ->assertOk()
         ->assertJsonPath('advisory_checks.local_records_check.match_found', true)
         ->assertJsonPath('advisory_checks.ogos_enrollment_check.performed', true)
@@ -184,7 +184,7 @@ test('an OGOS hit is surfaced as a warning, not a confirmation', function () {
 
     Sanctum::actingAs(urvReviewer());
 
-    $response = $this->getJson("/api/admin/undergrad-requestors/{$user->user_id}")
+    $response = $this->getJson("/api/v1/admin/undergrad-requestors/{$user->user_id}")
         ->assertOk()
         ->assertJsonPath('advisory_checks.ogos_enrollment_check.match_found', true)
         ->assertJsonPath('advisory_checks.ogos_enrollment_check.severity', 'warning');
@@ -200,7 +200,7 @@ test('an unreachable OGOS is recorded as "not performed", never as "no match"', 
 
     Sanctum::actingAs(urvReviewer());
 
-    $this->getJson("/api/admin/undergrad-requestors/{$user->user_id}")
+    $this->getJson("/api/v1/admin/undergrad-requestors/{$user->user_id}")
         ->assertOk()
         ->assertJsonPath('advisory_checks.ogos_enrollment_check.performed', false)
         ->assertJsonPath('advisory_checks.ogos_enrollment_check.severity', 'unavailable');
@@ -218,7 +218,7 @@ test('OGOS being unreachable does not block a decision', function () {
 
     Sanctum::actingAs(urvReviewer());
 
-    $this->postJson("/api/admin/undergrad-requestors/{$user->user_id}/approve")->assertOk();
+    $this->postJson("/api/v1/admin/undergrad-requestors/{$user->user_id}/approve")->assertOk();
 
     expect($user->fresh()->status)->toBe('Pending Activation');
 });
@@ -229,7 +229,7 @@ test('duplicate student numbers are flagged, never blocked', function () {
 
     Sanctum::actingAs(urvReviewer());
 
-    $this->getJson("/api/admin/undergrad-requestors/{$first->user_id}")
+    $this->getJson("/api/v1/admin/undergrad-requestors/{$first->user_id}")
         ->assertOk()
         ->assertJsonPath('advisory_checks.duplicate_student_number.count', 1);
 });
@@ -244,7 +244,7 @@ test('approving moves the account to Pending Activation and clears the abandonme
 
     Sanctum::actingAs($reviewer);
 
-    $this->postJson("/api/admin/undergrad-requestors/{$user->user_id}/approve")->assertOk();
+    $this->postJson("/api/v1/admin/undergrad-requestors/{$user->user_id}/approve")->assertOk();
 
     $user->refresh();
     // NOT 'Activated': only a real IDP login can link idp_user_id (D4).
@@ -273,13 +273,13 @@ test('an approved requestor then auto-activates on first IDP login', function ()
     $user = urvSubmission();
 
     Sanctum::actingAs(urvReviewer());
-    $this->postJson("/api/admin/undergrad-requestors/{$user->user_id}/approve")->assertOk();
+    $this->postJson("/api/v1/admin/undergrad-requestors/{$user->user_id}/approve")->assertOk();
 
     // The Phase 3 handoff: matched by email, no prior idp_user_id.
     $result = app(\App\Services\Sso\UserProvisioningService::class)->provision([
         'id'    => 'idp-approved-undergrad',
         'email' => $user->email,
-    ], \Illuminate\Http\Request::create('/api/auth/callback', 'POST'));
+    ], \Illuminate\Http\Request::create('/api/v1/auth/callback', 'POST'));
 
     $user->refresh();
     expect($user->status)->toBe('Activated');
@@ -295,11 +295,11 @@ test('rejecting requires a substantive reason', function () {
     $user = urvSubmission();
     Sanctum::actingAs(urvReviewer());
 
-    $this->postJson("/api/admin/undergrad-requestors/{$user->user_id}/reject", [])
+    $this->postJson("/api/v1/admin/undergrad-requestors/{$user->user_id}/reject", [])
         ->assertStatus(422)
         ->assertJsonValidationErrors('rejection_reason');
 
-    $this->postJson("/api/admin/undergrad-requestors/{$user->user_id}/reject", ['rejection_reason' => 'no'])
+    $this->postJson("/api/v1/admin/undergrad-requestors/{$user->user_id}/reject", ['rejection_reason' => 'no'])
         ->assertStatus(422)
         ->assertJsonValidationErrors('rejection_reason');
 
@@ -312,7 +312,7 @@ test('rejecting marks the account Rejected and records the reason', function () 
 
     Sanctum::actingAs($reviewer);
 
-    $this->postJson("/api/admin/undergrad-requestors/{$user->user_id}/reject", [
+    $this->postJson("/api/v1/admin/undergrad-requestors/{$user->user_id}/reject", [
         'rejection_reason' => 'Student number does not match any historical record and no supporting context given.',
     ])->assertOk();
 
@@ -339,9 +339,9 @@ test('a submission cannot be decided twice', function () {
     $user = urvSubmission();
     Sanctum::actingAs(urvReviewer());
 
-    $this->postJson("/api/admin/undergrad-requestors/{$user->user_id}/approve")->assertOk();
+    $this->postJson("/api/v1/admin/undergrad-requestors/{$user->user_id}/approve")->assertOk();
 
-    $this->postJson("/api/admin/undergrad-requestors/{$user->user_id}/reject", [
+    $this->postJson("/api/v1/admin/undergrad-requestors/{$user->user_id}/reject", [
         'rejection_reason' => 'Changed my mind after approving.',
     ])->assertStatus(422);
 });
@@ -350,7 +350,7 @@ test('an unconfirmed-email submission cannot be approved by guessing its URL (D1
     $user = urvSubmission([], ['email_verified_at' => null]);
     Sanctum::actingAs(urvReviewer());
 
-    $this->postJson("/api/admin/undergrad-requestors/{$user->user_id}/approve")->assertStatus(422);
+    $this->postJson("/api/v1/admin/undergrad-requestors/{$user->user_id}/approve")->assertStatus(422);
 
     expect($user->fresh()->status)->toBe('Pending Verification');
 });
@@ -361,7 +361,7 @@ test('a submission past its abandonment window cannot be decided before the swee
     $user = urvSubmission(['pending_expires_at' => now()->subDay()]);
     Sanctum::actingAs(urvReviewer());
 
-    $this->postJson("/api/admin/undergrad-requestors/{$user->user_id}/approve")->assertStatus(422);
+    $this->postJson("/api/v1/admin/undergrad-requestors/{$user->user_id}/approve")->assertStatus(422);
 });
 
 test('an account of another role is not reviewable through this endpoint', function () {
@@ -372,7 +372,7 @@ test('an account of another role is not reviewable through this endpoint', funct
 
     Sanctum::actingAs(urvReviewer());
 
-    $this->getJson("/api/admin/undergrad-requestors/{$admin->user_id}")->assertStatus(422);
+    $this->getJson("/api/v1/admin/undergrad-requestors/{$admin->user_id}")->assertStatus(422);
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -400,7 +400,7 @@ test('the purge disposes of rejected PII while leaving the audit trail intact', 
     $user = urvSubmission();
     Sanctum::actingAs(urvReviewer());
 
-    $this->postJson("/api/admin/undergrad-requestors/{$user->user_id}/reject", [
+    $this->postJson("/api/v1/admin/undergrad-requestors/{$user->user_id}/reject", [
         'rejection_reason' => 'Could not establish prior enrollment from the information provided.',
     ])->assertOk();
 
@@ -442,7 +442,7 @@ test('the purge disposes of rejected PII while leaving the audit trail intact', 
 test('the purge is idempotent and leaves in-window rejections alone', function () {
     $recent = urvSubmission();
     Sanctum::actingAs(urvReviewer());
-    $this->postJson("/api/admin/undergrad-requestors/{$recent->user_id}/reject", [
+    $this->postJson("/api/v1/admin/undergrad-requestors/{$recent->user_id}/reject", [
         'rejection_reason' => 'Rejected today, well inside the retention window.',
     ])->assertOk();
 
@@ -465,7 +465,7 @@ test('the purge is idempotent and leaves in-window rejections alone', function (
 test('an approved submission is never touched by either sweep', function () {
     $user = urvSubmission();
     Sanctum::actingAs(urvReviewer());
-    $this->postJson("/api/admin/undergrad-requestors/{$user->user_id}/approve")->assertOk();
+    $this->postJson("/api/v1/admin/undergrad-requestors/{$user->user_id}/approve")->assertOk();
 
     $this->travel(120)->days();
 

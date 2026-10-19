@@ -55,7 +55,7 @@ test('student cannot withdraw a document request', function () {
         'status_id' => RequestStatusEnum::Processing->value,
     ]);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertStatus(403);
 });
@@ -63,7 +63,7 @@ test('student cannot withdraw a document request', function () {
 test('withdraw returns 404 for a missing request', function () {
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/999999/withdraw', [
+    $this->postJson('/api/v1/document-requests/999999/withdraw', [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertStatus(404);
 });
@@ -77,7 +77,7 @@ test('admin can withdraw a request from Processing', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     $admin  = withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])
         ->assertOk()
@@ -101,7 +101,7 @@ test('admin can withdraw a request from AwaitingSubmission', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::AwaitingSubmission->value]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::StudentNoLongerNeeds->value,
     ])->assertOk()
       ->assertJsonPath('status_id', RequestStatusEnum::Withdrawn->value);
@@ -112,7 +112,7 @@ test('admin can withdraw a request from PendingSignature', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::PendingSignature->value]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::DuplicateSubmission->value,
     ])->assertOk()
       ->assertJsonPath('status_id', RequestStatusEnum::Withdrawn->value);
@@ -127,7 +127,7 @@ test('cannot withdraw a request that is ReadyToClaim', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::ReadyToClaim->value]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertStatus(422);
 
@@ -142,7 +142,7 @@ test('cannot withdraw an already-Completed request', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Completed->value]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertStatus(422);
 });
@@ -155,7 +155,7 @@ test('cannot withdraw an already-Withdrawn request', function () {
     ]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::DuplicateSubmission->value,
     ])->assertStatus(422);
 });
@@ -173,7 +173,7 @@ test('cannot withdraw an archived request', function () {
     // ExcludeArchivedScope means the route's implicit binding 404s on an
     // archived request — same as every other write route on this model
     // that doesn't explicitly opt into withArchived() (e.g. update()).
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertStatus(404);
 });
@@ -187,7 +187,7 @@ test('withdrawal_reason is required', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [])
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['withdrawal_reason']);
 });
@@ -197,7 +197,7 @@ test('withdrawal_reason must be a valid enum value', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => 'not_a_real_reason',
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['withdrawal_reason']);
@@ -208,7 +208,7 @@ test('other requires withdrawal_detail', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::Other->value,
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['withdrawal_detail']);
@@ -219,7 +219,7 @@ test('other with withdrawal_detail succeeds', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::Other->value,
         'withdrawal_detail' => 'Student was declared deceased per family notice.',
     ])->assertOk()
@@ -231,7 +231,7 @@ test('superseded_by_request_id must reference an existing request', function () 
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason'        => WithdrawalReasonEnum::DuplicateSubmission->value,
         'superseded_by_request_id' => 999999,
     ])->assertStatus(422);
@@ -242,7 +242,7 @@ test('a request cannot supersede itself', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason'        => WithdrawalReasonEnum::DuplicateSubmission->value,
         'superseded_by_request_id' => $docReq->request_id,
     ])->assertStatus(422);
@@ -254,7 +254,7 @@ test('superseded_by_request_id is persisted when it references a real request', 
     $duplicate   = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$duplicate->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$duplicate->request_id}/withdraw", [
         'withdrawal_reason'        => WithdrawalReasonEnum::DuplicateSubmission->value,
         'superseded_by_request_id' => $superseding->request_id,
     ])->assertOk()
@@ -274,7 +274,7 @@ test('withdrawing a request notifies the owner with the human-readable reason', 
     ]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertOk();
 
@@ -298,7 +298,7 @@ test('withdrawing with reason "other" substitutes the staff-entered detail, not 
     ]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::Other->value,
         'withdrawal_detail' => 'Requestor passed away; family notified the office.',
     ])->assertOk();
@@ -326,7 +326,7 @@ test('withdrawing a request leaves or_number and receipt_date untouched', functi
     ]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertOk();
 
@@ -353,7 +353,7 @@ test('withdrawing a request writes a request_history row', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     withdrawMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson("/api/document-requests/{$docReq->request_id}/withdraw", [
+    $this->postJson("/api/v1/document-requests/{$docReq->request_id}/withdraw", [
         'withdrawal_reason' => WithdrawalReasonEnum::WrongItemPaid->value,
     ])->assertOk();
 

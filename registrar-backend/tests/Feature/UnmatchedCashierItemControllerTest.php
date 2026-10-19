@@ -76,7 +76,7 @@ test('a student cannot list unmatched cashier items', function () {
     $student = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
     Sanctum::actingAs($student);
 
-    $this->getJson('/api/unmatched-cashier-items')->assertStatus(403);
+    $this->getJson('/api/v1/unmatched-cashier-items')->assertStatus(403);
 });
 
 test('a student cannot resolve an unmatched cashier item', function () {
@@ -84,7 +84,7 @@ test('a student cannot resolve an unmatched cashier item', function () {
     $student = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
     Sanctum::actingAs($student);
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
         'document_type_id' => 1,
     ])->assertStatus(403);
 });
@@ -93,11 +93,11 @@ test('an admin whose policy lacks cashier_reconciliation is forbidden from every
     $item = makeUnmatchedItem();
     actingAsAdminWithoutReconciliation();
 
-    $this->getJson('/api/unmatched-cashier-items')->assertStatus(403);
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
+    $this->getJson('/api/v1/unmatched-cashier-items')->assertStatus(403);
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
         'document_type_id' => 1,
     ])->assertStatus(403);
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/dismiss")->assertStatus(403);
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/dismiss")->assertStatus(403);
 
     expect($item->fresh()->resolved_at)->toBeNull();
 });
@@ -105,13 +105,13 @@ test('an admin whose policy lacks cashier_reconciliation is forbidden from every
 test('an admin with an explicitly empty cashier_reconciliation grant is forbidden', function () {
     actingAsAdminWithoutReconciliation(['cashier_reconciliation' => []]);
 
-    $this->getJson('/api/unmatched-cashier-items')->assertStatus(403);
+    $this->getJson('/api/v1/unmatched-cashier-items')->assertStatus(403);
 });
 
 test('an admin with no policy attached falls back to zero access and is forbidden', function () {
     actingAsAdminWithoutReconciliation(null);
 
-    $this->getJson('/api/unmatched-cashier-items')->assertStatus(403);
+    $this->getJson('/api/v1/unmatched-cashier-items')->assertStatus(403);
 });
 
 test('a super admin can list unmatched items without any policy (module bypass)', function () {
@@ -119,7 +119,7 @@ test('a super admin can list unmatched items without any policy (module bypass)'
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($superAdmin);
 
-    $this->getJson('/api/unmatched-cashier-items')->assertOk();
+    $this->getJson('/api/v1/unmatched-cashier-items')->assertOk();
 });
 
 test('the cashier_reconciliation grant is isolated from the cashier_overrides grant', function () {
@@ -127,7 +127,7 @@ test('the cashier_reconciliation grant is isolated from the cashier_overrides gr
     // imply access to reconciliation, and vice versa.
     actingAsAdminWithoutReconciliation(['cashier_overrides' => ['Access']]);
 
-    $this->getJson('/api/unmatched-cashier-items')->assertStatus(403);
+    $this->getJson('/api/v1/unmatched-cashier-items')->assertStatus(403);
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -141,7 +141,7 @@ test('index lists unresolved items ordered by occurrence_count descending by def
     makeUnmatchedItem('Common Label', 40);
     makeUnmatchedItem('Mid Label', 10);
 
-    $response = $this->getJson('/api/unmatched-cashier-items')->assertOk();
+    $response = $this->getJson('/api/v1/unmatched-cashier-items')->assertOk();
 
     $labels = collect($response->json('data'))->pluck('raw_label')->all();
 
@@ -155,7 +155,7 @@ test('index excludes resolved items by default', function () {
     $resolved->forceFill(['resolved_at' => now()])->save();
     makeUnmatchedItem('Still Open');
 
-    $response = $this->getJson('/api/unmatched-cashier-items')->assertOk();
+    $response = $this->getJson('/api/v1/unmatched-cashier-items')->assertOk();
 
     $labels = collect($response->json('data'))->pluck('raw_label')->all();
 
@@ -169,7 +169,7 @@ test('index with ?resolved=1 shows only resolved items', function () {
     $resolved->forceFill(['resolved_at' => now()])->save();
     makeUnmatchedItem('Still Open');
 
-    $response = $this->getJson('/api/unmatched-cashier-items?resolved=1')->assertOk();
+    $response = $this->getJson('/api/v1/unmatched-cashier-items?resolved=1')->assertOk();
 
     $labels = collect($response->json('data'))->pluck('raw_label')->all();
 
@@ -191,7 +191,7 @@ test('resolving an item appends its raw label to the target document type\'s pat
         'cashier_document_patterns' => ['Informative Copy of Grades'],
     ]);
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
         'document_type_id' => $docType->document_type_id,
     ])->assertOk()
       ->assertJsonPath('resolved_by', $admin->user_id);
@@ -213,7 +213,7 @@ test('resolving an item appends to a certificate type\'s patterns', function () 
         'cashier_document_patterns'  => [],
     ]);
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
         'certificate_type_id' => $certType->certificate_type_id,
     ])->assertOk();
 
@@ -239,7 +239,7 @@ test('resolving does not duplicate a pattern that already normalises the same wa
         'cashier_document_patterns' => ['Regression Test Fee'],
     ]);
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
         'document_type_id' => $docType->document_type_id,
     ])->assertOk();
 
@@ -250,7 +250,7 @@ test('resolving requires exactly one of document_type_id or certificate_type_id'
     actingAsAdmin();
     $item = makeUnmatchedItem();
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [])
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [])
         ->assertStatus(422);
 
     $docType = DocumentType::create([
@@ -260,7 +260,7 @@ test('resolving requires exactly one of document_type_id or certificate_type_id'
         'certificate_name' => 'Y', 'certificate_requirements' => '', 'certificate_process_period' => '1 day', 'access_id' => 1,
     ]);
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
         'document_type_id'    => $docType->document_type_id,
         'certificate_type_id' => $certType->certificate_type_id,
     ])->assertStatus(422);
@@ -275,7 +275,7 @@ test('resolving an already-resolved item returns a conflict instead of double-pr
         'document_name' => 'X', 'document_description' => '', 'document_process_period' => 1, 'access_id' => 1,
     ]);
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
         'document_type_id' => $docType->document_type_id,
     ])->assertStatus(409);
 });
@@ -292,7 +292,7 @@ test('resolving a nonexistent item returns 404', function () {
         'document_name' => 'X', 'document_description' => '', 'document_process_period' => 1, 'access_id' => 1,
     ]);
 
-    $this->postJson('/api/unmatched-cashier-items/999999/resolve', [
+    $this->postJson('/api/v1/unmatched-cashier-items/999999/resolve', [
         'document_type_id' => $docType->document_type_id,
     ])->assertStatus(404);
 });
@@ -308,7 +308,7 @@ test('resolving writes an audit log entry naming the target type', function () {
         'cashier_document_patterns' => [],
     ]);
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/resolve", [
         'document_type_id' => $docType->document_type_id,
     ])->assertOk();
 
@@ -331,7 +331,7 @@ test('dismissing an item marks it resolved without touching any type\'s patterns
         'access_id' => 1, 'cashier_document_patterns' => ['existing'],
     ]);
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/dismiss")
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/dismiss")
         ->assertOk();
 
     expect($item->fresh()->resolved_at)->not->toBeNull()
@@ -342,7 +342,7 @@ test('dismissing writes a distinct audit action from resolving', function () {
     actingAsAdmin();
     $item = makeUnmatchedItem('Random One-Off Fee');
 
-    $this->postJson("/api/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/dismiss")->assertOk();
+    $this->postJson("/api/v1/unmatched-cashier-items/{$item->unmatched_cashier_item_id}/dismiss")->assertOk();
 
     expect(AuditLog::where('action', AuditLog::ACTION_UNMATCHED_CASHIER_ITEM_DISMISSED)->count())->toBe(1)
         ->and(AuditLog::where('action', AuditLog::ACTION_UNMATCHED_CASHIER_ITEM_RESOLVED)->count())->toBe(0);

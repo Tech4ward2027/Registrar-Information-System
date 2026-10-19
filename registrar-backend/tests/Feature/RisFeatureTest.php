@@ -62,23 +62,23 @@ function makeStudentWithProfile(): SystemUser
 // ═════════════════════════════════════════════════════════════════════════════
 
 test('unauthenticated request to protected endpoint returns 401', function () {
-    $response = $this->getJson('/api/me');
+    $response = $this->getJson('/api/v1/me');
     $response->assertStatus(401);
 });
 
 test('unauthenticated request to document-requests returns 401', function () {
-    $response = $this->getJson('/api/document-requests');
+    $response = $this->getJson('/api/v1/document-requests');
     $response->assertStatus(401);
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// TEST 2 — /api/me returns the authenticated user's data
+// TEST 2 — /api/v1/me returns the authenticated user's data
 // ═════════════════════════════════════════════════════════════════════════════
 
 test('GET /me returns the authenticated user with correct role_name', function () {
     $user = makeUser(SystemUser::ROLE_STUDENT);
 
-    $response = $this->getJson('/api/me');
+    $response = $this->getJson('/api/v1/me');
 
     $response->assertOk()
              ->assertJsonPath('data.user_id',   $user->user_id)
@@ -89,7 +89,7 @@ test('GET /me returns the authenticated user with correct role_name', function (
 test('GET /me for admin returns role_name = admin', function () {
     makeUser(SystemUser::ROLE_ADMIN);
 
-    $this->getJson('/api/me')
+    $this->getJson('/api/v1/me')
          ->assertOk()
          ->assertJsonPath('data.role_name', 'admin');
 });
@@ -114,7 +114,7 @@ test('student can submit a document request', function () {
         ]],
     ];
 
-    $response = $this->postJson('/api/document-requests', $payload);
+    $response = $this->postJson('/api/v1/document-requests', $payload);
 
     $response->assertCreated()
              ->assertJsonPath('user_id', $user->user_id)
@@ -127,7 +127,7 @@ test('request with no documents or certificates is rejected', function () {
     makeStudentWithProfile();
     ['purpose' => $purpose] = seedReferenceData();
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'documents'          => [],
         'certificates'       => [],
@@ -144,7 +144,7 @@ test('student cannot update a document request status', function () {
 
     $request = DocumentRequest::factory()->create(['user_id' => $student->user_id]);
 
-    $this->putJson("/api/document-requests/{$request->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$request->request_id}", [
         'status_id' => RequestStatusEnum::ReadyToClaim->value,
     ])->assertStatus(403);
 });
@@ -152,13 +152,13 @@ test('student cannot update a document request status', function () {
 test('student cannot access analytics endpoints', function () {
     makeUser(SystemUser::ROLE_STUDENT);
 
-    $this->getJson('/api/analytics/overview')->assertStatus(403);
+    $this->getJson('/api/v1/analytics/overview')->assertStatus(403);
 });
 
 test('student cannot access system-users endpoint', function () {
     makeUser(SystemUser::ROLE_STUDENT);
 
-    $this->getJson('/api/system-users')->assertStatus(403);
+    $this->getJson('/api/v1/system-users')->assertStatus(403);
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -179,7 +179,7 @@ test('admin can update document request status to ready-to-claim', function () {
 
     makeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson("/api/document-requests/{$docRequest->request_id}", [
+    $this->putJson("/api/v1/document-requests/{$docRequest->request_id}", [
         'status_id' => RequestStatusEnum::ReadyToClaim->value,
     ])->assertOk()
       ->assertJsonPath('status.status_id', RequestStatusEnum::ReadyToClaim->value);
@@ -200,5 +200,5 @@ test('admin can view analytics overview', function () {
     $admin->update(['policy_id' => $policy->policy_id]);
     seedReferenceData();
 
-    $this->getJson('/api/analytics/overview')->assertOk();
+    $this->getJson('/api/v1/analytics/overview')->assertOk();
 });

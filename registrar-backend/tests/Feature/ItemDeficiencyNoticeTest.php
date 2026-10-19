@@ -99,14 +99,14 @@ function ndnRequestNotice(DocumentRequest $request): RequestRemark
 
 function ndnIssueUrl(DocumentRequest $r): string
 {
-    return "/api/document-requests/{$r->request_id}/deficiency-notices";
+    return "/api/v1/document-requests/{$r->request_id}/deficiency-notices";
 }
 
 function ndnItemUrl(DocumentRequest $r, $item, string $action): string
 {
     $seg = $item instanceof RequestDocument ? "documents/{$item->request_document_id}" : "certificates/{$item->request_certificate_id}";
 
-    return "/api/document-requests/{$r->request_id}/{$seg}/{$action}";
+    return "/api/v1/document-requests/{$r->request_id}/{$seg}/{$action}";
 }
 
 function ndnClosePayload(): array
@@ -236,7 +236,7 @@ test('lookup marks the held item and leaves the others claimable', function () {
     [$request, $a, $b] = ndnTwoItems(RequestStatusEnum::ReadyToClaim->value, RequestStatusEnum::ReadyToClaim->value);
     $notice = ndnNoticeOn($a);
 
-    $items = collect($this->postJson('/api/document-requests/claim/lookup', ['uuid' => $request->uuid])
+    $items = collect($this->postJson('/api/v1/document-requests/claim/lookup', ['uuid' => $request->uuid])
         ->assertOk()->json('items'))->keyBy('uuid');
 
     expect($items[$a->uuid]['claimable'])->toBeFalse()
@@ -253,7 +253,7 @@ test('confirm releases the other item and reports the held one as skipped', func
     [$request, $a, $b] = ndnTwoItems(RequestStatusEnum::ReadyToClaim->value, RequestStatusEnum::ReadyToClaim->value);
     ndnNoticeOn($a);
 
-    $res = $this->postJson('/api/document-requests/claim/confirm', [
+    $res = $this->postJson('/api/v1/document-requests/claim/confirm', [
         'uuid' => $request->uuid, 'item_uuids' => [$a->uuid, $b->uuid],
     ])->assertOk();
 
@@ -272,7 +272,7 @@ test('confirming only the held item claims nothing', function () {
     [$request, $a] = ndnTwoItems(RequestStatusEnum::ReadyToClaim->value, RequestStatusEnum::ReadyToClaim->value);
     ndnNoticeOn($a);
 
-    $this->postJson('/api/document-requests/claim/confirm', ['claim_code' => $a->claim_code])->assertStatus(422);
+    $this->postJson('/api/v1/document-requests/claim/confirm', ['claim_code' => $a->claim_code])->assertStatus(422);
 
     expect($a->fresh()->status_id)->toBe(RequestStatusEnum::ReadyToClaim->value);
 });
@@ -282,9 +282,9 @@ test('clearing the notice makes the item claimable again', function () {
     [$request, $a] = ndnTwoItems(RequestStatusEnum::ReadyToClaim->value, RequestStatusEnum::ReadyToClaim->value);
     $notice = ndnNoticeOn($a);
 
-    $this->postJson('/api/document-requests/claim/confirm', ['claim_code' => $a->claim_code])->assertStatus(422);
-    $this->postJson("/api/deficiency-notices/{$notice->remark_id}/clear")->assertOk();
-    $this->postJson('/api/document-requests/claim/confirm', ['claim_code' => $a->claim_code])->assertOk();
+    $this->postJson('/api/v1/document-requests/claim/confirm', ['claim_code' => $a->claim_code])->assertStatus(422);
+    $this->postJson("/api/v1/deficiency-notices/{$notice->remark_id}/clear")->assertOk();
+    $this->postJson('/api/v1/document-requests/claim/confirm', ['claim_code' => $a->claim_code])->assertOk();
 
     expect($a->fresh()->status_id)->toBe(RequestStatusEnum::Completed->value);
 });
@@ -294,7 +294,7 @@ test('the whole-request QR claim is refused while any item is held', function ()
     [$request, $a, $b] = ndnTwoItems(RequestStatusEnum::ReadyToClaim->value, RequestStatusEnum::ReadyToClaim->value);
     ndnNoticeOn($b);
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $request->uuid])->assertStatus(422);
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $request->uuid])->assertStatus(422);
 
     expect($request->fresh()->status_id)->toBe(RequestStatusEnum::ReadyToClaim->value)
         ->and($a->fresh()->status_id)->toBe(RequestStatusEnum::ReadyToClaim->value)
@@ -306,7 +306,7 @@ test('a request-level notice still does not block claiming', function () {
     [$request, $a] = ndnTwoItems(RequestStatusEnum::ReadyToClaim->value, RequestStatusEnum::ReadyToClaim->value);
     ndnRequestNotice($request);
 
-    $this->postJson('/api/document-requests/claim/confirm', ['claim_code' => $a->claim_code])->assertOk();
+    $this->postJson('/api/v1/document-requests/claim/confirm', ['claim_code' => $a->claim_code])->assertOk();
 });
 
 test('the manual Done button is refused on a held item but works on the other', function () {
@@ -316,8 +316,8 @@ test('the manual Done button is refused on a held item but works on the other', 
 
     $done = ['status_id' => RequestStatusEnum::Completed->value];
 
-    $this->putJson("/api/document-requests/{$request->request_id}/documents/{$a->request_document_id}", $done)->assertStatus(422);
-    $this->putJson("/api/document-requests/{$request->request_id}/documents/{$b->request_document_id}", $done)->assertOk();
+    $this->putJson("/api/v1/document-requests/{$request->request_id}/documents/{$a->request_document_id}", $done)->assertStatus(422);
+    $this->putJson("/api/v1/document-requests/{$request->request_id}/documents/{$b->request_document_id}", $done)->assertOk();
 
     expect($a->fresh()->status_id)->toBe(RequestStatusEnum::ReadyToClaim->value);
 });
@@ -327,7 +327,7 @@ test('bulk-done skips a held item and still completes the others', function () {
     [$request, $a, $b] = ndnTwoItems(RequestStatusEnum::ReadyToClaim->value, RequestStatusEnum::ReadyToClaim->value);
     ndnNoticeOn($a);
 
-    $res = $this->postJson('/api/document-requests/bulk-done', ['request_ids' => [$request->request_id]])->assertOk();
+    $res = $this->postJson('/api/v1/document-requests/bulk-done', ['request_ids' => [$request->request_id]])->assertOk();
 
     expect(collect($res->json('items_skipped'))->pluck('reason')->all())->toContain('item_on_hold')
         ->and($a->fresh()->status_id)->toBe(RequestStatusEnum::ReadyToClaim->value)
@@ -344,7 +344,7 @@ test('the legacy release-group ticket is refused when one of its items is held',
     $b->update(['request_release_group_id' => $group->request_release_group_id]);
     ndnNoticeOn($b);
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $group->uuid])->assertStatus(422);
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $group->uuid])->assertStatus(422);
 
     expect($a->fresh()->status_id)->toBe(RequestStatusEnum::ReadyToClaim->value);
 });
@@ -410,7 +410,7 @@ test('withdrawing the request voids every open notice, item-level included', fun
     $two = ndnNoticeOn($a);
     $three = ndnNoticeOn($b);
 
-    $res = $this->postJson("/api/document-requests/{$request->request_id}/withdraw", ndnWithdrawPayload())->assertOk();
+    $res = $this->postJson("/api/v1/document-requests/{$request->request_id}/withdraw", ndnWithdrawPayload())->assertOk();
 
     expect($res->json('auto_voided_deficiency_notice_ids'))->toHaveCount(3)
         ->and(RequestRemark::where('request_id', $request->request_id)->open()->count())->toBe(0)
@@ -423,7 +423,7 @@ test('closing the request works with only an item-level notice and voids all of 
     ndnNoticeOn($a);
     ndnNoticeOn($b);
 
-    $res = $this->postJson("/api/document-requests/{$request->request_id}/close-unable-to-process", ndnClosePayload())->assertOk();
+    $res = $this->postJson("/api/v1/document-requests/{$request->request_id}/close-unable-to-process", ndnClosePayload())->assertOk();
 
     expect($res->json('closed_deficiency_notice_ids'))->toHaveCount(2)
         ->and(RequestRemark::where('request_id', $request->request_id)->open()->count())->toBe(0);
@@ -433,7 +433,7 @@ test('closing the request with no notice at all is still refused', function () {
     ndnStaff();
     [$request] = ndnTwoItems();
 
-    $this->postJson("/api/document-requests/{$request->request_id}/close-unable-to-process", ndnClosePayload())->assertStatus(422);
+    $this->postJson("/api/v1/document-requests/{$request->request_id}/close-unable-to-process", ndnClosePayload())->assertStatus(422);
 });
 
 // ── Clear / void / read ──────────────────────────────────────────────────────
@@ -444,7 +444,7 @@ test('voiding one item notice leaves the others untouched', function () {
     $onA = ndnNoticeOn($a);
     $onB = ndnNoticeOn($b);
 
-    $this->postJson("/api/deficiency-notices/{$onA->remark_id}/void", ['void_reason' => 'Student unreachable'])
+    $this->postJson("/api/v1/deficiency-notices/{$onA->remark_id}/void", ['void_reason' => 'Student unreachable'])
         ->assertOk()->assertJsonPath('request_document_id', $a->request_document_id);
 
     expect($onA->fresh()->status)->toBe(RequestRemark::STATUS_VOIDED)
@@ -456,7 +456,7 @@ test('after clearing, a new notice can be issued on the same item', function () 
     [$request, $a] = ndnTwoItems();
     $first = ndnNoticeOn($a);
 
-    $this->postJson("/api/deficiency-notices/{$first->remark_id}/clear")->assertOk();
+    $this->postJson("/api/v1/deficiency-notices/{$first->remark_id}/clear")->assertOk();
     $this->postJson(ndnIssueUrl($request), [
         'item_key' => DeficiencyItemEnum::MissingSignature->value, 'request_document_id' => $a->request_document_id,
     ])->assertCreated();
@@ -467,7 +467,7 @@ test('show returns open item notices separately from the request-level notice', 
     [$request, $a] = ndnTwoItems();
     ndnNoticeOn($a);
 
-    $res = $this->getJson("/api/document-requests/{$request->request_id}")->assertOk();
+    $res = $this->getJson("/api/v1/document-requests/{$request->request_id}")->assertOk();
 
     expect($res->json('open_deficiency_notice'))->toBeNull()
         ->and($res->json('open_item_deficiency_notices'))->toHaveCount(1)

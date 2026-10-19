@@ -127,7 +127,7 @@ test('a whole-request claim moves every Ready document and certificate to Comple
     $cert    = cscCertificate($request, CSC_READY);
     cscAdmin();
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $request->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $request->uuid])
          ->assertOk()
          ->assertJsonPath('status.status_id', CSC_COMPLETED);
 
@@ -142,7 +142,7 @@ test('claiming by claim_code cascades the same way as claiming by uuid', functio
     $doc     = cscDocument($request, CSC_READY);
     cscAdmin();
 
-    $this->postJson('/api/document-requests/claim', ['claim_code' => $request->claim_code])
+    $this->postJson('/api/v1/document-requests/claim', ['claim_code' => $request->claim_code])
          ->assertOk();
 
     expect($doc->fresh()->status_id)->toBe(CSC_COMPLETED);
@@ -154,7 +154,7 @@ test('the claim writes one item-level history row per item, attributed to the sc
     $cert    = cscCertificate($request, CSC_READY);
     $admin   = cscAdmin();
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $request->uuid])->assertOk();
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $request->uuid])->assertOk();
 
     $this->assertDatabaseHas('request_history', [
         'request_id'          => $request->request_id,
@@ -190,13 +190,13 @@ test('a repeat scan is refused and changes nothing further', function () {
     cscCertificate($request, CSC_READY);
     cscAdmin();
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $request->uuid])->assertOk();
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $request->uuid])->assertOk();
 
     $itemRowsAfterFirstScan = cscItemHistoryCount($request->request_id);
     $notificationsAfterFirstScan = DB::table('notifications')->where('request_id', $request->request_id)->count();
     expect($itemRowsAfterFirstScan)->toBe(2);
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $request->uuid])->assertStatus(422);
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $request->uuid])->assertStatus(422);
 
     expect(cscItemHistoryCount($request->request_id))->toBe($itemRowsAfterFirstScan);
     expect(DB::table('notifications')->where('request_id', $request->request_id)->count())
@@ -212,7 +212,7 @@ test('items that were already Completed are left alone, and other requests are n
     $otherItem     = cscDocument($otherRequest, CSC_READY);
     cscAdmin();
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $request->uuid])->assertOk();
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $request->uuid])->assertOk();
 
     expect($stillReady->fresh()->status_id)->toBe(CSC_COMPLETED);
     expect($alreadyDone->fresh()->status_id)->toBe(CSC_COMPLETED);
@@ -240,7 +240,7 @@ test('a drifted request still claims, leaves the non-Ready item alone, and logs 
     $drifted  = cscDocument($request, RequestStatusEnum::Processing->value);
     cscAdmin();
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $request->uuid])->assertOk();
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $request->uuid])->assertOk();
 
     expect($readyDoc->fresh()->status_id)->toBe(CSC_COMPLETED);
     expect($drifted->fresh()->status_id)->toBe(RequestStatusEnum::Processing->value);
@@ -260,7 +260,7 @@ test('a request-level scan is still refused while release-group tickets are outs
     $doc = cscDocument($request, CSC_READY, $group->request_release_group_id);
     cscAdmin();
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $request->uuid])->assertStatus(422);
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $request->uuid])->assertStatus(422);
 
     expect($doc->fresh()->status_id)->toBe(CSC_READY);
     expect($group->fresh()->status_id)->toBe(CSC_READY);
@@ -277,7 +277,7 @@ test('marking an item Done under an already Completed request is refused and the
     $stale   = cscDocument($request, CSC_READY);
     cscAdmin();
 
-    $this->putJson("/api/document-requests/{$request->request_id}/documents/{$stale->request_document_id}", [
+    $this->putJson("/api/v1/document-requests/{$request->request_id}/documents/{$stale->request_document_id}", [
         'status_id' => CSC_COMPLETED,
     ])->assertStatus(422);
 
@@ -292,7 +292,7 @@ test('an item action on a certificate under a Completed request is refused too',
     $stale   = cscCertificate($request, CSC_READY);
     cscAdmin();
 
-    $this->putJson("/api/document-requests/{$request->request_id}/certificates/{$stale->request_certificate_id}", [
+    $this->putJson("/api/v1/document-requests/{$request->request_id}/certificates/{$stale->request_certificate_id}", [
         'status_id' => CSC_COMPLETED,
     ])->assertStatus(422);
 
@@ -304,7 +304,7 @@ test('an item action on a Withdrawn request is refused and the request stays Wit
     $item    = cscDocument($request, RequestStatusEnum::Processing->value);
     cscAdmin();
 
-    $this->putJson("/api/document-requests/{$request->request_id}/documents/{$item->request_document_id}", [
+    $this->putJson("/api/v1/document-requests/{$request->request_id}/documents/{$item->request_document_id}", [
         'status_id' => CSC_READY,
     ])->assertStatus(422);
 
@@ -317,7 +317,7 @@ test('an item action on a normal, non-final request still works and still rolls 
     $item    = cscDocument($request, CSC_READY);
     cscAdmin();
 
-    $this->putJson("/api/document-requests/{$request->request_id}/documents/{$item->request_document_id}", [
+    $this->putJson("/api/v1/document-requests/{$request->request_id}/documents/{$item->request_document_id}", [
         'status_id' => CSC_COMPLETED,
     ])->assertOk();
 
@@ -330,7 +330,7 @@ test('bulk-done skips a request that is already final and reports request_termin
     $stale   = cscDocument($final, CSC_READY);
     cscAdmin();
 
-    $response = $this->postJson('/api/document-requests/bulk-done', [
+    $response = $this->postJson('/api/v1/document-requests/bulk-done', [
         'request_ids' => [$final->request_id],
     ])->assertOk();
 
@@ -349,7 +349,7 @@ test('a release-group ticket cannot be claimed against a request that is already
     cscDocument($request, CSC_READY, $group->request_release_group_id);
     cscAdmin();
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $group->uuid])->assertStatus(422);
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $group->uuid])->assertStatus(422);
 
     expect($request->fresh()->status_id)->toBe(CSC_COMPLETED);
     expect($group->fresh()->status_id)->toBe(CSC_READY);
