@@ -13,7 +13,7 @@ test.describe('Certificate Template Management E2E Tests', () => {
     page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
 
     // 2. Mock /api/me to return a Super Admin user
-    await page.route('**/api/me', async (route) => {
+    await page.route(/\/api\/(v1\/)?me$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -30,33 +30,21 @@ test.describe('Certificate Template Management E2E Tests', () => {
       });
     });
 
-    // 3. Mock /api/certifications
-    await page.route('**/api/certifications', async (route) => {
+    // 3. Mock /api/certifications (anchored so it doesn't swallow /layouts)
+    await page.route(/\/api\/(v1\/)?certifications$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify([
-          {
-            certificate_type_id: 101,
-            certificate_name: 'Certificate of Enrollment',
-            is_archived: false
-          },
-          {
-            certificate_type_id: 102,
-            certificate_name: 'Certificate of Registration',
-            is_archived: false
-          },
-          {
-            certificate_type_id: 103,
-            certificate_name: 'Archived Certificate',
-            is_archived: true
-          }
+          { certificate_type_id: 101, certificate_name: 'Certificate of Enrollment', is_archived: false },
+          { certificate_type_id: 102, certificate_name: 'Certificate of Registration', is_archived: false },
+          { certificate_type_id: 103, certificate_name: 'Archived Certificate', is_archived: true }
         ]),
       });
     });
 
     // 4. Mock /api/certifications/layouts
-    await page.route('**/api/certifications/layouts', async (route) => {
+    await page.route(/\/api\/(v1\/)?certifications\/layouts$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -84,7 +72,7 @@ test.describe('Certificate Template Management E2E Tests', () => {
     });
 
     // 5. Mock /api/document-types
-    await page.route('**/api/document-types', async (route) => {
+    await page.route(/\/api\/(v1\/)?document-types$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -93,7 +81,7 @@ test.describe('Certificate Template Management E2E Tests', () => {
     });
 
     // 6. Mock reference data endpoints
-    await page.route('**/api/request-statuses', async (route) => {
+    await page.route(/\/api\/(v1\/)?request-statuses$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -101,7 +89,7 @@ test.describe('Certificate Template Management E2E Tests', () => {
       });
     });
 
-    await page.route('**/api/request-purposes', async (route) => {
+    await page.route(/\/api\/(v1\/)?request-purposes$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -109,7 +97,7 @@ test.describe('Certificate Template Management E2E Tests', () => {
       });
     });
 
-    await page.route('**/api/programs', async (route) => {
+    await page.route(/\/api\/(v1\/)?programs$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -117,7 +105,7 @@ test.describe('Certificate Template Management E2E Tests', () => {
       });
     });
 
-    await page.route('**/api/notifications*', async (route) => {
+    await page.route(/\/api\/(v1\/)?notifications/, async (route) => {
       const url = route.request().url();
       if (url.includes('/unread-count')) {
         await route.fulfill({
@@ -136,31 +124,25 @@ test.describe('Certificate Template Management E2E Tests', () => {
   });
 
   test('should load editor page, render layout controls, and test state changes', async ({ page }) => {
-    // Navigate to super admin documents management page using relative route
     await page.goto('/super-admin/documents');
 
-    // Click on the Certificate Logo Management tab
     const logoTab = page.locator('button:has-text("Certificate Logo Management")');
     await expect(logoTab).toBeVisible();
     await logoTab.click();
 
-    // Verify template editor header is displayed
     const heading = page.locator('h1:has-text("Certificate Template Editor")');
     await expect(heading).toBeVisible();
 
-    // Verify Certificate Type dropdown is loaded with certificate templates
     const dropdown = page.locator('div:has(> label:has-text("Certificate Type")) button');
     await expect(dropdown).toBeVisible();
     await expect(dropdown).toContainText('Certificate of Enrollment');
 
-    // Toggling dropdown option
     await dropdown.click();
     const option = page.locator('div:has(> label:has-text("Certificate Type")) li button').filter({ hasText: 'Certificate of Registration' });
     await expect(option).toBeVisible();
     await option.click();
     await expect(dropdown).toContainText('Certificate of Registration');
 
-    // Verify checkbox controls are rendering and unticked initially
     const mainLogoCheckbox = page.locator('#checkbox-apply-main-logo');
     await expect(mainLogoCheckbox).toBeVisible();
     await expect(mainLogoCheckbox).not.toBeChecked();
@@ -169,14 +151,12 @@ test.describe('Certificate Template Management E2E Tests', () => {
     await expect(rightLogoCheckbox).toBeVisible();
     await expect(rightLogoCheckbox).not.toBeChecked();
 
-    // Tick the checkboxes
     await mainLogoCheckbox.check();
     await expect(mainLogoCheckbox).toBeChecked();
 
     await rightLogoCheckbox.check();
     await expect(rightLogoCheckbox).toBeChecked();
 
-    // Undo / Redo buttons should be disabled initially (no changes yet)
     const undoButton = page.locator('#btn-undo-logo');
     await expect(undoButton).toBeDisabled();
 
@@ -187,8 +167,8 @@ test.describe('Certificate Template Management E2E Tests', () => {
   test('should save layouts correctly', async ({ page }) => {
     let putRequestPayload: any = null;
 
-    // Track PUT requests to layout updates using regex
-    await page.route(/\/api\/certifications\/[^/]+\/layout/, async (route) => {
+    // Track PUT requests to layout updates
+    await page.route(/\/api\/(v1\/)?certifications\/[^/]+\/layout/, async (route) => {
       putRequestPayload = route.request().postDataJSON();
       await route.fulfill({
         status: 200,
@@ -210,16 +190,13 @@ test.describe('Certificate Template Management E2E Tests', () => {
     await page.goto('/super-admin/documents');
     await page.locator('button:has-text("Certificate Logo Management")').click();
 
-    // Save button should be visible and clickable
     const saveButton = page.locator('#btn-save-layout');
     await expect(saveButton).toBeVisible();
 
-    // Wait for the PUT request response to guarantee the payload is captured
-    const responsePromise = page.waitForResponse(/\/api\/certifications\/[^/]+\/layout/);
+    const responsePromise = page.waitForResponse(/\/api\/(v1\/)?certifications\/[^/]+\/layout/);
     await saveButton.click();
     await responsePromise;
 
-    // Check that layout data payload was dispatched
     expect(putRequestPayload).not.toBeNull();
     expect(putRequestPayload.layout_header_logo_size).toBe(60);
   });
@@ -236,11 +213,9 @@ test.describe('Certificate Template Management E2E Tests', () => {
     await expect(option).toBeVisible();
     await option.click();
 
-    // Locked warning alert message
     const archivedWarning = page.locator('text=This certificate is archived — the template is read-only');
     await expect(archivedWarning).toBeVisible();
 
-    // Actions like Reset Logos, Reset All Logos, and Save Layout should reflect locking
     const resetLogosButton = page.locator('#btn-reset-logos');
     await expect(resetLogosButton).toBeDisabled();
 

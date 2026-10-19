@@ -71,17 +71,19 @@ async function mockLogbookApi(
   const logbookCalls: Captured = [];
   const auditBodies: unknown[] = [];
 
+
+
   await page.context().addInitScript(() => {
     window.localStorage.setItem('hasAgreed', 'true');
   });
 
   // Fallback first: later routes take precedence.
-  await page.route('**/api/**', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) }),
-  );
+  await page.route('**/api/**', (route) => {
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+  });
 
-  await page.route('**/api/me', (route) =>
-    route.fulfill({
+  await page.route(/\/api\/(v1\/)?me$/, (route) => {
+    return route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
@@ -93,10 +95,10 @@ async function mockLogbookApi(
           effective_permissions: { dashboard: ['View'], logbook: actions },
         },
       }),
-    }),
-  );
+    });
+  });
 
-  await page.route('**/api/document-types*', (route) =>
+  await page.route(/\/api\/(v1\/)?document-types/, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -110,11 +112,11 @@ async function mockLogbookApi(
     }),
   );
 
-  await page.route('**/api/logbook-categories*', (route) =>
+  await page.route(/\/api\/(v1\/)?logbook-categories/, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [CATEGORY_TOR] }) }),
   );
 
-  await page.route('**/api/document-requests/logbook/export-audit', async (route: Route) => {
+  await page.route(/\/api\/(v1\/)?document-requests\/logbook\/export-audit/, async (route: Route) => {
     auditBodies.push(route.request().postDataJSON());
     await route.fulfill({
       status: options.auditStatus ?? 201,
@@ -124,7 +126,7 @@ async function mockLogbookApi(
   });
 
   // Behaves like the real endpoint: filters, counts and pages on the "server".
-  await page.route('**/api/document-requests/logbook?*', async (route: Route) => {
+  await page.route(/\/api\/(v1\/)?document-requests\/logbook\?/, async (route: Route) => {
     const url = new URL(route.request().url());
     logbookCalls.push({ url });
 

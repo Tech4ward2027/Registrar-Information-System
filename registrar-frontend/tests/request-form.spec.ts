@@ -13,7 +13,7 @@ test.describe('Student Request Form E2E Tests', () => {
     page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
 
     // 2. Mock /api/me to return a Student user
-    await page.route('**/api/me', async (route) => {
+    await page.route(/\/api\/(v1\/)?me$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -30,7 +30,7 @@ test.describe('Student Request Form E2E Tests', () => {
     });
 
     // 3. Mock document types (return array directly)
-    await page.route('**/api/document-types', async (route) => {
+    await page.route(/\/api\/(v1\/)?document-types/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -42,7 +42,7 @@ test.describe('Student Request Form E2E Tests', () => {
     });
 
     // 4. Mock certifications (return array directly)
-    await page.route('**/api/certifications', async (route) => {
+    await page.route(/\/api\/(v1\/)?certifications/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -53,7 +53,7 @@ test.describe('Student Request Form E2E Tests', () => {
     });
 
     // 5. Mock request purposes (return array directly)
-    await page.route('**/api/request-purposes', async (route) => {
+    await page.route(/\/api\/(v1\/)?request-purposes/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -65,28 +65,28 @@ test.describe('Student Request Form E2E Tests', () => {
     });
 
     // 6. Mock other metadata lookups to prevent hangs
-    await page.route('**/api/programs', async (route) => {
+    await page.route(/\/api\/(v1\/)?programs/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: [] }),
       });
     });
-    await page.route('**/api/request-statuses', async (route) => {
+    await page.route(/\/api\/(v1\/)?request-statuses/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify([]),
       });
     });
-    await page.route('**/api/announcements*', async (route) => {
+    await page.route(/\/api\/(v1\/)?announcements/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: [], last_page: 1 }),
       });
     });
-    await page.route('**/api/notifications*', async (route) => {
+    await page.route(/\/api\/(v1\/)?notifications/, async (route) => {
       const url = route.request().url();
       if (url.includes('/unread-count')) {
         await route.fulfill({
@@ -109,7 +109,7 @@ test.describe('Student Request Form E2E Tests', () => {
     // and uses each suggested document_type_id to look up a name from the
     // already-mocked /api/document-types list above, so this id must
     // match one of those (1 = 'Transcript of Records').
-    await page.route('**/api/document-requests/verify-or', async (route) => {
+    await page.route(/\/api\/(v1\/)?document-requests\/verify-or/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

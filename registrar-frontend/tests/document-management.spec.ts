@@ -13,7 +13,7 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
 
     // 2. Mock /api/me to return a Super Admin user
-    await page.route('**/api/me', async (route) => {
+    await page.route(/\/api\/(v1\/)?me$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -31,7 +31,7 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     });
 
     // 3. Mock /api/certifications
-    await page.route('**/api/certifications*', async (route) => {
+    await page.route(/\/api\/(v1\/)?certifications(\?.*)?$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -49,7 +49,7 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     });
 
     // 4. Mock /api/certifications/layouts
-    await page.route('**/api/certifications/layouts*', async (route) => {
+    await page.route(/\/api\/(v1\/)?certifications\/layouts(\?.*)?$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -58,7 +58,7 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     });
 
     // 5. Mock /api/document-types
-    await page.route('**/api/document-types*', async (route) => {
+    await page.route(/\/api\/(v1\/)?document-types(\?.*)?$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -86,16 +86,16 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     });
 
     // 6. Mock reference data endpoints
-    await page.route('**/api/request-statuses', async (route) => {
+    await page.route(/\/api\/(v1\/)?request-statuses$/, async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
-    await page.route('**/api/request-purposes', async (route) => {
+    await page.route(/\/api\/(v1\/)?request-purposes$/, async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
-    await page.route('**/api/programs', async (route) => {
+    await page.route(/\/api\/(v1\/)?programs$/, async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
     });
-    await page.route('**/api/notifications*', async (route) => {
+    await page.route(/\/api\/(v1\/)?notifications/, async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ count: 0 }) });
     });
   });
@@ -134,7 +134,7 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     let putRequestPayload: any = null;
 
     // Intercept update PUT request
-    await page.route('**/api/document-types/201', async (route) => {
+    await page.route(/\/api\/(v1\/)?document-types\/201(\?.*)?$/, async (route) => {
       if (route.request().method() === 'PUT') {
         putRequestPayload = route.request().postDataJSON();
         await route.fulfill({
@@ -179,7 +179,7 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     // Correct process period (whole number <= 30)
     await periodInput.fill('10');
 
-    const responsePromise = page.waitForResponse(/\/api\/document-types\/201/);
+    const responsePromise = page.waitForResponse(/\/api\/(v1\/)?document-types\/201/);
     await page.locator('button:has-text("Save Changes")').click();
     await responsePromise;
 
@@ -192,7 +192,7 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     let postRequestPayload: any = null;
 
     // Intercept POST request
-    await page.route('**/api/certifications*', async (route) => {
+    await page.route(/\/api\/(v1\/)?certifications(\?.*)?$/, async (route) => {
       if (route.request().method() === 'POST') {
         postRequestPayload = route.request().postDataJSON();
         await route.fulfill({
@@ -227,7 +227,7 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     await page.locator('button:has-text("All")').click();
 
     const responsePromise = page.waitForResponse(
-      (resp) => /\/api\/certifications/.test(resp.url()) && resp.request().method() === 'POST'
+      (resp) => /\/api\/(v1\/)?certifications/.test(resp.url()) && resp.request().method() === 'POST'
     );
     // Click the form submit button (last match)
     await page.getByRole('button', { name: 'Add Certificate' }).last().click();
@@ -243,7 +243,7 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     let deleteRequestCalled = false;
 
     // Intercept DELETE request
-    await page.route('**/api/document-types/202', async (route) => {
+    await page.route(/\/api\/(v1\/)?document-types\/202(\?.*)?$/, async (route) => {
       if (route.request().method() === 'DELETE') {
         deleteRequestCalled = true;
         await route.fulfill({
@@ -259,7 +259,6 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     await page.goto('/super-admin/documents');
 
     // Click trash button on "Honorable Dismissal" card
-    // Locate card containing exact text 'Honorable Dismissal' and search for Delete button inside it
     const card = page.locator('.group', { hasText: 'Honorable Dismissal' });
     const trashBtn = card.getByRole('button', { name: 'Delete Document' });
     await expect(trashBtn).toBeVisible();
@@ -270,7 +269,7 @@ test.describe('Document and Certificate Management E2E Tests', () => {
     await expect(modalHeading).toBeVisible();
 
     // Confirm delete
-    const responsePromise = page.waitForResponse(/\/api\/document-types\/202/);
+    const responsePromise = page.waitForResponse(/\/api\/(v1\/)?document-types\/202/);
     await page.locator('button:has-text("Delete")').click();
     await responsePromise;
 
