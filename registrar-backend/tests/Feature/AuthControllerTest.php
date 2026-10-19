@@ -28,13 +28,13 @@ function authMakeLocalUser(array $overrides = []): SystemUser
 // ═════════════════════════════════════════════════════════════════════════════
 
 test('login fails validation when email or password is missing', function () {
-    $this->postJson('/api/login', ['email' => 'not-an-email'])
+    $this->postJson('/api/v1/login', ['email' => 'not-an-email'])
          ->assertStatus(422)
          ->assertJsonValidationErrors(['email', 'password']);
 });
 
 test('local-login fails validation the same way as /login', function () {
-    $this->postJson('/api/auth/local-login', ['email' => 'not-an-email'])
+    $this->postJson('/api/v1/auth/local-login', ['email' => 'not-an-email'])
          ->assertStatus(422)
          ->assertJsonValidationErrors(['email', 'password']);
 });
@@ -52,7 +52,7 @@ test('login succeeds via the IdP and sets X-Auth-Method: idp', function () {
              ->andReturn(['user' => $user, 'token' => 'idp-token']);
     });
 
-    $this->postJson('/api/login', [
+    $this->postJson('/api/v1/login', [
         'email'    => $user->email,
         'password' => 'whatever-the-idp-accepted',
     ])->assertOk()
@@ -69,7 +69,7 @@ test('login rejects immediately when the IdP rejects credentials (no local fallb
              ->andThrow(new IdpException('Invalid credentials.', 401));
     });
 
-    $this->postJson('/api/login', [
+    $this->postJson('/api/v1/login', [
         'email'    => $user->email,
         'password' => 'wrong-password',
     ])->assertStatus(401)
@@ -85,7 +85,7 @@ test('login falls back to local auth when the IdP is unreachable', function () {
              ->andThrow(new IdpUnavailableException('Connection refused', 0));
     });
 
-    $this->postJson('/api/login', [
+    $this->postJson('/api/v1/login', [
         'email'    => $user->email,
         'password' => 'CorrectPass1',
     ])->assertOk()
@@ -103,7 +103,7 @@ test('login fallback fails with idp_offline flag when local credentials are also
              ->andThrow(new IdpUnavailableException('Connection refused', 0));
     });
 
-    $this->postJson('/api/login', [
+    $this->postJson('/api/v1/login', [
         'email'    => $user->email,
         'password' => 'WrongPassword1',
     ])->assertStatus(401)
@@ -115,7 +115,7 @@ test('login fallback fails with idp_offline flag when local credentials are also
 // ═════════════════════════════════════════════════════════════════════════════
 
 test('unauthenticated /me returns 401', function () {
-    $this->getJson('/api/me')->assertStatus(401);
+    $this->getJson('/api/v1/me')->assertStatus(401);
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -125,7 +125,7 @@ test('unauthenticated /me returns 401', function () {
 test('local-login succeeds with correct credentials for a local-auth-enabled user', function () {
     $user = authMakeLocalUser();
 
-    $this->postJson('/api/auth/local-login', [
+    $this->postJson('/api/v1/auth/local-login', [
         'email'    => $user->email,
         'password' => 'CorrectPass1',
     ])->assertOk()
@@ -135,7 +135,7 @@ test('local-login succeeds with correct credentials for a local-auth-enabled use
 test('local-login is rejected for a user without local auth enabled', function () {
     $user = authMakeLocalUser(['local_auth_enabled' => 0]);
 
-    $this->postJson('/api/auth/local-login', [
+    $this->postJson('/api/v1/auth/local-login', [
         'email'    => $user->email,
         'password' => 'CorrectPass1',
     ])->assertStatus(403);
@@ -144,7 +144,7 @@ test('local-login is rejected for a user without local auth enabled', function (
 test('local-login is rejected with the wrong password', function () {
     $user = authMakeLocalUser();
 
-    $this->postJson('/api/auth/local-login', [
+    $this->postJson('/api/v1/auth/local-login', [
         'email'    => $user->email,
         'password' => 'WrongPassword1',
     ])->assertStatus(401);
@@ -153,7 +153,7 @@ test('local-login is rejected with the wrong password', function () {
 test('local-login is rejected for a deactivated account', function () {
     $user = authMakeLocalUser(['status' => 'Deactivated']);
 
-    $this->postJson('/api/auth/local-login', [
+    $this->postJson('/api/v1/auth/local-login', [
         'email'    => $user->email,
         'password' => 'CorrectPass1',
     ])->assertStatus(403);
@@ -168,7 +168,7 @@ test('non-superadmin cannot set a local password', function () {
     Sanctum::actingAs($admin);
     $target = SystemUser::factory()->create();
 
-    $this->postJson('/api/auth/local-password', [
+    $this->postJson('/api/v1/auth/local-password', [
         'user_id'               => $target->user_id,
         'password'              => 'NewPassword1',
         'password_confirmation' => 'NewPassword1',
@@ -182,7 +182,7 @@ test('setPassword fails validation when confirmation does not match', function (
     // failure rather than also tripping the target-role rule.
     $target = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN]);
 
-    $this->postJson('/api/auth/local-password', [
+    $this->postJson('/api/v1/auth/local-password', [
         'user_id'               => $target->user_id,
         'password'              => 'NewPassword1',
         'password_confirmation' => 'Mismatch1',
@@ -194,7 +194,7 @@ test('setPassword fails validation for a nonexistent user_id', function () {
     $superAdmin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($superAdmin);
 
-    $this->postJson('/api/auth/local-password', [
+    $this->postJson('/api/v1/auth/local-password', [
         'user_id'               => 999999,
         'password'              => 'NewPassword1',
         'password_confirmation' => 'NewPassword1',
@@ -213,7 +213,7 @@ test('superadmin can set a local password, enabling local auth for a super-admin
         'local_auth_enabled'  => 0,
     ]);
 
-    $this->postJson('/api/auth/local-password', [
+    $this->postJson('/api/v1/auth/local-password', [
         'user_id'               => $target->user_id,
         'password'              => 'NewPassword1',
         'password_confirmation' => 'NewPassword1',
@@ -223,7 +223,7 @@ test('superadmin can set a local password, enabling local auth for a super-admin
     $this->assertDatabaseHas('users', ['user_id' => $target->user_id, 'local_auth_enabled' => 1]);
 
     // The target can now actually log in locally with the new password.
-    $this->postJson('/api/auth/local-login', [
+    $this->postJson('/api/v1/auth/local-login', [
         'email'    => $target->email,
         'password' => 'NewPassword1',
     ])->assertOk();
@@ -240,7 +240,7 @@ test('setPassword rejects a target user who is not a super admin', function () {
     foreach ([SystemUser::ROLE_STUDENT, SystemUser::ROLE_ALUMNI, SystemUser::ROLE_ADMIN] as $roleId) {
         $target = SystemUser::factory()->create(['role_id' => $roleId]);
 
-        $this->postJson('/api/auth/local-password', [
+        $this->postJson('/api/v1/auth/local-password', [
             'user_id'               => $target->user_id,
             'password'              => 'NewPassword1',
             'password_confirmation' => 'NewPassword1',
@@ -257,7 +257,7 @@ test('setPassword rejects a target user who is not a super admin', function () {
 // ═════════════════════════════════════════════════════════════════════════════
 
 test('switch-role requires authentication', function () {
-    $this->postJson('/api/auth/switch-role', ['role_id' => SystemUser::ROLE_ADMIN])
+    $this->postJson('/api/v1/auth/switch-role', ['role_id' => SystemUser::ROLE_ADMIN])
          ->assertStatus(401);
 });
 
@@ -265,7 +265,7 @@ test('switch-role fails validation for a role_id outside the four known roles', 
     $person = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
     Sanctum::actingAs($person);
 
-    $this->postJson('/api/auth/switch-role', ['role_id' => 999])
+    $this->postJson('/api/v1/auth/switch-role', ['role_id' => 999])
          ->assertStatus(422)
          ->assertJsonValidationErrors(['role_id']);
 });
@@ -281,7 +281,7 @@ test('switch-role rejects a role the caller does not actively hold', function ()
         'status'  => RoleAssignment::STATUS_ACTIVE,
     ]);
 
-    $this->postJson('/api/auth/switch-role', ['role_id' => SystemUser::ROLE_ADMIN])
+    $this->postJson('/api/v1/auth/switch-role', ['role_id' => SystemUser::ROLE_ADMIN])
          ->assertStatus(422)
          ->assertJsonValidationErrors(['role_id']);
 });
@@ -311,7 +311,7 @@ test('switch-role succeeds for a role the caller actively holds, returns the ass
     $plainTextToken = $person->createToken('sanctum-idp')->plainTextToken;
 
     $response = $this->withHeader('Authorization', "Bearer {$plainTextToken}")
-        ->postJson('/api/auth/switch-role', ['role_id' => SystemUser::ROLE_ADMIN]);
+        ->postJson('/api/v1/auth/switch-role', ['role_id' => SystemUser::ROLE_ADMIN]);
 
     $response->assertOk()
         ->assertJsonPath('user.role_id', SystemUser::ROLE_ADMIN)
@@ -336,7 +336,7 @@ test('switch-role succeeds for a role the caller actively holds, returns the ass
     $this->app['auth']->forgetGuards();
 
     $this->withHeader('Authorization', "Bearer {$plainTextToken}")
-        ->getJson('/api/me')
+        ->getJson('/api/v1/me')
         ->assertStatus(401);
 });
 
@@ -359,7 +359,7 @@ test('the tokens cookie issued by switch-role immediately unlocks the newly assu
 
     // A Student session cannot reach a Super-Admin-only route yet.
     $this->withHeader('Authorization', "Bearer {$plainTextToken}")
-        ->getJson('/api/audit-logs')
+        ->getJson('/api/v1/audit-logs')
         ->assertStatus(403);
 
     // Laravel's Sanctum guard (RequestGuard) caches the resolved user for
@@ -372,7 +372,7 @@ test('the tokens cookie issued by switch-role immediately unlocks the newly assu
     $this->app['auth']->forgetGuards();
 
     $switchResponse = $this->withHeader('Authorization', "Bearer {$plainTextToken}")
-        ->postJson('/api/auth/switch-role', ['role_id' => SystemUser::ROLE_SUPER_ADMIN]);
+        ->postJson('/api/v1/auth/switch-role', ['role_id' => SystemUser::ROLE_SUPER_ADMIN]);
 
     $switchResponse->assertOk()->assertJsonPath('user.role_id', SystemUser::ROLE_SUPER_ADMIN);
 
@@ -400,12 +400,12 @@ test('the tokens cookie issued by switch-role immediately unlocks the newly assu
     $this->withCredentials()
         ->withoutHeader('Authorization')
         ->withUnencryptedCookie('token', $newTokenCookie->getValue())
-        ->getJson('/api/audit-logs')
+        ->getJson('/api/v1/audit-logs')
         ->assertOk();
 
     // And the pre-switch token is dead — switchTo() deleted it.
     $this->app['auth']->forgetGuards();
     $this->withHeader('Authorization', "Bearer {$plainTextToken}")
-        ->getJson('/api/me')
+        ->getJson('/api/v1/me')
         ->assertStatus(401);
 });

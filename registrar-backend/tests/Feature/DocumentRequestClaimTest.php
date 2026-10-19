@@ -47,7 +47,7 @@ test('staff can complete a claim via uuid (QR scan)', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::ReadyToClaim->value]);
     claimMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid])
          ->assertOk()
          ->assertJsonPath('status.status_id', RequestStatusEnum::Completed->value);
 
@@ -62,7 +62,7 @@ test('staff can complete a claim via claim_code (manual fallback)', function () 
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::ReadyToClaim->value]);
     claimMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/claim', ['claim_code' => $docReq->claim_code])
+    $this->postJson('/api/v1/document-requests/claim', ['claim_code' => $docReq->claim_code])
          ->assertOk()
          ->assertJsonPath('status.status_id', RequestStatusEnum::Completed->value);
 });
@@ -76,7 +76,7 @@ test('claim_code lookup is case-insensitive', function () {
     // manual input — codes are always stored uppercase, so a lowercase
     // submission (e.g. autocorrect, a student reading it out loud) must
     // still resolve.
-    $this->postJson('/api/document-requests/claim', ['claim_code' => strtolower($docReq->claim_code)])
+    $this->postJson('/api/v1/document-requests/claim', ['claim_code' => strtolower($docReq->claim_code)])
          ->assertOk()
          ->assertJsonPath('status.status_id', RequestStatusEnum::Completed->value);
 });
@@ -90,7 +90,7 @@ test('a completed claim records request history and notifies the owner', functio
     ]);
     claimMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid])
          ->assertOk();
 
     // Same audit trail every other status change goes through — claiming
@@ -120,7 +120,7 @@ test('scanning an already-completed request is rejected', function () {
     // per the "single-use is already covered" reasoning from the policy
     // mapping. Asserting it explicitly here rather than trusting that by
     // inference.
-    $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid])
          ->assertStatus(422);
 
     $this->assertDatabaseHas('document_request', [
@@ -135,13 +135,13 @@ test('scanning the same QR twice in a row only completes the claim once', functi
     claimMakeUser(SystemUser::ROLE_ADMIN);
 
     // First scan: succeeds, transitions ReadyToClaim -> Completed.
-    $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid])
          ->assertOk();
 
     // Second scan of the exact same QR (a static QR sitting in frame across
     // multiple polls, or the student showing the same code again by mistake):
     // must fail, not silently no-op or re-fire notifications.
-    $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid])
          ->assertStatus(422);
 
     // Exactly one Completed transition recorded, not two.
@@ -161,7 +161,7 @@ test('scanning a request that is still processing is rejected', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     claimMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid])
          ->assertStatus(422);
 
     $this->assertDatabaseHas('document_request', [
@@ -176,7 +176,7 @@ test('scanning a request still pending signature is rejected', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::PendingSignature->value]);
     claimMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid])
          ->assertStatus(422);
 });
 
@@ -188,7 +188,7 @@ test('an unknown uuid returns a generic 404, not a validation error', function (
     claimSeedStatuses();
     claimMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => (string) \Illuminate\Support\Str::uuid()])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => (string) \Illuminate\Support\Str::uuid()])
          ->assertStatus(404);
 });
 
@@ -196,7 +196,7 @@ test('an unknown claim_code returns a generic 404', function () {
     claimSeedStatuses();
     claimMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/claim', ['claim_code' => 'ZZZZZZ'])
+    $this->postJson('/api/v1/document-requests/claim', ['claim_code' => 'ZZZZZZ'])
          ->assertStatus(404);
 });
 
@@ -212,7 +212,7 @@ test('an archived request cannot be claimed even with a valid code', function ()
     // claimRequest()'s lookup uses the model's default (non-archived) scope,
     // same as every other query — an archived request's own code simply
     // won't match, surfacing as the same generic 404 as an unknown code.
-    $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid])
          ->assertStatus(404);
 });
 
@@ -221,7 +221,7 @@ test('providing both uuid and claim_code is rejected as a validation error', fun
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::ReadyToClaim->value]);
     claimMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/claim', [
+    $this->postJson('/api/v1/document-requests/claim', [
         'uuid'       => $docReq->uuid,
         'claim_code' => $docReq->claim_code,
     ])->assertStatus(422);
@@ -238,7 +238,7 @@ test('providing neither uuid nor claim_code is rejected as a validation error', 
     claimSeedStatuses();
     claimMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/claim', [])
+    $this->postJson('/api/v1/document-requests/claim', [])
          ->assertStatus(422);
 });
 
@@ -246,7 +246,7 @@ test('a malformed claim_code (wrong length) is rejected as a validation error, n
     claimSeedStatuses();
     claimMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/claim', ['claim_code' => 'ABC'])
+    $this->postJson('/api/v1/document-requests/claim', ['claim_code' => 'ABC'])
          ->assertStatus(422);
 });
 
@@ -263,7 +263,7 @@ test('a student cannot claim a request, even their own', function () {
         'status_id' => RequestStatusEnum::ReadyToClaim->value,
     ]);
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid])
          ->assertStatus(403);
 });
 
@@ -271,7 +271,7 @@ test('an unauthenticated request cannot claim', function () {
     claimSeedStatuses();
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::ReadyToClaim->value]);
 
-    $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid])
+    $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid])
          ->assertStatus(401);
 });
 
@@ -293,8 +293,8 @@ test('two claim attempts on the same request never both succeed', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::ReadyToClaim->value]);
     claimMakeUser(SystemUser::ROLE_ADMIN);
 
-    $first  = $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid]);
-    $second = $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid]);
+    $first  = $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid]);
+    $second = $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid]);
 
     $statuses = [$first->getStatusCode(), $second->getStatusCode()];
     sort($statuses);
@@ -315,8 +315,8 @@ test('claiming by uuid and then by claim_code for the same request only complete
     // Simulates a scan succeeding at the counter while the claim_code was
     // also typed into a second tab/device for the same student — both
     // credentials point at the same row, so only one may win.
-    $byUuid = $this->postJson('/api/document-requests/claim', ['uuid' => $docReq->uuid]);
-    $byCode = $this->postJson('/api/document-requests/claim', ['claim_code' => $docReq->claim_code]);
+    $byUuid = $this->postJson('/api/v1/document-requests/claim', ['uuid' => $docReq->uuid]);
+    $byCode = $this->postJson('/api/v1/document-requests/claim', ['claim_code' => $docReq->claim_code]);
 
     $statuses = [$byUuid->getStatusCode(), $byCode->getStatusCode()];
     sort($statuses);

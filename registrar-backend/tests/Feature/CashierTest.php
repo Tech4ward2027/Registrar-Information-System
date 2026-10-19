@@ -326,7 +326,7 @@ test('document request is accepted in mock mode without a real OR', function () 
     makeCashierStudent();
     ['purpose' => $purpose, 'docType' => $docType] = seedCashierReferenceData();
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'          => '1234567',
         'receipt_date'       => now()->toDateString(),
@@ -342,7 +342,7 @@ test('document request is rejected when OR is not found in cashier API', functio
     makeCashierStudent();
     ['purpose' => $purpose, 'docType' => $docType] = seedCashierReferenceData();
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'          => '0000000',
         'receipt_date'       => now()->toDateString(),
@@ -359,7 +359,7 @@ test('document request is rejected when cashier API is down', function () {
     makeCashierStudent();
     ['purpose' => $purpose, 'docType' => $docType] = seedCashierReferenceData();
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'          => '1234567',
         'receipt_date'       => now()->toDateString(),
@@ -379,7 +379,7 @@ test('document request is rejected when OR number is already used', function () 
 
     DocumentRequest::factory()->create(['or_number' => '9999999', 'user_id' => $user->user_id]);
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'          => '9999999',
         'receipt_date'       => now()->toDateString(),
@@ -415,7 +415,7 @@ test('document request succeeds when cashier only accepts the full-middle-name f
         return Http::response(['valid' => false, 'reason' => 'NOT_FOUND', 'data' => null], 200);
     });
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'          => '1234567',
         'receipt_date'       => now()->toDateString(),
@@ -442,7 +442,7 @@ test('document request is rejected and every candidate attempt is logged when no
         '*' => Http::response(['valid' => false, 'reason' => 'NOT_FOUND', 'data' => null], 200),
     ]);
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'          => '0000000',
         'receipt_date'       => now()->toDateString(),
@@ -465,7 +465,7 @@ test('document request with no OR number is accepted when OR is optional', funct
     makeCashierStudent();
     ['purpose' => $purpose, 'docType' => $docType] = seedCashierReferenceData();
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'documents'          => [['document_type_id' => $docType->document_type_id, 'number_of_copies' => 1]],
     ])->assertCreated();

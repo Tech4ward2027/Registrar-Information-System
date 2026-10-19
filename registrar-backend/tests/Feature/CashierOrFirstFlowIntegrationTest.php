@@ -65,7 +65,7 @@ test('a full verify-then-submit flow: suggestions from verify-or successfully cr
     integrationStudent();
 
     // Step 1: verify-or — this is what the reordered wizard calls first.
-    $verifyResponse = $this->postJson('/api/document-requests/verify-or', [
+    $verifyResponse = $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number'    => '1000001',
         'receipt_date' => now()->toDateString(),
     ])->assertOk();
@@ -80,7 +80,7 @@ test('a full verify-then-submit flow: suggestions from verify-or successfully cr
     // suggestion, the student confirms, and store() submits exactly what
     // was suggested (this is what handleSubmit() in RequestForm.jsx
     // actually sends).
-    $storeResponse = $this->postJson('/api/document-requests', [
+    $storeResponse = $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'           => '1000001',
         'receipt_date'        => now()->toDateString(),
@@ -123,11 +123,11 @@ test('after a successful submission, a second verify-or on the same OR is reject
     integrationStudent();
 
     // Verify, then submit — OR is now "used" (DocumentRequest row exists).
-    $this->postJson('/api/document-requests/verify-or', [
+    $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number' => '1000001', 'receipt_date' => now()->toDateString(),
     ])->assertOk();
 
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'           => '1000001',
         'receipt_date'        => now()->toDateString(),
@@ -144,7 +144,7 @@ test('after a successful submission, a second verify-or on the same OR is reject
     StudentAcademicRecord::factory()->create(['student_profile_id' => $secondProfile->student_profile_id]);
     Sanctum::actingAs($secondUser);
 
-    $this->postJson('/api/document-requests/verify-or', [
+    $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number' => '1000001', 'receipt_date' => now()->toDateString(),
     ])->assertStatus(422)
       ->assertJsonPath('errors.or_number.0', fn ($msg) => str_contains($msg, 'already been used'));
@@ -183,14 +183,14 @@ test('store() still strictly rejects a submission that adds an item verify-or ne
 
     integrationStudent();
 
-    $this->postJson('/api/document-requests/verify-or', [
+    $this->postJson('/api/v1/document-requests/verify-or', [
         'or_number' => '1000001', 'receipt_date' => now()->toDateString(),
     ])->assertOk()
       ->assertJsonPath('suggestions.documents.0.document_type_id', $paidFor->document_type_id);
 
     // Student manually adds the un-paid-for document alongside the
     // suggested one before hitting Submit.
-    $this->postJson('/api/document-requests', [
+    $this->postJson('/api/v1/document-requests', [
         'request_purpose_id' => $purpose->request_purpose_id,
         'or_number'           => '1000001',
         'receipt_date'        => now()->toDateString(),

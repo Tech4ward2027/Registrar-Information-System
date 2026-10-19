@@ -42,7 +42,7 @@ test('student cannot delete a document request', function () {
     $owner  = drMakeUser(SystemUser::ROLE_STUDENT);
     $docReq = DocumentRequest::factory()->create(['user_id' => $owner->user_id]);
 
-    $this->deleteJson("/api/document-requests/{$docReq->request_id}")
+    $this->deleteJson("/api/v1/document-requests/{$docReq->request_id}")
          ->assertStatus(403);
 });
 
@@ -51,7 +51,7 @@ test('admin can delete a document request', function () {
     $docReq = DocumentRequest::factory()->create();
     drMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->deleteJson("/api/document-requests/{$docReq->request_id}")
+    $this->deleteJson("/api/v1/document-requests/{$docReq->request_id}")
          ->assertOk()
          ->assertJson(['message' => 'Request deleted successfully']);
 
@@ -76,7 +76,7 @@ test('student cannot archive a document request', function () {
     $owner  = drMakeUser(SystemUser::ROLE_STUDENT);
     $docReq = DocumentRequest::factory()->create(['user_id' => $owner->user_id]);
 
-    $this->patchJson("/api/document-requests/{$docReq->request_id}/archive")
+    $this->patchJson("/api/v1/document-requests/{$docReq->request_id}/archive")
          ->assertStatus(403);
 });
 
@@ -85,7 +85,7 @@ test('admin can archive a document request regardless of status', function () {
     $docReq = DocumentRequest::factory()->create(['status_id' => RequestStatusEnum::Processing->value]);
     $admin  = drMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson("/api/document-requests/{$docReq->request_id}/archive")
+    $this->patchJson("/api/v1/document-requests/{$docReq->request_id}/archive")
          ->assertOk()
          ->assertJsonPath('is_archived', true);
 
@@ -104,7 +104,7 @@ test('archiving an already-archived request is idempotent', function () {
     ]);
     drMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson("/api/document-requests/{$docReq->request_id}/archive")
+    $this->patchJson("/api/v1/document-requests/{$docReq->request_id}/archive")
          ->assertOk()
          ->assertJsonPath('is_archived', true);
 });
@@ -112,7 +112,7 @@ test('archiving an already-archived request is idempotent', function () {
 test('archive returns 404 for a missing request', function () {
     drMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson('/api/document-requests/999999/archive')
+    $this->patchJson('/api/v1/document-requests/999999/archive')
          ->assertStatus(404);
 });
 
@@ -125,7 +125,7 @@ test('admin can restore an archived request', function () {
     ]);
     $admin = drMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson("/api/document-requests/{$docReq->request_id}/restore")
+    $this->patchJson("/api/v1/document-requests/{$docReq->request_id}/restore")
          ->assertOk()
          ->assertJsonPath('is_archived', false);
 
@@ -147,7 +147,7 @@ test('archived requests remain viewable via show (read-only)', function () {
     // If show() used implicit route-model binding instead of
     // DocumentRequest::withArchived()->findOrFail(), ExcludeArchivedScope
     // would 404 this — that's the specific regression this test guards.
-    $this->getJson("/api/document-requests/{$docReq->request_id}")
+    $this->getJson("/api/v1/document-requests/{$docReq->request_id}")
          ->assertOk()
          ->assertJsonPath('request_id', $docReq->request_id);
 });
@@ -159,14 +159,14 @@ test('archived requests remain viewable via show (read-only)', function () {
 test('student cannot call archive-bulk', function () {
     drMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->postJson('/api/document-requests/archive-bulk', ['request_ids' => [1]])
+    $this->postJson('/api/v1/document-requests/archive-bulk', ['request_ids' => [1]])
          ->assertStatus(403);
 });
 
 test('archive-bulk fails validation on an empty request_ids array', function () {
     drMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/archive-bulk', ['request_ids' => []])
+    $this->postJson('/api/v1/document-requests/archive-bulk', ['request_ids' => []])
          ->assertStatus(422)
          ->assertJsonValidationErrors(['request_ids']);
 });
@@ -174,7 +174,7 @@ test('archive-bulk fails validation on an empty request_ids array', function () 
 test('archive-bulk fails validation on duplicate ids', function () {
     drMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/document-requests/archive-bulk', ['request_ids' => [1, 1]])
+    $this->postJson('/api/v1/document-requests/archive-bulk', ['request_ids' => [1, 1]])
          ->assertStatus(422)
          ->assertJsonValidationErrors(['request_ids.0']);
 });
@@ -185,7 +185,7 @@ test('archive-bulk archives eligible ids and reports the rest as skipped', funct
     $alreadyArchived   = DocumentRequest::factory()->create(['is_archived' => true, 'archived_on' => now(), 'archived_by' => null]);
     drMakeUser(SystemUser::ROLE_ADMIN);
 
-    $response = $this->postJson('/api/document-requests/archive-bulk', [
+    $response = $this->postJson('/api/v1/document-requests/archive-bulk', [
         'request_ids' => [$eligible->request_id, $alreadyArchived->request_id],
     ])->assertOk();
 
@@ -201,7 +201,7 @@ test('restore-bulk restores eligible ids and reports the rest as skipped', funct
     $notArchived = DocumentRequest::factory()->create(); // not archived — ineligible for restore
     drMakeUser(SystemUser::ROLE_ADMIN);
 
-    $response = $this->postJson('/api/document-requests/restore-bulk', [
+    $response = $this->postJson('/api/v1/document-requests/restore-bulk', [
         'request_ids' => [$archived->request_id, $notArchived->request_id],
     ])->assertOk();
 

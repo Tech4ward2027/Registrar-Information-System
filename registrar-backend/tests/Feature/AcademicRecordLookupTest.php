@@ -67,7 +67,7 @@ test('resolves an enrolled student with the standard response shape', function (
     lookupActAs();
     lookupEnrolled('2021-00001-MN-0');
 
-    $this->getJson('/api/academic-records/by-student?student_num=2021-00001-MN-0')
+    $this->getJson('/api/v1/academic-records/by-student?student_num=2021-00001-MN-0')
         ->assertOk()
         ->assertJsonPath('data.student_number', '2021-00001-MN-0')
         ->assertJsonPath('data.course', 'BS Computer Science')
@@ -84,7 +84,7 @@ test('enrolled tier wins over alumni when a number exists in both', function () 
     lookupEnrolled('2018-00002-MN-0');
     lookupAlumni('2018-00002-MN-0');
 
-    $this->getJson('/api/academic-records/by-student?student_num=2018-00002-MN-0')
+    $this->getJson('/api/v1/academic-records/by-student?student_num=2018-00002-MN-0')
         ->assertOk()
         ->assertJsonPath('data.requester_type', 'Student');
 });
@@ -93,7 +93,7 @@ test('falls through to alumni with year of graduation', function () {
     lookupActAs();
     lookupAlumni('2015-00003-MN-0', 2019);
 
-    $this->getJson('/api/academic-records/by-student?student_num=2015-00003-MN-0')
+    $this->getJson('/api/v1/academic-records/by-student?student_num=2015-00003-MN-0')
         ->assertOk()
         ->assertJsonPath('data.status', 'Alumni')
         ->assertJsonPath('data.requester_type', 'Alumni')
@@ -105,7 +105,7 @@ test('falls through to an approved undergraduate requester', function () {
     lookupActAs();
     lookupUndergrad('2017-00004-MN-0');
 
-    $this->getJson('/api/academic-records/by-student?student_num=2017-00004-MN-0')
+    $this->getJson('/api/v1/academic-records/by-student?student_num=2017-00004-MN-0')
         ->assertOk()
         ->assertJsonPath('data.status', 'Undergraduate')
         ->assertJsonPath('data.requester_type', 'Undergraduate Requester')
@@ -116,7 +116,7 @@ test('a pending undergraduate requester is not resolvable', function () {
     lookupActAs();
     lookupUndergrad('2017-00005-MN-0', approved: false);
 
-    $this->getJson('/api/academic-records/by-student?student_num=2017-00005-MN-0')->assertNotFound();
+    $this->getJson('/api/v1/academic-records/by-student?student_num=2017-00005-MN-0')->assertNotFound();
 });
 
 test('returns the latest OR number for the resolved account', function () {
@@ -127,7 +127,7 @@ test('returns the latest OR number for the resolved account', function () {
     DocumentRequest::factory()->create(['user_id' => $userId, 'or_number' => '1111111', 'requested_at' => now()->subDays(3)]);
     DocumentRequest::factory()->create(['user_id' => $userId, 'or_number' => '2222222', 'requested_at' => now()->subDay()]);
 
-    $this->getJson('/api/academic-records/by-student?student_num=2021-00006-MN-0')
+    $this->getJson('/api/v1/academic-records/by-student?student_num=2021-00006-MN-0')
         ->assertOk()
         ->assertJsonPath('data.or_number', '2222222');
 });
@@ -135,7 +135,7 @@ test('returns the latest OR number for the resolved account', function () {
 test('unknown student number returns 404', function () {
     lookupActAs();
 
-    $this->getJson('/api/academic-records/by-student?student_num=9999-99999')
+    $this->getJson('/api/v1/academic-records/by-student?student_num=9999-99999')
         ->assertNotFound()
         ->assertJsonStructure(['message']);
 });
@@ -143,7 +143,7 @@ test('unknown student number returns 404', function () {
 test('rejects a missing or malformed student number', function (?string $value) {
     lookupActAs();
 
-    $url = '/api/academic-records/by-student' . ($value === null ? '' : '?student_num=' . urlencode($value));
+    $url = '/api/v1/academic-records/by-student' . ($value === null ? '' : '?student_num=' . urlencode($value));
 
     $this->getJson($url)->assertStatus(422)->assertJsonValidationErrors('student_num');
 })->with([
@@ -157,22 +157,22 @@ test('rejects a missing or malformed student number', function (?string $value) 
 test('array input is rejected', function () {
     lookupActAs();
 
-    $this->getJson('/api/academic-records/by-student?student_num[]=2021-00001')
+    $this->getJson('/api/v1/academic-records/by-student?student_num[]=2021-00001')
         ->assertStatus(422);
 });
 
 test('requires authentication', function () {
-    $this->getJson('/api/academic-records/by-student?student_num=2021-00001')->assertUnauthorized();
+    $this->getJson('/api/v1/academic-records/by-student?student_num=2021-00001')->assertUnauthorized();
 });
 
 test('students cannot use the lookup', function () {
     lookupActAs(SystemUser::ROLE_STUDENT);
 
-    $this->getJson('/api/academic-records/by-student?student_num=2021-00001')->assertForbidden();
+    $this->getJson('/api/v1/academic-records/by-student?student_num=2021-00001')->assertForbidden();
 });
 
 test('the list-all academic records endpoint is no longer exposed', function () {
     lookupActAs();
 
-    $this->getJson('/api/academic-records')->assertStatus(405);
+    $this->getJson('/api/v1/academic-records')->assertStatus(405);
 });

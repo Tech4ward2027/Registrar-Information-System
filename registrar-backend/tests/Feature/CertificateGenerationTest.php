@@ -83,7 +83,7 @@ function cgnTemplate(CertificationType $type, array $overrides = []): void
     $admin = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated']);
     Sanctum::actingAs($admin);
 
-    test()->putJson("/api/certifications/{$type->certificate_type_id}/template", array_merge([
+    test()->putJson("/api/v1/certifications/{$type->certificate_type_id}/template", array_merge([
         'content' => '<h3 style="text-align:center">CERTIFICATION</h3>'
             . '<p>This is to certify that {{ full_name|upper }} ({{ student_number }}) finished {{ course }}'
             . ' on {{ date_graduated }}. OR {{ official_receipt_number }}. Control {{ control_number }}.'
@@ -156,14 +156,14 @@ test('only staff with dashboard process access can generate certificates', funct
     cgnStudent();
 
     auth()->forgetGuards();
-    $this->postJson('/api/certificates/generate', cgnPayload($type))->assertUnauthorized();
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type))->assertUnauthorized();
 
     Sanctum::actingAs(SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']));
-    $this->postJson('/api/certificates/generate', cgnPayload($type))->assertForbidden();
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type))->assertForbidden();
 
     // An admin whose policy grants nothing is refused by the module gate.
     Sanctum::actingAs(SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated']));
-    $this->postJson('/api/certificates/generate', cgnPayload($type))->assertForbidden();
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type))->assertForbidden();
 
     expect(CertificateGeneration::count())->toBe(0);
 });
@@ -177,7 +177,7 @@ test('generates a real PDF, returns the control number, records it and stores no
     [$request, $item] = cgnRequest($student, $type);
     $staff = cgnStaff();
 
-    $response = $this->postJson('/api/certificates/generate', cgnPayload($type, [
+    $response = $this->postJson('/api/v1/certificates/generate', cgnPayload($type, [
         'request_id' => $request->request_id,
         'fields'     => ['gwa' => '1.4500'],
     ]));
@@ -227,7 +227,7 @@ test('the merge values are escaped, formatted, and server-resolved', function ()
     cgnStaff();
     $spy = cgnCaptureHtml();
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['fields' => ['gwa' => '<script>alert(1)</script>']]))->assertOk();
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['fields' => ['gwa' => '<script>alert(1)</script>']]))->assertOk();
 
     expect($spy->html)->toContain('JUAN SANTOS DELA CRUZ')
         ->toContain('(2021-00001-MN-0)')
@@ -245,7 +245,7 @@ test('a request cannot override a server-resolved value', function () {
     cgnStaff();
 
     foreach (['full_name', 'course', 'official_receipt_number', 'control_number', 'issue_date', 'not_a_tag'] as $field) {
-        $this->postJson('/api/certificates/generate', cgnPayload($type, ['fields' => [$field => 'Hacked']]))
+        $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['fields' => [$field => 'Hacked']]))
             ->assertUnprocessable()
             ->assertJsonValidationErrors('fields');
     }
@@ -266,7 +266,7 @@ test('the latest OR number and the selected signatory are merged from the backen
     cgnStaff();
     $spy = cgnCaptureHtml();
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['signatory_id' => $signatory->signatory_id]))->assertOk();
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['signatory_id' => $signatory->signatory_id]))->assertOk();
 
     expect($spy->html)->toContain('OR 0000002')->toContain('Maria Reyes, Campus Registrar');
 });
@@ -281,7 +281,7 @@ test('alumni are resolved server-side too', function () {
     cgnStaff();
     $spy = cgnCaptureHtml();
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['student_num' => '2015-00003-MN-0']))->assertOk();
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['student_num' => '2015-00003-MN-0']))->assertOk();
 
     expect($spy->html)->toContain('ANA CRUZ')->toContain('BS Accountancy')->toContain('on 2019.');
 });
@@ -292,7 +292,7 @@ test('the real PDF engine honours paper size and orientation', function () {
     cgnStudent();
     cgnStaff();
 
-    $pdf = $this->postJson('/api/certificates/generate', cgnPayload($type))->assertOk()->getContent();
+    $pdf = $this->postJson('/api/v1/certificates/generate', cgnPayload($type))->assertOk()->getContent();
 
     expect($pdf)->toMatch('~/MediaBox\s*\[\s*0(\.0+)?\s+0(\.0+)?\s+792(\.0+)?\s+612(\.0+)?\s*\]~');
 });
@@ -306,7 +306,7 @@ test('control numbers are sequential, unique and follow the agreed format', func
     cgnStaff();
     cgnCaptureHtml();
 
-    $numbers = collect(range(1, 3))->map(fn () => $this->postJson('/api/certificates/generate', cgnPayload($type))->assertOk()->headers->get('X-Control-Number'));
+    $numbers = collect(range(1, 3))->map(fn () => $this->postJson('/api/v1/certificates/generate', cgnPayload($type))->assertOk()->headers->get('X-Control-Number'));
 
     $y = cgnYear();
     expect($numbers->all())->toBe(["PUP-CERT-{$y}-0001", "PUP-CERT-{$y}-0002", "PUP-CERT-{$y}-0003"])
@@ -325,10 +325,10 @@ test('the sequence restarts each calendar year and grows past the padding', func
     cgnCaptureHtml();
 
     $this->travelTo(CarbonImmutable::parse('2026-12-31 23:00', 'Asia/Manila'));
-    $this->postJson('/api/certificates/generate', cgnPayload($type))->assertOk()->assertHeader('X-Control-Number', 'PUP-CERT-2026-0001');
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type))->assertOk()->assertHeader('X-Control-Number', 'PUP-CERT-2026-0001');
 
     $this->travelTo(CarbonImmutable::parse('2027-01-01 00:30', 'Asia/Manila'));
-    $this->postJson('/api/certificates/generate', cgnPayload($type))->assertOk()->assertHeader('X-Control-Number', 'PUP-CERT-2027-0001');
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type))->assertOk()->assertHeader('X-Control-Number', 'PUP-CERT-2027-0001');
 
     $this->travelBack();
 });
@@ -339,7 +339,7 @@ test('the database refuses a duplicate control number', function () {
     cgnStudent();
     cgnStaff();
     cgnCaptureHtml();
-    $this->postJson('/api/certificates/generate', cgnPayload($type))->assertOk();
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type))->assertOk();
 
     $row = CertificateGeneration::sole();
     expect(fn () => CertificateGeneration::create($row->only([
@@ -366,7 +366,7 @@ test('without an active template the API answers legacy and consumes nothing', f
     [$request, $item] = cgnRequest($student, $type);
     cgnStaff();
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
         ->assertStatus(409)
         ->assertJsonPath('code', 'template_not_configured')
         ->assertJsonPath('source', 'legacy');
@@ -383,7 +383,7 @@ test('an archived certificate type is locked', function () {
     $type->update(['is_archived' => true]);
     cgnStaff();
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type))->assertStatus(423)->assertJsonPath('code', 'certificate_type_archived');
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type))->assertStatus(423)->assertJsonPath('code', 'certificate_type_archived');
     expect(CertificateGeneration::count())->toBe(0);
 });
 
@@ -395,7 +395,7 @@ test('a missing template object returns 503 and does not touch the request', fun
     cgnStaff();
     Storage::disk(CGN_DISK)->deleteDirectory('certificate-templates');
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
         ->assertStatus(503)
         ->assertJsonPath('code', 'template_storage_unavailable');
 
@@ -421,7 +421,7 @@ test('invalid input is rejected before anything is looked up', function () {
         ['fields' => 'gwa'],
         ['fields' => ['gwa' => str_repeat('x', 256)]],
     ] as $bad) {
-        $this->postJson('/api/certificates/generate', array_merge(cgnPayload($type), $bad))->assertUnprocessable();
+        $this->postJson('/api/v1/certificates/generate', array_merge(cgnPayload($type), $bad))->assertUnprocessable();
     }
 
     expect(CertificateGeneration::count())->toBe(0);
@@ -432,7 +432,7 @@ test('an unknown student number returns 404', function () {
     cgnTemplate($type);
     cgnStaff();
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['student_num' => '1999-99999-XX-0']))
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['student_num' => '1999-99999-XX-0']))
         ->assertNotFound()->assertJsonPath('code', 'student_not_found');
 });
 
@@ -443,7 +443,7 @@ test('missing required fields are listed and burn no control number', function (
     [$request, $item] = cgnRequest($student, $type);
     cgnStaff();
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
         ->assertUnprocessable()
         ->assertJsonPath('code', 'missing_required_fields')
         ->assertJsonPath('errors.fields', ['gwa']);
@@ -454,7 +454,7 @@ test('missing required fields are listed and burn no control number', function (
 
     // Supplying it succeeds and gets the FIRST number.
     cgnCaptureHtml();
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id, 'fields' => ['gwa' => '1.2']]))
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id, 'fields' => ['gwa' => '1.2']]))
         ->assertOk()->assertHeader('X-Control-Number', 'PUP-CERT-' . cgnYear() . '-0001');
 });
 
@@ -484,7 +484,7 @@ test('a request that belongs to someone else is refused', function () {
     [$request, $item] = cgnRequest($other, $type);
     cgnStaff();
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
         ->assertUnprocessable()->assertJsonPath('code', 'request_student_mismatch');
 
     expect(CertificateGeneration::count())->toBe(0)->and($item->fresh()->generated_at)->toBeNull();
@@ -498,10 +498,10 @@ test('the request must actually contain that certificate type', function () {
     [$request, $item] = cgnRequest($student, $other);
     cgnStaff();
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
         ->assertUnprocessable()->assertJsonPath('code', 'request_missing_certificate');
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id, 'request_certificate_id' => $item->request_certificate_id]))
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id, 'request_certificate_id' => $item->request_certificate_id]))
         ->assertUnprocessable()->assertJsonPath('code', 'certificate_item_mismatch');
 
     expect(CertificateGeneration::count())->toBe(0);
@@ -516,9 +516,9 @@ test('closed and archived requests are refused', function () {
     $archived->update(['is_archived' => true]);
     cgnStaff();
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['request_id' => $done->request_id]))
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['request_id' => $done->request_id]))
         ->assertUnprocessable()->assertJsonPath('code', 'request_closed');
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['request_id' => $archived->request_id]))
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['request_id' => $archived->request_id]))
         ->assertNotFound()->assertJsonPath('code', 'request_not_found');
 
     expect(CertificateGeneration::count())->toBe(0);
@@ -532,7 +532,7 @@ test('generation without a request touches no workflow state', function () {
     cgnStaff();
     cgnCaptureHtml();
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type))->assertOk();
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type))->assertOk();
 
     expect($item->fresh()->generated_at)->toBeNull()->and(CertificateGeneration::sole()->request_id)->toBeNull();
 });
@@ -546,10 +546,10 @@ test('re-issuing for an already generated item gets a new control number and kee
     cgnCaptureHtml();
     $payload = cgnPayload($type, ['request_id' => $request->request_id]);
 
-    $this->postJson('/api/certificates/generate', $payload)->assertOk();
+    $this->postJson('/api/v1/certificates/generate', $payload)->assertOk();
     $first = $item->fresh()->generated_at;
     $this->travel(1)->hours();
-    $this->postJson('/api/certificates/generate', $payload)->assertOk()
+    $this->postJson('/api/v1/certificates/generate', $payload)->assertOk()
         ->assertHeader('X-Control-Number', 'PUP-CERT-' . cgnYear() . '-0002');
 
     expect($item->fresh()->generated_at->equalTo($first))->toBeTrue();
@@ -574,7 +574,7 @@ test('a PDF engine failure marks the record failed and never completes the reque
         return '%PDF-1.4 stub';
     }));
 
-    $res = $this->postJson('/api/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
+    $res = $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
         ->assertStatus(500)->assertJsonPath('code', 'generation_failed');
     expect($res->getContent())->not->toContain('secret detail');
 
@@ -588,7 +588,7 @@ test('a PDF engine failure marks the record failed and never completes the reque
         ->and(AuditLog::where('action', AuditLog::ACTION_CERTIFICATE_GENERATION_FAILED)->sole()->metadata['failure_code'])->toBe('render_error');
 
     // The failed number stays reserved: the next success is -0002, an explained gap.
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))
         ->assertOk()->assertHeader('X-Control-Number', 'PUP-CERT-' . cgnYear() . '-0002');
 });
 
@@ -604,7 +604,7 @@ test('a corrupt stored template fails closed with a clear message', function () 
         }
     });
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type))
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type))
         ->assertUnprocessable()->assertJsonPath('code', 'template_invalid');
 
     expect(CertificateGeneration::sole()->failure_code)->toBe('template_invalid');
@@ -619,7 +619,7 @@ test('if the workflow update is rejected nothing is marked generated and the rec
     cgnCaptureHtml();
     $this->mock(DocumentRequestService::class, fn ($m) => $m->shouldReceive('markCertificatesGenerated')->andThrow(new HttpException(422, 'This request is archived and is read-only. Restore it first.')));
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))->assertStatus(422);
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type, ['request_id' => $request->request_id]))->assertStatus(422);
 
     $record = CertificateGeneration::sole();
     expect($record->status)->toBe(CertificateGenerationStatusEnum::Failed)
@@ -639,7 +639,7 @@ test('the payload snapshot can be switched off', function () {
     cgnStaff();
     cgnCaptureHtml();
 
-    $this->postJson('/api/certificates/generate', cgnPayload($type))->assertOk();
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type))->assertOk();
 
     expect(CertificateGeneration::sole()->payload_snapshot)->toBeNull();
 });
@@ -650,7 +650,7 @@ test('a generation record keeps the version it used and cannot be rewritten', fu
     cgnStudent();
     cgnStaff();
     cgnCaptureHtml();
-    $this->postJson('/api/certificates/generate', cgnPayload($type))->assertOk();
+    $this->postJson('/api/v1/certificates/generate', cgnPayload($type))->assertOk();
 
     // A new template version later must not change what the record says.
     cgnTemplate($type, ['content' => '<p>New wording {{ full_name }} {{ course }}</p>']);

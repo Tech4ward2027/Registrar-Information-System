@@ -7,7 +7,7 @@ import axios from "axios";
 // never creates its own axios instance or calls axios directly.
 // -------------------------------------------------------
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? "http://localhost:8000/api",
+  baseURL: import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1",
   // withCredentials: true sends the HttpOnly 'token' cookie on every request.
   // The backend reads it via Sanctum's cookie guard — no manual header needed.
   withCredentials: true,

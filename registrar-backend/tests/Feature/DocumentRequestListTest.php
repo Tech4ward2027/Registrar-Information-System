@@ -85,7 +85,7 @@ test('search finds a student by first name, last name and student number', funct
     dlsStudentRequest('Pedro', 'Reyes', '2020-99999');
 
     foreach (['Juan', 'cruz', 'Cruz, Juan', '2021-001'] as $term) {
-        $response = $this->getJson('/api/document-requests?' . http_build_query(['search' => $term]))->assertOk();
+        $response = $this->getJson('/api/v1/document-requests?' . http_build_query(['search' => $term]))->assertOk();
 
         expect(dlsIds($response))->toBe([$target->request_id]);
     }
@@ -96,16 +96,16 @@ test('search finds an undergrad requestor by name and student number (bug 1A)', 
     [$target] = dlsUndergradRequest('Maria', 'Santos', '2018-00456');
     dlsStudentRequest('Pedro', 'Reyes', '2020-99999');
 
-    expect(dlsIds($this->getJson('/api/document-requests?search=Santos')))->toBe([$target->request_id]);
-    expect(dlsIds($this->getJson('/api/document-requests?search=2018-004')))->toBe([$target->request_id]);
+    expect(dlsIds($this->getJson('/api/v1/document-requests?search=Santos')))->toBe([$target->request_id]);
+    expect(dlsIds($this->getJson('/api/v1/document-requests?search=2018-004')))->toBe([$target->request_id]);
 });
 
 test('search finds a word inside a multi-word last name', function () {
     dlsStaff();
     $target = dlsStudentRequest('Ana', 'Dela Cruz', '2019-11111');
 
-    expect(dlsIds($this->getJson('/api/document-requests?search=cruz')))->toBe([$target->request_id]);
-    expect(dlsIds($this->getJson('/api/document-requests?search=' . urlencode('ana dela'))))->toBe([$target->request_id]);
+    expect(dlsIds($this->getJson('/api/v1/document-requests?search=cruz')))->toBe([$target->request_id]);
+    expect(dlsIds($this->getJson('/api/v1/document-requests?search=' . urlencode('ana dela'))))->toBe([$target->request_id]);
 });
 
 test('search finds a request by claim code (case-insensitive) and by exact request id', function () {
@@ -118,11 +118,11 @@ test('search finds a request by claim code (case-insensitive) and by exact reque
 
     expect($target->request_id)->toBeGreaterThanOrEqual(10);
 
-    expect(dlsIds($this->getJson('/api/document-requests?search=' . strtolower($target->claim_code))))
+    expect(dlsIds($this->getJson('/api/v1/document-requests?search=' . strtolower($target->claim_code))))
         ->toBe([$target->request_id]);
 
     // Exact id match, not substring: "1" + id must not match id.
-    expect(dlsIds($this->getJson('/api/document-requests?search=' . $target->request_id)))
+    expect(dlsIds($this->getJson('/api/v1/document-requests?search=' . $target->request_id)))
         ->toContain($target->request_id);
 });
 
@@ -147,11 +147,11 @@ test('an old Ready to Claim request is found even with more than 200 newer reque
         ]);
 
     // The old row is NOT in the newest 200...
-    $newest = $this->getJson('/api/document-requests?all_statuses=true&per_page=200')->assertOk();
+    $newest = $this->getJson('/api/v1/document-requests?all_statuses=true&per_page=200')->assertOk();
     expect(dlsIds($newest))->not->toContain($old->request_id);
 
     // ...but search still finds it.
-    $found = $this->getJson('/api/document-requests?search=Matanda')->assertOk();
+    $found = $this->getJson('/api/v1/document-requests?search=Matanda')->assertOk();
     expect(dlsIds($found))->toBe([$old->request_id]);
 });
 
@@ -161,23 +161,23 @@ test('LIKE wildcards in the search term are matched literally', function () {
     dlsStudentRequest('Pedro', 'Reyes', '2020-99999');
 
     // "%%" or "__" would match every row if not escaped.
-    $this->getJson('/api/document-requests?search=' . urlencode('%%'))->assertOk()->assertJsonCount(0, 'data');
-    $this->getJson('/api/document-requests?search=' . urlencode('__'))->assertOk()->assertJsonCount(0, 'data');
+    $this->getJson('/api/v1/document-requests?search=' . urlencode('%%'))->assertOk()->assertJsonCount(0, 'data');
+    $this->getJson('/api/v1/document-requests?search=' . urlencode('__'))->assertOk()->assertJsonCount(0, 'data');
 });
 
 test('a search made only of separators matches nothing instead of everything', function () {
     dlsStaff();
     dlsStudentRequest('Juan', 'Cruz', '2021-00123');
 
-    $this->getJson('/api/document-requests?search=' . urlencode(',,'))->assertOk()->assertJsonCount(0, 'data');
+    $this->getJson('/api/v1/document-requests?search=' . urlencode(',,'))->assertOk()->assertJsonCount(0, 'data');
 });
 
 test('search never matches encrypted undergrad columns', function () {
     dlsStaff();
     dlsUndergradRequest('Maria', 'Santos', '2018-00456');
 
-    $this->getJson('/api/document-requests?search=Confidential')->assertOk()->assertJsonCount(0, 'data');
-    $this->getJson('/api/document-requests?search=09171234567')->assertOk()->assertJsonCount(0, 'data');
+    $this->getJson('/api/v1/document-requests?search=Confidential')->assertOk()->assertJsonCount(0, 'data');
+    $this->getJson('/api/v1/document-requests?search=09171234567')->assertOk()->assertJsonCount(0, 'data');
 });
 
 // ── Validation ───────────────────────────────────────────────────────────────
@@ -185,29 +185,29 @@ test('search never matches encrypted undergrad columns', function () {
 test('an unknown sort field is rejected', function () {
     dlsStaff();
 
-    $this->getJson('/api/document-requests?sort=' . urlencode('request_id; DROP TABLE users'))
+    $this->getJson('/api/v1/document-requests?sort=' . urlencode('request_id; DROP TABLE users'))
         ->assertStatus(422)->assertJsonValidationErrors('sort');
 });
 
 test('per_page above the cap and a too-short search are rejected', function () {
     dlsStaff();
 
-    $this->getJson('/api/document-requests?per_page=201')->assertStatus(422)->assertJsonValidationErrors('per_page');
-    $this->getJson('/api/document-requests?search=a')->assertStatus(422)->assertJsonValidationErrors('search');
+    $this->getJson('/api/v1/document-requests?per_page=201')->assertStatus(422)->assertJsonValidationErrors('per_page');
+    $this->getJson('/api/v1/document-requests?search=a')->assertStatus(422)->assertJsonValidationErrors('search');
 });
 
 test('the legacy all_statuses=true string flag is still accepted', function () {
     dlsStaff();
 
-    $this->getJson('/api/document-requests?all_statuses=true&per_page=200')->assertOk();
+    $this->getJson('/api/v1/document-requests?all_statuses=true&per_page=200')->assertOk();
 });
 
 test('an unknown status name is rejected and "All" is ignored', function () {
     dlsStaff();
     dlsStudentRequest('Juan', 'Cruz', '2021-00123');
 
-    $this->getJson('/api/document-requests?status=Nonsense')->assertStatus(422)->assertJsonValidationErrors('status');
-    $this->getJson('/api/document-requests?status=All&classification=All&document=All')
+    $this->getJson('/api/v1/document-requests?status=Nonsense')->assertStatus(422)->assertJsonValidationErrors('status');
+    $this->getJson('/api/v1/document-requests?status=All&classification=All&document=All')
         ->assertOk()->assertJsonCount(1, 'data');
 });
 
@@ -218,8 +218,8 @@ test('classification filter separates students from undergrad requestors', funct
     $student = dlsStudentRequest('Juan', 'Cruz', '2021-00123');
     [$undergrad] = dlsUndergradRequest('Maria', 'Santos', '2018-00456');
 
-    expect(dlsIds($this->getJson('/api/document-requests?classification=Student')))->toBe([$student->request_id]);
-    expect(dlsIds($this->getJson('/api/document-requests?classification=undergrad')))->toBe([$undergrad->request_id]);
+    expect(dlsIds($this->getJson('/api/v1/document-requests?classification=Student')))->toBe([$student->request_id]);
+    expect(dlsIds($this->getJson('/api/v1/document-requests?classification=undergrad')))->toBe([$undergrad->request_id]);
 });
 
 test('status filter returns only that status across all ages', function () {
@@ -229,7 +229,7 @@ test('status filter returns only that status across all ages', function () {
     ]);
     dlsStudentRequest('New', 'One', '2000-00002');
 
-    expect(dlsIds($this->getJson('/api/document-requests?status=Forfeited')))->toBe([$forfeited->request_id]);
+    expect(dlsIds($this->getJson('/api/v1/document-requests?status=Forfeited')))->toBe([$forfeited->request_id]);
 });
 
 test('default window keeps Pending Signature and Awaiting Submission and uses status_updated_at for Completed', function () {
@@ -249,7 +249,7 @@ test('default window keeps Pending Signature and Awaiting Submission and uses st
     ]);
     DocumentRequest::whereKey($staleCompleted->request_id)->update(['status_updated_at' => now()->subDays(3)]);
 
-    $ids = dlsIds($this->getJson('/api/document-requests')->assertOk());
+    $ids = dlsIds($this->getJson('/api/v1/document-requests')->assertOk());
 
     expect($ids)->toContain($pendingSig->request_id, $awaiting->request_id, $freshlyCompleted->request_id)
                 ->not->toContain($staleCompleted->request_id);
@@ -261,10 +261,10 @@ test('Completed rows sort last when sort is provided, and Old Requests reverses 
     $newer = dlsStudentRequest('N', 'Two', '4000-00002', ['requested_at' => now()->subDay()]);
     $older = dlsStudentRequest('O', 'Three', '4000-00003', ['requested_at' => now()->subDays(2)]);
 
-    $recent = dlsIds($this->getJson('/api/document-requests?all_statuses=true&sort=' . urlencode('Recent Requests')));
+    $recent = dlsIds($this->getJson('/api/v1/document-requests?all_statuses=true&sort=' . urlencode('Recent Requests')));
     expect($recent)->toBe([$newer->request_id, $older->request_id, $done->request_id]);
 
-    $oldest = dlsIds($this->getJson('/api/document-requests?all_statuses=true&sort=' . urlencode('Old Requests')));
+    $oldest = dlsIds($this->getJson('/api/v1/document-requests?all_statuses=true&sort=' . urlencode('Old Requests')));
     expect($oldest)->toBe([$older->request_id, $newer->request_id, $done->request_id]);
 });
 
@@ -273,7 +273,7 @@ test('pagination meta reflects the full match set, not one page', function () {
     $user = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_STUDENT, 'status' => 'Activated']);
     DocumentRequest::factory()->count(7)->create(['user_id' => $user->user_id]);
 
-    $page2 = $this->getJson('/api/document-requests?per_page=3&page=2&sort=' . urlencode('Recent Requests'))->assertOk();
+    $page2 = $this->getJson('/api/v1/document-requests?per_page=3&page=2&sort=' . urlencode('Recent Requests'))->assertOk();
 
     expect($page2->json('total'))->toBe(7)
         ->and($page2->json('last_page'))->toBe(3)
@@ -288,7 +288,7 @@ test('list rows carry display_name, student_number and requester_type for every 
     $student = dlsStudentRequest('Juan', 'Cruz', '2021-00123');
     [$undergrad] = dlsUndergradRequest('Maria', 'Santos', '2018-00456');
 
-    $rows = collect($this->getJson('/api/document-requests')->assertOk()->json('data'))->keyBy('request_id');
+    $rows = collect($this->getJson('/api/v1/document-requests')->assertOk()->json('data'))->keyBy('request_id');
 
     expect($rows[$student->request_id]['display_name'])->toBe('Juan Cruz')
         ->and($rows[$student->request_id]['student_number'])->toBe('2021-00123')
@@ -302,7 +302,7 @@ test('list responses never contain decrypted undergrad PII', function () {
     dlsStaff();
     dlsUndergradRequest('Maria', 'Santos', '2018-00456');
 
-    foreach (['/api/document-requests', '/api/document-requests?all_statuses=true'] as $url) {
+    foreach (['/api/v1/document-requests', '/api/v1/document-requests?all_statuses=true'] as $url) {
         $response = $this->getJson($url)->assertOk();
         $body     = $response->getContent();
 
@@ -319,7 +319,7 @@ test('the logbook applies the same PII restriction', function () {
     dlsStaff();
     dlsUndergradRequest('Maria', 'Santos', '2018-00456', ['status_id' => RequestStatusEnum::Completed->value]);
 
-    $body = $this->getJson('/api/document-requests/logbook')->assertOk()->getContent();
+    $body = $this->getJson('/api/v1/document-requests/logbook')->assertOk()->getContent();
 
     expect($body)->not->toContain('09171234567')->not->toContain('Confidential Street');
 });
@@ -330,7 +330,7 @@ test('non-staff still receive only their own requests', function () {
 
     Sanctum::actingAs(SystemUser::find($mine->user_id));
 
-    $data = $this->getJson('/api/document-requests')->assertOk()->json('data');
+    $data = $this->getJson('/api/v1/document-requests')->assertOk()->json('data');
 
     expect(collect($data)->pluck('request_id')->all())->toBe([$mine->request_id]);
 });
@@ -345,7 +345,7 @@ test('counts match the database, include zero-count statuses and exclude archive
     DocumentRequest::factory()->count(2)->create(['user_id' => $user->user_id, 'status_id' => RequestStatusEnum::ReadyToClaim->value]);
     DocumentRequest::factory()->create(['user_id' => $user->user_id, 'status_id' => RequestStatusEnum::Processing->value, 'is_archived' => true]);
 
-    $counts = $this->getJson('/api/document-requests/counts')->assertOk()->json();
+    $counts = $this->getJson('/api/v1/document-requests/counts')->assertOk()->json();
 
     expect($counts['Processing'])->toBe(3)
         ->and($counts['Ready to Claim'])->toBe(2)

@@ -62,7 +62,7 @@ test('any authenticated role can list certification types', function () {
     $type = certMakeType();
     certMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->getJson('/api/certifications')
+    $this->getJson('/api/v1/certifications')
          ->assertOk()
          ->assertJsonFragment(['certificate_type_id' => $type->certificate_type_id]);
 });
@@ -70,7 +70,7 @@ test('any authenticated role can list certification types', function () {
 test('show returns 404 for a missing certification type', function () {
     certMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->getJson('/api/certifications/999')
+    $this->getJson('/api/v1/certifications/999')
          ->assertStatus(404)
          ->assertJson(['message' => 'Certification type not found']);
 });
@@ -79,7 +79,7 @@ test('show returns the certification type for a valid id', function () {
     $cert = certMakeType();
     certMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->getJson("/api/certifications/{$cert->certificate_type_id}")
+    $this->getJson("/api/v1/certifications/{$cert->certificate_type_id}")
          ->assertOk()
          ->assertJsonPath('certificate_type_id', $cert->certificate_type_id);
 });
@@ -92,7 +92,7 @@ test('student cannot create a certification type', function () {
     certSeedAccessType();
     certMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->postJson('/api/certifications', [
+    $this->postJson('/api/v1/certifications', [
         'certificate_name' => 'Certificate of Good Moral Character',
         'access_id'        => 1,
     ])->assertStatus(403);
@@ -102,7 +102,7 @@ test('admin can create a certification type with valid data', function () {
     certSeedAccessType();
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/certifications', [
+    $this->postJson('/api/v1/certifications', [
         'certificate_name'           => 'Certificate of Good Moral Character',
         'certificate_requirements'   => 'None',
         'certificate_process_period' => '1-2 business days',
@@ -114,7 +114,7 @@ test('admin can create a certification type with valid data', function () {
 test('store fails validation when certificate_name is missing', function () {
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/certifications', [
+    $this->postJson('/api/v1/certifications', [
         'access_id' => 1,
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['certificate_name']);
@@ -123,7 +123,7 @@ test('store fails validation when certificate_name is missing', function () {
 test('store fails validation when certificate_name exceeds max length', function () {
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->postJson('/api/certifications', [
+    $this->postJson('/api/v1/certifications', [
         'certificate_name' => str_repeat('a', 256),
         'access_id'        => 1,
     ])->assertStatus(422)
@@ -138,7 +138,7 @@ test('student cannot update a certification type', function () {
     $cert = certMakeType();
     certMakeUser(SystemUser::ROLE_STUDENT);
 
-    $this->putJson("/api/certifications/{$cert->certificate_type_id}", [
+    $this->putJson("/api/v1/certifications/{$cert->certificate_type_id}", [
         'certificate_name' => 'Renamed',
     ])->assertStatus(403);
 });
@@ -147,7 +147,7 @@ test('admin can partially update a certification type', function () {
     $cert = certMakeType();
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson("/api/certifications/{$cert->certificate_type_id}", [
+    $this->putJson("/api/v1/certifications/{$cert->certificate_type_id}", [
         'certificate_name' => 'Updated Name',
     ])->assertOk()
       ->assertJsonPath('certificate_name', 'Updated Name');
@@ -156,7 +156,7 @@ test('admin can partially update a certification type', function () {
 test('update returns 404 for a missing certification type', function () {
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson('/api/certifications/999', [
+    $this->putJson('/api/v1/certifications/999', [
         'certificate_name' => 'Whatever',
     ])->assertStatus(404);
 });
@@ -165,7 +165,7 @@ test('update fails validation when certificate_name is too long', function () {
     $cert = certMakeType();
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson("/api/certifications/{$cert->certificate_type_id}", [
+    $this->putJson("/api/v1/certifications/{$cert->certificate_type_id}", [
         'certificate_name' => str_repeat('a', 256),
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['certificate_name']);
@@ -178,7 +178,7 @@ test('update fails validation when certificate_name is too long', function () {
 test('destroy returns 404 for a missing certification type', function () {
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->deleteJson('/api/certifications/999')
+    $this->deleteJson('/api/v1/certifications/999')
          ->assertStatus(404);
 });
 
@@ -186,7 +186,7 @@ test('admin can delete an unreferenced certification type', function () {
     $cert = certMakeType();
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->deleteJson("/api/certifications/{$cert->certificate_type_id}")
+    $this->deleteJson("/api/v1/certifications/{$cert->certificate_type_id}")
          ->assertOk()
          ->assertJson(['message' => 'Certification type deleted']);
 
@@ -209,7 +209,7 @@ test('archive fails validation when reason exceeds max length', function () {
     $cert = certMakeType();
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson("/api/certifications/{$cert->certificate_type_id}/archive", [
+    $this->patchJson("/api/v1/certifications/{$cert->certificate_type_id}/archive", [
         'reason' => str_repeat('a', 501),
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['reason']);
@@ -219,7 +219,7 @@ test('admin can archive a certification type with no active requests', function 
     $cert = certMakeType();
     $admin = certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson("/api/certifications/{$cert->certificate_type_id}/archive", [
+    $this->patchJson("/api/v1/certifications/{$cert->certificate_type_id}/archive", [
         'reason' => 'No longer offered',
     ])->assertOk()
       ->assertJsonPath('is_archived', true);
@@ -243,7 +243,7 @@ test('archiving is blocked while an active request still uses the certification 
 
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson("/api/certifications/{$cert->certificate_type_id}/archive", [])
+    $this->patchJson("/api/v1/certifications/{$cert->certificate_type_id}/archive", [])
          ->assertStatus(422)
          ->assertJsonPath('active_requests', 1);
 
@@ -257,7 +257,7 @@ test('archiving an already-archived certification type is a no-op that returns 2
     $cert = certMakeType(['is_archived' => true, 'archived_on' => now(), 'archived_by' => null]);
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson("/api/certifications/{$cert->certificate_type_id}/archive", [])
+    $this->patchJson("/api/v1/certifications/{$cert->certificate_type_id}/archive", [])
          ->assertOk()
          ->assertJsonPath('is_archived', true);
 });
@@ -266,7 +266,7 @@ test('admin can restore an archived certification type', function () {
     $cert = certMakeType(['is_archived' => true, 'archived_on' => now(), 'archived_by' => null]);
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->patchJson("/api/certifications/{$cert->certificate_type_id}/restore")
+    $this->patchJson("/api/v1/certifications/{$cert->certificate_type_id}/restore")
          ->assertOk()
          ->assertJsonPath('is_archived', false);
 });
@@ -279,7 +279,7 @@ test('admin can update the layout of a non-archived certification type', functio
     $cert = certMakeType();
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson("/api/certifications/{$cert->certificate_type_id}/layout", [
+    $this->putJson("/api/v1/certifications/{$cert->certificate_type_id}/layout", [
         'layout_header_logo_size' => 64,
         'layout_footer_urls'      => null,
     ])->assertOk()
@@ -295,7 +295,7 @@ test('updateLayout is locked with 423 when the certification type is archived', 
     $cert = certMakeType(['is_archived' => true, 'archived_on' => now(), 'archived_by' => null]);
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson("/api/certifications/{$cert->certificate_type_id}/layout", [
+    $this->putJson("/api/v1/certifications/{$cert->certificate_type_id}/layout", [
         'layout_header_logo_size' => 64,
     ])->assertStatus(423);
 });
@@ -304,7 +304,7 @@ test('updateLayout fails validation when logo size is out of range', function ()
     $cert = certMakeType();
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->putJson("/api/certifications/{$cert->certificate_type_id}/layout", [
+    $this->putJson("/api/v1/certifications/{$cert->certificate_type_id}/layout", [
         'layout_header_logo_size' => 10, // below min:24
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['layout_header_logo_size']);
@@ -322,7 +322,7 @@ test('admin can upload a layout logo for a non-archived certification type', fun
 
     $file = UploadedFile::fake()->image('logo.png');
 
-    $this->post("/api/certifications/{$cert->certificate_type_id}/layout/logo", [
+    $this->post("/api/v1/certifications/{$cert->certificate_type_id}/layout/logo", [
         'logo' => $file,
         'slot' => 'header_left',
     ])->assertCreated()
@@ -339,7 +339,7 @@ test('uploadLayoutLogo is locked with 423 when the certification type is archive
     $cert = certMakeType(['is_archived' => true, 'archived_on' => now(), 'archived_by' => null]);
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->post("/api/certifications/{$cert->certificate_type_id}/layout/logo", [
+    $this->post("/api/v1/certifications/{$cert->certificate_type_id}/layout/logo", [
         'logo' => UploadedFile::fake()->image('logo.png'),
     ])->assertStatus(423);
 });
@@ -348,7 +348,7 @@ test('uploadLayoutLogo fails validation when logo is missing', function () {
     $cert = certMakeType();
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->post("/api/certifications/{$cert->certificate_type_id}/layout/logo", [
+    $this->post("/api/v1/certifications/{$cert->certificate_type_id}/layout/logo", [
         'slot' => 'header_left',
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['logo']);
@@ -358,7 +358,7 @@ test('uploadLayoutLogo fails validation when logo is not an image', function () 
     $cert = certMakeType();
     certMakeUser(SystemUser::ROLE_ADMIN);
 
-    $this->post("/api/certifications/{$cert->certificate_type_id}/layout/logo", [
+    $this->post("/api/v1/certifications/{$cert->certificate_type_id}/layout/logo", [
         'logo' => UploadedFile::fake()->create('document.pdf', 100),
     ])->assertStatus(422)
       ->assertJsonValidationErrors(['logo']);
