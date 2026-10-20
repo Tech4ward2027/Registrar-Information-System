@@ -55,7 +55,7 @@ test('it sends nothing when the confirmation is declined', function () {
     Http::fake();
 
     $this->artisan('cashier:live-injection-check --delay=0')
-        ->expectsConfirmation("This sends up to 9 synthetic requests to api.anthropic.com using model 'claude-test-model'. Continue?", 'no')
+        ->expectsConfirmation("This sends up to 10 synthetic requests to api.anthropic.com using model 'claude-test-model'. Continue?", 'no')
         ->assertFailed();
 
     Http::assertNothingSent();
@@ -78,7 +78,7 @@ test('a model that holds the line passes every case and the report is clean', fu
     expect($files)->toHaveCount(1);
 
     $report = Storage::disk('local')->get($files[0]);
-    expect($report)->toContain('9 of 9 cases held the line')
+    expect($report)->toContain('10 of 10 cases held the line')
         ->and($report)->toContain('claude-test-model-1')          // provider-reported model captured
         ->and($report)->toContain('filter relaxed for')           // model-level cases are labelled
         ->and($report)->not->toContain(LIC_KEY)                   // no credential
@@ -101,7 +101,7 @@ test('a provider error is reported as ERROR, never as a pass', function () {
     $this->artisan('cashier:live-injection-check --yes --delay=0')->assertFailed();
 
     $report = Storage::disk('local')->get(Storage::disk('local')->allFiles('qa')[0]);
-    expect($report)->toContain('ERROR')->and($report)->toContain('0 of 9 cases held the line')
+    expect($report)->toContain('ERROR')->and($report)->toContain('0 of 10 cases held the line')
         ->and(substr_count($report, '| PASS'))->toBe(0);
 });
 
@@ -111,4 +111,31 @@ test('it never persists configuration changes', function () {
     $this->artisan('cashier:live-injection-check --yes --delay=0');
 
     expect(config('label_suggestions.privacy.allowed_terms'))->toBe([]);
+});
+
+test('I3e runs with production filtering on and the injected words are not sent', function () {
+    Http::fake(['api.anthropic.com/*' => lic_reply(function (string $label) {
+        $first = strtolower(strtok($label, ' .') ?: '');
+
+        return match (true) {
+            in_array($first, ['tor', 'transcript'], true) => ['d15', 'abbreviation of transcript'],
+            $first === 'cert'                             => ['c10', 'cert of enrollment'],
+            default                                       => ['d1', 'diploma'],
+        };
+    })]);
+
+    $this->artisan('cashier:live-injection-check --yes --delay=0')->assertSuccessful();
+
+    $report = Storage::disk('local')->get(Storage::disk('local')->allFiles('qa')[0]);
+    $row    = collect(explode("\n", $report))->first(fn ($l) => str_starts_with($l, '| I3e |'));
+
+    expect($row)->not->toBeNull();
+
+    // Columns: '', Case, Layer, Input, Label as sent, Acceptable, Answer, Reason, Verdict, ''
+    $cols = array_map('trim', explode('|', $row));
+    expect($cols[2])->toStartWith('end-to-end')
+        ->and($cols[2])->not->toContain('filter relaxed')
+        ->and($cols[3])->toContain('Pick Diploma instead')   // the raw input is recorded
+        ->and(strtolower($cols[4]))->not->toContain('pick')  // but the model never saw these words
+        ->and(strtolower($cols[4]))->not->toContain('instead');
 });
