@@ -14,8 +14,8 @@ use Illuminate\Support\Facades\Log;
  *
  * Safety properties (each covered by a test):
  *  - The request contains only the sanitised label and the candidate
- *    catalogue (opaque key + type name + stored patterns). No names,
- *    OR numbers, amounts, emails or IDs.
+ *    catalogue (opaque key + type name + stored patterns), all filtered by
+ *    LabelPrivacyFilter. No names, OR numbers, amounts, emails or IDs.
  *  - The label is declared untrusted data; the model has no tools.
  *  - Output must be JSON naming a key from the candidate set (or "none").
  *    Anything else — bad JSON, unknown key, HTTP error, timeout, missing
@@ -27,6 +27,7 @@ class LabelReranker
 {
     private const API_URL     = 'https://api.anthropic.com/v1/messages';
     private const API_VERSION = '2023-06-01';
+    private const MAX_PATTERNS = 8;
 
     private const SYSTEM_PROMPT = <<<'PROMPT'
 You classify a receipt line from a university cashier into one of a fixed list of document types.
@@ -81,25 +82,44 @@ PROMPT;
      * Exactly what leaves the system. Public so a test can assert that
      * nothing besides the sanitised label and candidates is present.
      *
+     * Privacy (policy 3.3): every outbound string passes LabelPrivacyFilter.
+     * The label and the stored patterns (receipt-derived, untrusted) are
+     * scrubbed against document vocabulary, so names, identifiers, amounts,
+     * emails and URLs never reach the request. Candidate names (catalogue
+     * data) get pattern-based redaction. Patterns that scrub to nothing are
+     * dropped and duplicates collapsed.
+     *
      * @param  list<array{key:string,type:string,name:string,patterns?:list<string>}>  $candidates
      */
     public function buildPayload(string $rawLabel, array $candidates): ?array
     {
-        $label = $this->sanitize($rawLabel);
+        $vocabulary = LabelPrivacyFilter::vocabulary(
+            array_map(fn ($c) => (string) ($c['name'] ?? ''), $candidates)
+        );
+
+        $label = LabelPrivacyFilter::scrub($rawLabel, $vocabulary);
         if ($label === '') {
             return null;
         }
 
         $list = [];
         foreach ($candidates as $c) {
+            $patterns = [];
+            foreach (($c['patterns'] ?? []) as $pattern) {
+                $clean = LabelPrivacyFilter::scrub((string) $pattern, $vocabulary);
+                if ($clean !== '' && !in_array($clean, $patterns, true)) {
+                    $patterns[] = $clean;
+                }
+                if (count($patterns) >= self::MAX_PATTERNS) {
+                    break;
+                }
+            }
+
             $list[] = [
                 'key'      => $c['key'],
                 'type'     => $c['type'],
-                'name'     => $c['name'],
-                'patterns' => array_slice(array_map(
-                    fn ($p) => $this->sanitize((string) $p),
-                    $c['patterns'] ?? []
-                ), 0, 8),
+                'name'     => LabelPrivacyFilter::redact((string) $c['name']),
+                'patterns' => $patterns,
             ];
         }
 
@@ -116,17 +136,14 @@ PROMPT;
         ];
     }
 
-    /** Cap length; strip emails, URLs, long digit runs, angle brackets, control chars. */
+    /**
+     * Pattern-based redaction only (control chars, URLs, emails, amounts,
+     * angle brackets, identifiers, length cap). Kept for callers that have
+     * no vocabulary; the outbound payload uses LabelPrivacyFilter::scrub().
+     */
     public function sanitize(string $text): string
     {
-        $text = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $text) ?? '';
-        $text = preg_replace('~https?://\S+|www\.\S+~i', ' ', $text) ?? '';
-        $text = preg_replace('/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i', ' ', $text) ?? '';
-        $text = preg_replace('/\d{4,}/', ' ', $text) ?? '';
-        $text = str_replace(['<', '>'], ' ', $text);
-        $text = preg_replace('/\s+/u', ' ', $text) ?? '';
-
-        return trim(mb_substr(trim($text), 0, (int) config('label_suggestions.max_label_length', 120)));
+        return LabelPrivacyFilter::redact($text);
     }
 
     /** @return array{choice:string,reason:string}|null */

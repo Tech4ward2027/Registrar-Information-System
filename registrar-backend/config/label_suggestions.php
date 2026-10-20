@@ -50,6 +50,23 @@ return [
         'req'     => 'requirement',
     ],
 
+    // Privacy filter for text sent to the AI (policy 3.3). Receipt labels and
+    // stored patterns keep only words that belong to document vocabulary
+    // (abbreviations, stopwords, candidate-name words, plus allowed_terms).
+    'privacy' => [
+        // Extra terms always permitted in an outbound label, e.g. a document
+        // word that never appears in a candidate name. Lowercase, one per entry.
+        'allowed_terms' => [],
+
+        // A label word at least this long is kept when it is the start of a
+        // vocabulary word ("enrol" -> "enrollment").
+        'min_prefix_length' => 3,
+
+        // Plain numbers up to this many digits are not treated as identifiers
+        // ("Form 137"); anything longer or mixed with letters is removed.
+        'max_numeric_digits' => 3,
+    ],
+
     // Words that carry no signal for matching ("fee - diploma" vs "diploma").
     'stopwords' => ['fee', 'fees', 'of', 'the', 'for', 'and', 'a', 'an', '-'],
 ];
