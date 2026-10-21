@@ -16,6 +16,7 @@ import TOLENTINO_img from "../assets/members/TOLENTINO.jpg";
 import { getAnnouncements } from "../services/api";
 import { useNotificationsContext } from '../context/NotificationsContext';
 import { useHeaderResponsiveState } from '../utils/helpers';
+import { UserGuideCompact } from "../layouts/FAQs.jsx";
 
 const ICON_CYCLE = [MegaphoneIcon, QuestionMarkCircleIcon, ClipboardDocumentListIcon];
 
@@ -24,33 +25,6 @@ const TEAM_MEMBERS = [
   { lastName: "CONDINO",   firstName: "Ciara Marie",    role: "FRONTEND DEVELOPER",                image: CONDINO_img },
   { lastName: "CORDOVA",   firstName: "Aron Stephen",   role: "BACKEND DEVELOPER",                 image: CORDOVA_img },
   { lastName: "TOLENTINO", firstName: "Ma. Rose",       role: "DOCUMENT ANALYST AND QA",           image: TOLENTINO_img },
-];
-
-const QUICK_QUESTIONS = [
-  {
-    question: "What is the Registrar Information System (RIS)?",
-    answer: "The RIS is a secure, web-based platform designed to streamline document requests, track processing, and manage student and alumni records for the Polytechnic University of the Philippines - Taguig Campus. It replaces manual, paper-based forms with an automated digital system."
-  },
-  {
-    question: "How do I log in to the RIS?",
-    answer: "PUP-TAGUIG students and staff can log in using their university IDP credentials (Link:https://one-portal.isaxbsit2027.com/landing). For alumni, you can register for a local account and log in using your verified email and password. (Link: https://puptaps.ojt-ims-bsit.net/)"
-  },
-  {
-    question: "How do I submit a document request?",
-    answer: "Log in, go to 'Student/Alumni Requests', select your document/certificate type, enter payment details, and submit."
-  },
-  {
-    question: "How long does document processing take?",
-    answer: "Standard certifications are typically processed in 3–5 working days. More comprehensive documents take 7–10 working days, subject to payment verification."
-  },
-  {
-    question: "How can I track the status of my request?",
-    answer: "You can view real-time status updates directly on your RIS Dashboard. Automatic in app notifications will also be sent to you as your request progresses."
-  },
-  {
-    question: "Is my personal data protected?",
-    answer: "Yes. The RIS is fully compliant with the Data Privacy Act of 2012 (R.A. 10173). All student records, credentials, and uploaded transaction receipts are securely stored and accessible only to authorized administrative staff."
-  }
 ];
 
 const cleanPreviewText = (text) => {
@@ -108,8 +82,6 @@ const Tech4wardProfile = ({ bgImage }) => {
   const bg = bgImage || risImage;
   const [currentIndex, setCurrentIndex] = useState(0);
   const [announcements, setAnnouncements] = useState([]);
-  const [openFaqs, setOpenFaqs] = useState({});
-  const [faqPageIndex, setFaqPageIndex] = useState(0);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
   const { headerHeight } = useHeaderResponsiveState(!!selectedAnnouncement);
 
@@ -124,13 +96,6 @@ const Tech4wardProfile = ({ bgImage }) => {
       document.body.style.overflow = 'unset';
     };
   }, [selectedAnnouncement]);
-
-  const toggleFaq = (index) => {
-    setOpenFaqs(prev => ({
-      ...prev,
-      [index]: !prev[index]
-    }));
-  };
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -170,9 +135,6 @@ const Tech4wardProfile = ({ bgImage }) => {
   const visibleAnnouncements = announcements.length <= 3
     ? announcements
     : announcements.slice(safeIndex, safeIndex + 3);
-
-  const visibleFaqs = QUICK_QUESTIONS.slice(faqPageIndex * 4, (faqPageIndex + 1) * 4);
-  const faqTotalPages = Math.ceil(QUICK_QUESTIONS.length / 4);
 
   return (
     <div className="w-full overflow-hidden bg-gray-50 border-y-4 border-yellow-400">
@@ -244,78 +206,24 @@ const Tech4wardProfile = ({ bgImage }) => {
         </div>
       </section>
 
-      {/* New FAQs Section matching the design */}
-      <div id="faqs" className="relative w-full py-20 px-6 overflow-hidden border-t-4 border-yellow-400 scroll-mt-28">
-        <div className="absolute inset-0">
-          <img src={bg} alt="Campus" className="w-full h-full object-cover" />
+      {/* User Guide Section (replaces the old FAQ carousel) */}
+      <div id="user-guide" className="relative w-full overflow-hidden border-t-4 border-yellow-400 scroll-mt-28">
+        {/* Campus photo + maroon overlay (same look as the old FAQ section) */}
+        <div className="absolute inset-0" aria-hidden="true">
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `url(${bg})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundAttachment: "fixed",
+            }}
+          />
           <div className="absolute inset-0 lp-hero-bg-overlay" />
         </div>
 
-        <div className="relative z-10 max-w-6xl mx-auto">
-          {/* Header */}
-          <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-extrabold text-white mt-3 select-none leading-none tracking-tight">
-              <span>Frequently asked questions</span>
-            </h2>
-            <p className="text-gray-200 text-xs md:text-sm mt-4 max-w-md mx-auto leading-relaxed">
-              Here are some common questions about our system to help you understand better.
-            </p>
-          </div>
-
-          {/* 2-Column Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {visibleFaqs.map((faq, relativeIndex) => {
-              const actualIndex = faqPageIndex * 4 + relativeIndex;
-              const isOpen = !!openFaqs[actualIndex];
-              return (
-                <div
-                  key={actualIndex}
-                  className="bg-[#450000] border border-white/10 rounded-3xl p-6 md:p-8 shadow-lg hover:shadow-2xl transition-all duration-300 flex flex-col justify-start text-left h-fit hover:border-[#F8BF1E]/30"
-                >
-                  <div className="flex justify-between items-center gap-4 w-full">
-                    <h3
-                      onClick={() => toggleFaq(actualIndex)}
-                      className="text-white hover:text-yellow-400 font-bold text-[14px] md:text-[16px] leading-snug cursor-pointer select-none grow transition-colors duration-200"
-                    >
-                      {faq.question}
-                    </h3>
-                    <button
-                      onClick={() => toggleFaq(actualIndex)}
-                      className="w-9 h-9 md:w-10 md:h-10 bg-[#F8BF1E] hover:bg-[#eebc48] text-[#660000] rounded-full flex items-center justify-center transition-colors duration-200 cursor-pointer focus:outline-none shrink-0 text-xl font-bold select-none"
-                    >
-                      <span className={`inline-block transform ${isOpen ? '-translate-y-[1.5px]' : '-translate-y-[0.5px]'}`}>
-                        {isOpen ? "−" : "+"}
-                      </span>
-                    </button>
-                  </div>
-                  <div
-                    className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                      isOpen ? "max-h-40 opacity-100 mt-4" : "max-h-0 opacity-0"
-                      }`}
-                  >
-                    <p className="text-gray-200 text-xs md:text-[13px] leading-relaxed text-justify">
-                      {faq.answer}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {faqTotalPages > 1 && (
-            <div className="flex justify-center gap-2 mt-8">
-              {Array.from({ length: faqTotalPages }).map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setFaqPageIndex(i)}
-                  className={`w-3.5 h-3.5 rounded-full transition-all border cursor-pointer ${
-                    faqPageIndex === i ? "bg-[#F8BF1E] border-[#F8BF1E] scale-110 shadow-md" : "bg-white/20 hover:bg-white/40 border-white/10"
-                    }`}
-                  aria-label={`Go to FAQ page ${i + 1}`}
-                />
-              ))}
-            </div>
-          )}
+        <div className="relative z-10">
+          <UserGuideCompact />
         </div>
       </div>
 
