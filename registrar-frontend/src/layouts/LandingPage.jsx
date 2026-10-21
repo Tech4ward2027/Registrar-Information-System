@@ -13,7 +13,7 @@ const GMAIL_COMPOSE_URL = "https://mail.google.com/mail/?view=cm&fs=1&to=tech4wa
 const NAV_ITEMS = [
   { id: "hero", label: "Home" },
   { id: "announcements", label: "Announcements" },
-  { id: "faqs", label: "FAQs" },
+  { id: "user-guide", label: "User Guide" },
   { id: "about", label: "About Us" },
 ];
 
