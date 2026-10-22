@@ -1,4 +1,3 @@
-
 import { test, expect } from '@playwright/test';
 
 test.describe('Landing Page Tests', () => {
@@ -31,6 +30,7 @@ test.describe('Landing Page Tests', () => {
       'href',
       'https://www.pup.edu.ph/terms/'
     );
+
     await expect(termsLink).toHaveAttribute('target', '_blank');
 
     // Verify Privacy Statement link
@@ -42,6 +42,7 @@ test.describe('Landing Page Tests', () => {
       'href',
       'https://www.pup.edu.ph/privacy/'
     );
+
     await expect(privacyLink).toHaveAttribute('target', '_blank');
   });
 
@@ -64,10 +65,12 @@ test.describe('Landing Page Tests', () => {
     );
 
     await toggleButton.click();
+
     await expect(passwordInput).toHaveAttribute('type', 'text');
 
     // Hide password again
     await toggleButton.click();
+
     await expect(passwordInput).toHaveAttribute('type', 'password');
   });
 
@@ -78,6 +81,7 @@ test.describe('Landing Page Tests', () => {
 
     const emailInput = page.getByPlaceholder('Email Address');
     const passwordInput = page.getByPlaceholder('Password');
+
     const submitButton = page
       .locator('form')
       .getByRole('button', { name: /Sign In Locally/i });
@@ -85,19 +89,25 @@ test.describe('Landing Page Tests', () => {
     // Submit empty fields
     await emailInput.fill('');
     await passwordInput.fill('');
+
     await submitButton.click();
 
-    await expect(page.getByText('Email is required.')).toBeVisible();
+    await expect(
+      page.getByText('Email is required.')
+    ).toBeVisible();
 
     // Enter email but leave password empty
     await emailInput.fill('test@example.com');
+
     await submitButton.click();
 
-    await expect(page.getByText('Password is required.')).toBeVisible();
+    await expect(
+      page.getByText('Password is required.')
+    ).toBeVisible();
   });
 
   test('4. Failed login display message', async ({ page }) => {
-    // Register mock before navigation or interaction
+    // Mock local login API before navigation
     await page.route(
       /\/api\/(?:v1\/)?auth\/local-login$/,
       async (route) => {
@@ -113,17 +123,28 @@ test.describe('Landing Page Tests', () => {
 
     await page.goto('/');
 
-    await page.getByRole('button', { name: /Log in locally/i }).click();
+    await page.getByRole('button', {
+      name: /Log in locally/i,
+    }).click();
 
-    await page.getByPlaceholder('Email Address').fill('wrong@example.com');
-    await page.getByPlaceholder('Password').fill('wrongpassword');
+    await page
+      .getByPlaceholder('Email Address')
+      .fill('wrong@example.com');
+
+    await page
+      .getByPlaceholder('Password')
+      .fill('wrongpassword');
 
     await page
       .locator('form')
-      .getByRole('button', { name: /Sign In Locally/i })
+      .getByRole('button', {
+        name: /Sign In Locally/i,
+      })
       .click();
 
-    await expect(page.getByText('Invalid credentials.')).toBeVisible();
+    await expect(
+      page.getByText('Invalid credentials.')
+    ).toBeVisible();
   });
 
   test('5. System Announcements slideshow works', async ({ page }) => {
@@ -169,7 +190,7 @@ test.describe('Landing Page Tests', () => {
       }
     );
 
-    // Optional: log the actual request if debugging is needed
+    // Optional: log failed requests for debugging
     page.on('requestfailed', (request) => {
       console.log(
         'FAILED REQUEST:',
@@ -182,25 +203,35 @@ test.describe('Landing Page Tests', () => {
 
     // Verify initial announcements
     await expect(
-      page.getByRole('heading', { name: /MAINTENANCE NOTICE/i })
+      page.getByRole('heading', {
+        name: /MAINTENANCE NOTICE/i,
+      })
     ).toBeVisible();
 
     await expect(
-      page.getByRole('heading', { name: /HOLIDAY ANNOUNCEMENT/i })
+      page.getByRole('heading', {
+        name: /HOLIDAY ANNOUNCEMENT/i,
+      })
     ).toBeVisible();
 
     await expect(
-      page.getByRole('heading', { name: /ENROLLMENT OPEN/i })
+      page.getByRole('heading', {
+        name: /ENROLLMENT OPEN/i,
+      })
     ).toBeVisible();
 
     // Navigate to the next slide
     const nextSlideButton = page.getByLabel('Go to slide 2');
+
     await expect(nextSlideButton).toBeVisible();
+
     await nextSlideButton.click();
 
-    // Assumes slide 2 displays the fourth announcement
+    // Verify fourth announcement
     await expect(
-      page.getByRole('heading', { name: /SYSTEM UPDATE/i })
+      page.getByRole('heading', {
+        name: /SYSTEM UPDATE/i,
+      })
     ).toBeVisible();
   });
 
@@ -209,39 +240,40 @@ test.describe('Landing Page Tests', () => {
   }) => {
     await page.goto('/');
 
-    // Verify FAQ section
-    await expect(
-      page.getByRole('heading', {
-        name: 'Frequently asked questions',
-        level: 2,
-      })
-    ).toBeVisible();
+    // Verify Common Questions button
+    const commonQuestionsButton = page.getByRole('button', {
+      name: /Common questions/i,
+    });
 
-    const firstQuestion = page.getByText(
-      'What is the Registrar Information System (RIS)?'
+    await expect(commonQuestionsButton).toBeVisible();
+
+    // Open Common Questions
+    await commonQuestionsButton.click();
+
+    // Verify Common Questions region
+    const commonQuestionsRegion = page.getByRole('region', {
+      name: /Common questions/i,
+    });
+
+    await expect(commonQuestionsRegion).toBeVisible();
+
+    // Verify full FAQ/User Guide link
+    const fullFaqLink = page.getByRole('link', {
+      name: /Open the full user guide/i,
+    });
+
+    await expect(fullFaqLink).toBeVisible();
+
+    await expect(fullFaqLink).toHaveAttribute(
+      'href',
+      '/faqs'
     );
 
-    await expect(firstQuestion).toBeVisible();
-
-    // Verify answer is collapsed initially
-    const firstAnswerContainer = page
-      .locator('p', { hasText: 'The RIS is a secure' })
-      .locator('..');
-
-    await expect(firstAnswerContainer).toHaveClass(/max-h-0/);
-
-    // Expand first FAQ
-    await firstQuestion.click();
-    await expect(firstAnswerContainer).toHaveClass(/max-h-40/);
-
-    // Navigate to FAQ page 2
-    const page2Button = page.getByLabel('Go to FAQ page 2');
-
-    await expect(page2Button).toBeVisible();
-    await page2Button.click();
-
+    // Verify FAQ page description
     await expect(
-      page.getByText('Is my personal data protected?')
+      page.getByText(
+        'Every FAQ, the complete receipt guide, a search box, and all official contacts.'
+      )
     ).toBeVisible();
   });
 
@@ -255,6 +287,8 @@ test.describe('Landing Page Tests', () => {
       'i'
     );
 
-    await expect(page.getByText(copyrightRegex)).toBeVisible();
+    await expect(
+      page.getByText(copyrightRegex)
+    ).toBeVisible();
   });
 });
