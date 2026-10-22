@@ -64,7 +64,7 @@ export const PushOptInCard = ({ push }) => {
             Enable Background Notifications
           </h3>
           <p className={`mt-1 text-xs leading-relaxed ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'}`}>
-            Receive urgent status updates even when PUPT-GuiSIS is closed.
+            Receive urgent status updates even when PUPT-Registrar is closed.
           </p>
         </div>
       </div>

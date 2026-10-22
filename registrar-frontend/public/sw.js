@@ -1,6 +1,6 @@
 /* eslint-env serviceworker */
 /*
- * PUPT-GuiSIS service worker — Web Push only.
+ * PUPT-Registrar service worker — Web Push only.
  *
  * Deliberately has NO fetch handler and NO caching: this file must never
  * change how the app loads, only deliver background notifications.
@@ -33,7 +33,7 @@ self.addEventListener('push', (event) => {
     data = {};
   }
 
-  const title = typeof data.title === 'string' && data.title ? data.title : 'PUPT-GuiSIS';
+  const title = typeof data.title === 'string' && data.title ? data.title : 'PUPT-Registrar';
 
   const options = {
     body: typeof data.body === 'string' ? data.body : '',

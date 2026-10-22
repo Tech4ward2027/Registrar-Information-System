@@ -77,8 +77,8 @@ class SendWebPushJob implements ShouldQueue
         $body = config('webpush.include_message') && $message !== ''
             ? $message
             : ($requestId
-                ? "There is an update on request #{$requestId}. Open PUPT-GuiSIS to view the details."
-                : 'You have a new notification. Open PUPT-GuiSIS to view the details.');
+                ? "There is an update on request #{$requestId}. Open PUPT-Registrar to view the details."
+                : 'You have a new notification. Open PUPT-Registrar to view the details.');
 
         return [
             'title'           => $notification->type->title,

@@ -1,6 +1,6 @@
 {
-  "name": "PUPT-GuiSIS",
-  "short_name": "GuiSIS",
+  "name": "PUPT-Registrar",
+  "short_name": "Registrar",
   "description": "PUP Taguig Registrar Information System",
   "start_url": "/",
   "scope": "/",

@@ -5,7 +5,7 @@
 | Web Push (background notifications)
 |--------------------------------------------------------------------------
 | Configuration for delivering urgent notifications to a user's devices
-| when PUPT-GuiSIS is closed. In-app notifications (DB row + Reverb
+| when PUPT-Registrar is closed. In-app notifications (DB row + Reverb
 | broadcast) are unaffected — Web Push is an additional, best-effort channel.
 |
 | Generate a VAPID key pair ONCE per environment and keep it stable:
