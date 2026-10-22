@@ -21,6 +21,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\SsoCallbackController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\AiQueryController;
 use App\Http\Controllers\AnnouncementController;
@@ -180,6 +181,14 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::post('read-all',    [NotificationController::class, 'markAllAsRead']);
         Route::post('{id}/read',   [NotificationController::class, 'markAsRead']);
         Route::delete('{id}',      [NotificationController::class, 'destroy']);
+    });
+
+    // Web Push (background notifications) — all roles, own devices only.
+    // Throttled: a legitimate client calls these a handful of times per session.
+    Route::prefix('push')->middleware('throttle:30,1')->group(function () {
+        Route::get('public-key',                [PushSubscriptionController::class, 'publicKey']);
+        Route::post('subscriptions',            [PushSubscriptionController::class, 'store']);
+        Route::post('subscriptions/unsubscribe', [PushSubscriptionController::class, 'destroy']);
     });
 
     // Document requests
