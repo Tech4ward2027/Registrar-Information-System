@@ -1,5 +1,15 @@
 FROM php:8.4-fpm
 
+# SECURITY FLOOR — PHP 8.4.27 fixes CVE-2026-109618 and CVE-2026-109619
+# (unauthenticated RCE / memory disclosure in PHP itself; PHP-FPM is affected).
+# The floating `8.4-fpm` tag only moves when the base image is re-pulled, so a
+# cached or stale base could silently ship a vulnerable runtime. This guard
+# fails the build instead. When a newer PHP security release ships, bump the
+# value (or pass --build-arg PHP_MIN_VERSION=x.y.z).
+ARG PHP_MIN_VERSION=8.4.27
+RUN php -r 'exit(version_compare(PHP_VERSION, getenv("PHP_MIN_VERSION"), ">=") ? 0 : 1);' \
+    || { echo "ERROR: base image has PHP $(php -r 'echo PHP_VERSION;'), need >= ${PHP_MIN_VERSION}. Rebuild with --pull." >&2; exit 1; }
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     git \

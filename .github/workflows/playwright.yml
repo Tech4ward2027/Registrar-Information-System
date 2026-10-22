@@ -9,11 +9,24 @@ on:
     paths:
       - 'registrar-frontend/**'
 
+# Cancel superseded runs of the same branch/PR so they don't pile up.
+concurrency:
+  group: playwright-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Playwright Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    # Browsers and system libraries are preinstalled in this image, so the job
+    # never runs apt-get (which was hanging on the Azure Ubuntu mirror).
+    # The tag MUST match the locked @playwright/test version (1.62.0).
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.0-noble
+      options: --ipc=host
+    env:
+      HOME: /root
     defaults:
       run:
         working-directory: registrar-frontend
@@ -23,20 +36,10 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: lts/*
+        cache: npm
+        cache-dependency-path: registrar-frontend/package-lock.json
     - name: Install dependencies
       run: npm ci
-    - name: Check Ubuntu apt sources
-      working-directory: /
-      run: |
-        echo "=== Ubuntu Version ==="
-        cat /etc/os-release
-
-        echo "=== APT Sources ==="
-        grep -R "azure.archive.ubuntu.com\|archive.ubuntu.com" \
-          /etc/apt/sources.list \
-          /etc/apt/sources.list.d/ 2>/dev/null || true
-    - name: Install Playwright Browsers
-      run: npx playwright install --with-deps
     - name: Run Playwright tests
       run: npx playwright test
     - uses: actions/upload-artifact@v4

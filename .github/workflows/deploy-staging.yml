@@ -73,7 +73,7 @@ jobs:
       - name: Build and push image
         working-directory: registrar-backend
         run: |
-          docker build -t ${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.tag }} .
+          docker build --pull -t ${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.tag }} .
           docker push ${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.tag }}
 
   deploy-backend:

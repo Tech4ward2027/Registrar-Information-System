@@ -17,6 +17,7 @@ class NotificationType extends Model
         'message_template',
         'audience',
         'is_active',
+        'send_push',
     ];
 
     // Casting to the backed enum means $notificationType->audience is a
@@ -26,6 +27,7 @@ class NotificationType extends Model
     protected $casts = [
         'audience'  => NotificationAudienceEnum::class,
         'is_active' => 'boolean',
+        'send_push' => 'boolean',
     ];
 
     // All notifications sent using this type
