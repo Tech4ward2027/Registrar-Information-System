@@ -25,6 +25,11 @@ services:
       SSO_API_KEY: ${SSO_API_KEY}
       REVERB_APP_ID: ${REVERB_APP_ID}
       REVERB_APP_KEY: ${REVERB_APP_KEY}
+      # Web Push (background notifications) — see registrar-backend/config/webpush.php
+      WEBPUSH_ENABLED: ${WEBPUSH_ENABLED:-false}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       REVERB_APP_SECRET: ${REVERB_APP_SECRET}
       REVERB_HOST: reverb
       REVERB_PORT: ${REVERB_PORT:-8080}
@@ -163,6 +168,8 @@ services:
       QUEUE_CONNECTION: database
       REVERB_APP_ID: ${REVERB_APP_ID}
       REVERB_APP_KEY: ${REVERB_APP_KEY}
+      # Web Push: this service calls NotificationService::send(), which decides whether to queue a push.
+      WEBPUSH_ENABLED: ${WEBPUSH_ENABLED:-false}
       REVERB_APP_SECRET: ${REVERB_APP_SECRET}
       REVERB_HOST: reverb
       REVERB_PORT: ${REVERB_PORT:-8080}
@@ -241,6 +248,11 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       REVERB_APP_ID: ${REVERB_APP_ID}
       REVERB_APP_KEY: ${REVERB_APP_KEY}
+      # Web Push (background notifications) — see registrar-backend/config/webpush.php
+      WEBPUSH_ENABLED: ${WEBPUSH_ENABLED:-false}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       REVERB_APP_SECRET: ${REVERB_APP_SECRET}
       REVERB_HOST: reverb
       REVERB_PORT: ${REVERB_PORT:-8080}
@@ -306,6 +318,8 @@ services:
       QUEUE_CONNECTION: database
       REVERB_APP_ID: ${REVERB_APP_ID}
       REVERB_APP_KEY: ${REVERB_APP_KEY}
+      # Web Push: this service calls NotificationService::send(), which decides whether to queue a push.
+      WEBPUSH_ENABLED: ${WEBPUSH_ENABLED:-false}
       REVERB_APP_SECRET: ${REVERB_APP_SECRET}
       REVERB_HOST: reverb
       REVERB_PORT: ${REVERB_PORT:-8080}
