@@ -533,10 +533,12 @@ useEffect(() => {
   const markLegacyCertificateGenerated = () => {
     if (initialData?.requestId) {
       const requestId = initialData.requestId;
+      // The API is addressed by public_id; requestId stays the local key.
+      const requestRef = initialData.requestRef ?? requestId;
       const selectedCertName = normalizeCertName(certIdToName[formData.docType]);
       const certificateId = initialData?.certificateIdsByName?.[selectedCertName];
 
-      markCertificatesGenerated(requestId, certificateId).catch((err) => {
+      markCertificatesGenerated(requestRef, certificateId).catch((err) => {
         console.error("Failed to record certificate as generated:", err);
       });
 

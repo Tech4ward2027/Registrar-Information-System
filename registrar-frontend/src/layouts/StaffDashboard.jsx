@@ -22,6 +22,7 @@ import VoiceSearchInput from '../components/VoiceSearchInput.jsx';
 import DashboardDropdown from '../components/DashboardDropdown.jsx';
 import { useTheme } from '../context/ThemeContext';
 import { useStaffDashboard } from '../hooks/useStaffDashboard';
+import { getRequestRef } from '../utils/requestRef';
 import { useAlertToast } from '../context/AlertToastContext';
 import { useAuth } from '../context/AuthProvider';
 import { hasModuleAction } from '../utils/policy';
@@ -155,7 +156,7 @@ const SubItemActionsDropdown = ({
                 <button
                   type="button"
                   onClick={() => {
-                    onWithdrawItem(req.id, subItem);
+                    onWithdrawItem(req, subItem);
                     setIsOpen(false);
                   }}
                   className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-amber-600 dark:text-amber-400 transition-colors ${
@@ -170,7 +171,7 @@ const SubItemActionsDropdown = ({
                 <button
                   type="button"
                   onClick={() => {
-                    onCloseItem(req.id, subItem);
+                    onCloseItem(req, subItem);
                     setIsOpen(false);
                   }}
                   className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-red-600 dark:text-red-400 transition-colors ${
@@ -338,7 +339,7 @@ const RowActionsDropdown = ({
                   type="button"
                   disabled={isUpdating}
                   onClick={() => {
-                    onWithdrawItem(req.id, singleSubItem);
+                    onWithdrawItem(req, singleSubItem);
                     setIsOpen(false);
                   }}
                   className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-amber-600 dark:text-amber-400 transition-colors disabled:opacity-50 ${
@@ -354,7 +355,7 @@ const RowActionsDropdown = ({
                   type="button"
                   disabled={isUpdating}
                   onClick={() => {
-                    onCloseItem(req.id, singleSubItem);
+                    onCloseItem(req, singleSubItem);
                     setIsOpen(false);
                   }}
                   className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-red-600 dark:text-red-400 transition-colors disabled:opacity-50 ${
@@ -484,7 +485,8 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
   const [itemModalState, setItemModalState] = useState({
     open: false,
     mode: 'withdraw',
-    reqId: null,
+    reqId: null,   // numeric request number, display only
+    reqRef: null,  // public_id sent to the API
     subItem: null,
   });
 
@@ -504,20 +506,22 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
     });
   };
 
-  const handleOpenWithdrawItem = (reqId, subItem) => {
+  const handleOpenWithdrawItem = (req, subItem) => {
     setItemModalState({
       open: true,
       mode: 'withdraw',
-      reqId,
+      reqId: req.id,
+      reqRef: getRequestRef(req),
       subItem,
     });
   };
 
-  const handleOpenCloseItem = (reqId, subItem) => {
+  const handleOpenCloseItem = (req, subItem) => {
     setItemModalState({
       open: true,
       mode: 'close',
-      reqId,
+      reqId: req.id,
+      reqRef: getRequestRef(req),
       subItem,
     });
   };
@@ -531,13 +535,16 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
     });
   };
 
-  const handleItemStatusUpdate = async (reqId, item, targetStatusId) => {
-    setUpdatingId(reqId);
+  // `req` is the mapped dashboard request. req.id is the local key used for the
+  // row spinner; the API is addressed by its public_id (utils/requestRef.js).
+  const handleItemStatusUpdate = async (req, item, targetStatusId) => {
+    setUpdatingId(req.id);
+    const requestRef = getRequestRef(req);
     try {
       if (item.type === 'doc') {
-        await updateRequestDocumentStatus(reqId, item.id, targetStatusId);
+        await updateRequestDocumentStatus(requestRef, item.id, targetStatusId);
       } else if (item.type === 'cert') {
-        await updateRequestCertificateStatus(reqId, item.id, targetStatusId);
+        await updateRequestCertificateStatus(requestRef, item.id, targetStatusId);
       }
       queryClient.invalidateQueries({ queryKey: ['documentRequests'] });
     } catch (err) {
@@ -1106,7 +1113,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                 {canActOnParentRow && effectiveStatusId === resolvedStatusIds.AWAITING_SUBMISSION && (
                                   <button
                                     disabled={updatingId === req.id}
-                                    onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.PENDING) : handleStatusUpdate(req.id, resolvedStatusIds.PENDING)}
+                                    onClick={() => singleSubItem ? handleItemStatusUpdate(req, singleSubItem, resolvedStatusIds.PENDING) : handleStatusUpdate(req, resolvedStatusIds.PENDING)}
                                     className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-emerald-900/20 hover:bg-emerald-900/30 text-emerald-400 border border-emerald-600' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700 border border-emerald-200'}`}
                                     title="Confirm source document received."
                                   >
@@ -1120,7 +1127,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                 {canActOnParentRow && effectiveStatusId === resolvedStatusIds.PENDING && (
                                   <button
                                     disabled={updatingId === req.id}
-                                    onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.PENDING_SIGNATURE) : handleStatusUpdate(req.id, resolvedStatusIds.PENDING_SIGNATURE)}
+                                    onClick={() => singleSubItem ? handleItemStatusUpdate(req, singleSubItem, resolvedStatusIds.PENDING_SIGNATURE) : handleStatusUpdate(req, resolvedStatusIds.PENDING_SIGNATURE)}
                                     className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-amber-900/20 hover:bg-amber-900/30 text-amber-400 border border-amber-600' : 'bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-200'
                                       }`}
                                   >
@@ -1134,7 +1141,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                 {canActOnParentRow && (effectiveStatusId === resolvedStatusIds.PENDING || effectiveStatusId === resolvedStatusIds.PENDING_SIGNATURE) && (
                                   <button
                                     disabled={updatingId === req.id}
-                                    onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.READY) : handleStatusUpdate(req.id, resolvedStatusIds.READY)}
+                                    onClick={() => singleSubItem ? handleItemStatusUpdate(req, singleSubItem, resolvedStatusIds.READY) : handleStatusUpdate(req, resolvedStatusIds.READY)}
                                     className={`flex items-center justify-center gap-1 w-18 px-2.5 py-1 text-white text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-blue-900/20 hover:bg-blue-900/30 text-blue-400 border border-blue-600' : 'bg-blue-500 hover:bg-blue-700'
                                       }`}
                                   >
@@ -1144,7 +1151,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                 {canActOnParentRow && canComplete && effectiveStatusId === resolvedStatusIds.READY && (
                                   <button
                                     disabled={updatingId === req.id}
-                                    onClick={() => singleSubItem ? handleItemStatusUpdate(req.id, singleSubItem, resolvedStatusIds.COMPLETED) : handleStatusUpdate(req.id, resolvedStatusIds.COMPLETED)}
+                                    onClick={() => singleSubItem ? handleItemStatusUpdate(req, singleSubItem, resolvedStatusIds.COMPLETED) : handleStatusUpdate(req, resolvedStatusIds.COMPLETED)}
                                     className={`flex items-center justify-center gap-1 w-18 px-2.5 py-1 text-white text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap ${isDark ? 'bg-green-900/20 hover:bg-green-900/30 text-green-400 border border-green-600' : 'bg-green-500 hover:bg-green-700'}`}
                                   >
                                     <CheckCircleIcon className="w-3.5 h-3.5" /> Done
@@ -1162,8 +1169,8 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                             canProcess={canProcess}
                             onViewDetails={() => setSelectedRequest(req.rawRequest)}
                             onGenerateCert={() => setCertRequest(req)}
-                            onArchive={() => handleArchiveOne(req.id)}
-                            onRestore={() => handleRestoreOne(req.id)}
+                            onArchive={() => handleArchiveOne(req)}
+                            onRestore={() => handleRestoreOne(req)}
                             onIssueDeficiencyNotice={handleOpenDeficiencyNotice}
                             onWithdrawItem={handleOpenWithdrawItem}
                             onCloseItem={handleOpenCloseItem}
@@ -1230,7 +1237,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                 <button
                                   type="button"
                                   disabled={updatingId === req.id}
-                                  onClick={() => handleItemStatusUpdate(req.id, subItem, resolvedStatusIds.PENDING)}
+                                  onClick={() => handleItemStatusUpdate(req, subItem, resolvedStatusIds.PENDING)}
                                   className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-emerald-900/20 hover:bg-emerald-900/30 text-emerald-400 border border-emerald-600' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700 border border-emerald-200'
                                     }`}
                                   title="Confirm source document received."
@@ -1247,7 +1254,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                 <button
                                   type="button"
                                   disabled={updatingId === req.id}
-                                  onClick={() => handleItemStatusUpdate(req.id, subItem, resolvedStatusIds.PENDING_SIGNATURE)}
+                                  onClick={() => handleItemStatusUpdate(req, subItem, resolvedStatusIds.PENDING_SIGNATURE)}
                                   className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-amber-900/20 hover:bg-amber-900/30 text-amber-400 border border-amber-600' : 'bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-200'
                                     }`}
                                 >
@@ -1263,7 +1270,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                 <button
                                   type="button"
                                   disabled={updatingId === req.id}
-                                  onClick={() => handleItemStatusUpdate(req.id, subItem, resolvedStatusIds.READY)}
+                                  onClick={() => handleItemStatusUpdate(req, subItem, resolvedStatusIds.READY)}
                                   className={`flex items-center justify-center gap-1 w-18 px-2.5 py-1 text-white text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${isDark ? 'bg-blue-900/20 hover:bg-blue-900/30 text-blue-400 border border-blue-600' : 'bg-blue-500 hover:bg-blue-700'
                                     }`}
                                 >
@@ -1276,7 +1283,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
                                 <button
                                   type="button"
                                   disabled={updatingId === req.id}
-                                  onClick={() => handleItemStatusUpdate(req.id, subItem, resolvedStatusIds.COMPLETED)}
+                                  onClick={() => handleItemStatusUpdate(req, subItem, resolvedStatusIds.COMPLETED)}
                                   className={`flex items-center justify-center gap-1 w-18 px-2.5 py-1 text-white text-xs font-bold rounded-lg shadow-xs transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap ${isDark ? 'bg-green-900/20 hover:bg-green-900/30 text-green-400 border border-green-600' : 'bg-green-500 hover:bg-green-700'
                                     }`}
                                 >
@@ -1346,6 +1353,7 @@ const StaffDashboard = ({ viewMode = 'active', isEmbedded = false, onScanToClaim
         open={itemModalState.open}
         mode={itemModalState.mode}
         reqId={itemModalState.reqId}
+        reqRef={itemModalState.reqRef}
         subItem={itemModalState.subItem}
         onClose={() => setItemModalState(prev => ({ ...prev, open: false }))}
         onSuccess={(res, message) => {

@@ -20,6 +20,7 @@ import {
   mapDocumentRequest,
   filterAndSortRequests,
 } from '../utils/staffDashboardUtils';
+import { getRequestRef } from '../utils/requestRef';
 
 const DASHBOARD_REFETCH_TRIGGERS = new Set([
   'admin_new_request',
@@ -212,9 +213,13 @@ export const useStaffDashboard = (viewMode) => {
     archiveOneMutation.isPending || restoreOneMutation.isPending ||
     bulkReadyMutation.isPending || bulkDoneMutation.isPending;
 
-  const handleStatusUpdate = (id, newStatusId) => {
-    setUpdatingId(id);
-    statusMutation.mutate({ id, statusId: newStatusId }, {
+  // The single-request handlers below take the mapped dashboard request:
+  // req.id is the local key for the row spinner, and the API is addressed by
+  // the request's public_id (see utils/requestRef.js). Bulk handlers further
+  // down still take numeric ids until their endpoints accept public ids.
+  const handleStatusUpdate = (req, newStatusId) => {
+    setUpdatingId(req.id);
+    statusMutation.mutate({ id: getRequestRef(req), statusId: newStatusId }, {
       onSettled: () => setUpdatingId(null),
     });
   };
@@ -264,14 +269,14 @@ export const useStaffDashboard = (viewMode) => {
     restoreSelectedMutation.mutate(selectedIds);
   };
 
-  const handleArchiveOne = (id) => {
-    setUpdatingId(id);
-    archiveOneMutation.mutate(id, { onSettled: () => setUpdatingId(null) });
+  const handleArchiveOne = (req) => {
+    setUpdatingId(req.id);
+    archiveOneMutation.mutate(getRequestRef(req), { onSettled: () => setUpdatingId(null) });
   };
 
-  const handleRestoreOne = (id) => {
-    setUpdatingId(id);
-    restoreOneMutation.mutate(id, { onSettled: () => setUpdatingId(null) });
+  const handleRestoreOne = (req) => {
+    setUpdatingId(req.id);
+    restoreOneMutation.mutate(getRequestRef(req), { onSettled: () => setUpdatingId(null) });
   };
 
   // Replaces the old markCertificateAsPrinted (localStorage-only flag that
