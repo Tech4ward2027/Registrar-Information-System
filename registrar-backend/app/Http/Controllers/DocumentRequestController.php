@@ -22,6 +22,7 @@ use App\Http\Requests\DocumentRequest\VerifyOfficialReceiptRequest;
 use App\Http\Requests\DocumentRequest\WithdrawDocumentRequestRequest;
 use App\Http\Requests\RequestItem\UpdateRequestCertificateStatusRequest;
 use App\Http\Requests\RequestItem\UpdateRequestDocumentStatusRequest;
+use App\Http\Resources\DocumentRequestDetailResource;
 use App\Http\Resources\DocumentRequestListResource;
 use App\Services\DocumentRequestService;
 use App\Services\LogbookQueryService;
@@ -55,6 +56,18 @@ use Throwable;
  */
 class DocumentRequestController extends Controller
 {
+    /**
+     * Single-request response. Goes through DocumentRequestDetailResource so
+     * embedded accounts and the superseding request are reduced to a safe
+     * shape instead of serialising the raw model.
+     */
+    private function detailResponse(DocumentRequest $documentRequest, int $status = 200): JsonResponse
+    {
+        return (new DocumentRequestDetailResource($documentRequest))
+            ->response()
+            ->setStatusCode($status);
+    }
+
     private const RELATIONS = [
         'user',
         'studentProfile',
@@ -316,7 +329,7 @@ class DocumentRequestController extends Controller
     {
         $documentRequest = DocumentRequest::findByPublicIdOrFail($id, withArchived: true);
         $this->authorize('view', $documentRequest);
-        return response()->json($documentRequest->load(self::RELATIONS), 200);
+        return $this->detailResponse($documentRequest->load(self::RELATIONS), 200);
     }
 
     // -------------------------------------------------------------------------
@@ -426,7 +439,7 @@ class DocumentRequestController extends Controller
             $this->consumeOverride($request, $consumedOverride, $documentRequest, Auth::user());
         }
 
-        return response()->json($documentRequest->load(self::RELATIONS), 201);
+        return $this->detailResponse($documentRequest->load(self::RELATIONS), 201);
     }
 
     // -------------------------------------------------------------------------
@@ -739,7 +752,7 @@ class DocumentRequestController extends Controller
 
         $documentRequest = $this->requestService->updateRequest($documentRequest, $validated);
 
-        return response()->json($documentRequest->load(self::RELATIONS), 200);
+        return $this->detailResponse($documentRequest->load(self::RELATIONS), 200);
     }
 
     // -------------------------------------------------------------------------
@@ -797,7 +810,7 @@ class DocumentRequestController extends Controller
             ]);
         }
 
-        return response()->json($documentRequest->load(self::RELATIONS), 200);
+        return $this->detailResponse($documentRequest->load(self::RELATIONS), 200);
     }
 
     // -------------------------------------------------------------------------
@@ -836,7 +849,7 @@ class DocumentRequestController extends Controller
             ]);
         }
 
-        return response()->json($documentRequest->load(self::RELATIONS), 200);
+        return $this->detailResponse($documentRequest->load(self::RELATIONS), 200);
     }
 
     // -------------------------------------------------------------------------
@@ -939,7 +952,7 @@ class DocumentRequestController extends Controller
     {
         $documentRequest = $this->requestService->claimRequest($request->validated());
 
-        return response()->json($documentRequest->load(self::RELATIONS), 200);
+        return $this->detailResponse($documentRequest->load(self::RELATIONS), 200);
     }
 
     // -------------------------------------------------------------------------
@@ -1028,7 +1041,7 @@ class DocumentRequestController extends Controller
             'request_id' => $documentRequest->request_id,
         ]);
 
-        return response()->json(
+        return $this->detailResponse(
             DocumentRequest::withArchived()->with(self::RELATIONS)->find($documentRequest->request_id),
             200
         );
@@ -1048,7 +1061,7 @@ class DocumentRequestController extends Controller
             'request_id' => $documentRequest->request_id,
         ]);
 
-        return response()->json(
+        return $this->detailResponse(
             DocumentRequest::withArchived()->with(self::RELATIONS)->find($documentRequest->request_id),
             200
         );

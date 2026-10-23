@@ -565,7 +565,8 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
     Route::get('document-types',             [DocumentTypeController::class, 'index']);
     Route::get('document-types/{id}',        [DocumentTypeController::class, 'show']);
     Route::get('certifications',             [CertificationTypeController::class, 'index']);
-    Route::get('certifications/layouts',     [CertificationTypeController::class, 'layouts']);
+    Route::get('certifications/layouts',     [CertificationTypeController::class, 'layouts'])
+        ->middleware('role:3,4');
     // Active template version of every certificate type (metadata only, no
     // bodies). Static path: must stay ahead of 'certifications/{id}'.
     Route::get('certifications/templates',   [CertificateTemplateController::class, 'summary'])

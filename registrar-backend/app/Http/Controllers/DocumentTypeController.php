@@ -19,6 +19,21 @@ class DocumentTypeController extends Controller
     public function __construct(private AuditLogger $auditLogger) {}
 
     /**
+     * Columns only staff screens read. cashier_document_patterns is the text
+     * the cashier cross-check matches receipts against; archived_by/_on are
+     * staff bookkeeping. Students, alumni and undergrad requestors never
+     * need them, so they are not serialised for those callers.
+     */
+    private const STAFF_ONLY_COLUMNS = ['cashier_document_patterns', 'archived_by', 'archived_on'];
+
+    private function callerIsStaff(): bool
+    {
+        $user = Auth::user();
+
+        return $user !== null && $user->isStaff();
+    }
+
+    /**
      * List document types.
      *
      * Excludes archived items by default: this endpoint is shared by both
@@ -44,14 +59,27 @@ class DocumentTypeController extends Controller
             $query->where('is_archived', false);
         }
 
-        return response()->json($query->get(), 200);
+        $rows = $query->get();
+
+        if (!$this->callerIsStaff()) {
+            $rows->makeHidden(self::STAFF_ONLY_COLUMNS);
+        }
+
+        return response()->json($rows, 200);
     }
 
     public function show($id)
     {
         $docType = DocumentType::find($id);
-        if (!$docType) {
+
+        // index() hides archived types from non-staff; show() must too, or an
+        // archived type stays readable by id.
+        if (!$docType || ($docType->is_archived && !$this->callerIsStaff())) {
             return response()->json(['message' => 'Document type not found'], 404);
+        }
+
+        if (!$this->callerIsStaff()) {
+            $docType->makeHidden(self::STAFF_ONLY_COLUMNS);
         }
 
         return response()->json($docType, 200);
