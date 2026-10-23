@@ -88,6 +88,7 @@ class DocumentRequestListResource extends JsonResource
 
         return array_merge([
             'request_id'     => $r->request_id,
+            'public_id'      => $r->public_id,
             'uuid'           => $r->uuid,
             'requested_at'   => $r->requested_at,
             'status_id'      => $r->status_id,

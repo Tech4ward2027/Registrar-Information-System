@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowPathIcon, CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, XCircleIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
+import { useSearchParams } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import {
   getFailedCashierVerifications,
@@ -57,6 +58,19 @@ const CodeChip = ({ code, isDark }) => (
 const FailedVerificationsPanel = () => {
   const { isDark } = useTheme();
 
+  // ?user=<id> is set by the System Health "Open failed verifications" link;
+  // it narrows the list to one account. Anything that isn't a positive
+  // integer is ignored.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const userParam  = Number.parseInt(searchParams.get('user') ?? '', 10);
+  const userFilter = Number.isInteger(userParam) && userParam > 0 ? userParam : null;
+  const clearUserFilter = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('user');
+    setSearchParams(next);
+    setPage(1);
+  };
+
   const emptyFilters = { or_number: '', email: '', reason: '', code: '', days: '30' };
   const [draft, setDraft] = useState(emptyFilters);
   const [applied, setApplied] = useState(emptyFilters);
@@ -75,6 +89,7 @@ const FailedVerificationsPanel = () => {
     setError(null);
 
     const params = { page, per_page: 20, days: applied.days };
+    if (userFilter) params.user_id = userFilter;
     ['or_number', 'email', 'reason', 'code'].forEach((k) => {
       if (applied[k].trim() !== '') params[k] = applied[k].trim();
     });
@@ -96,7 +111,7 @@ const FailedVerificationsPanel = () => {
       .finally(() => { if (!cancelled) setLoading(false); });
 
     return () => { cancelled = true; };
-  }, [applied, page]);
+  }, [applied, page, userFilter]);
 
   const apply = () => { setPage(1); setApplied({ ...draft }); };
   const reset = () => { setDraft(emptyFilters); setApplied(emptyFilters); setPage(1); };
@@ -114,6 +129,13 @@ const FailedVerificationsPanel = () => {
           Codes are not a fault verdict: the Cashier API does not return the name it has on file.
         </p>
       </div>
+
+      {userFilter && (
+        <div className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-xs ${isDark ? 'border-amber-400/40 text-amber-300' : 'border-amber-300 bg-amber-50 text-amber-800'}`}>
+          <span>Showing failures for one account only (from a System Health alert).</span>
+          <button type="button" onClick={clearUserFilter} className="font-bold underline cursor-pointer shrink-0">Show all</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
         <div>

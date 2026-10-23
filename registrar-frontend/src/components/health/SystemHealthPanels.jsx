@@ -163,8 +163,13 @@ const Breakdown = ({ title, items, isDark, empty }) => {
 
 const alertSummary = (a) => {
   if (a.type === 'repeat_failure') {
-    const c = a.context ?? {};
-    return `Repeat failures for one account (user #${c.user_id ?? a.dimension?.replace('user:', '') ?? '?'}): ${a.observed} in the window`;
+    // The API resolves the account into a masked label (a***@host) and role;
+    // the raw user id is never shown. A deleted account has no label.
+    const acct = a.account ?? {};
+    const who = acct.label
+      ? `${acct.label}${acct.role ? ` · ${acct.role}` : ''}`
+      : (acct.exists === false ? 'account no longer exists' : 'one account');
+    return `Repeat failures for ${who}: ${a.observed} in the window`;
   }
   const typical = a.baseline_median != null ? ` (typical ${a.baseline_median})` : '';
   const what = a.type === 'rate_spike'
@@ -174,7 +179,15 @@ const alertSummary = (a) => {
 };
 
 const alertLink = (a) => {
-  if (a.type === 'repeat_failure') return { to: '/super-admin/cashier-reconciliation?tab=failed', label: 'Open failed verifications' };
+  if (a.type === 'repeat_failure') {
+    const uid = a.account?.user_id;
+    // Deep-link to just this account's failures (FailedVerificationsPanel
+    // reads ?user=). The id only travels in the Super Admin's own URL.
+    return {
+      to: `/super-admin/cashier-reconciliation?tab=failed${uid ? `&user=${encodeURIComponent(uid)}` : ''}`,
+      label: 'Open failed verifications',
+    };
+  }
   if (a.source === 'provisioning') return { to: '/super-admin/system-analytics?tab=provisioning', label: 'View provisioning' };
   return { to: '/super-admin/system-analytics?tab=cashier', label: 'View cashier trend' };
 };

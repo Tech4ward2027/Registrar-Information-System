@@ -77,7 +77,7 @@ class SendWebPushJob implements ShouldQueue
         $body = config('webpush.include_message') && $message !== ''
             ? $message
             : ($requestId
-                ? "There is an update on request #{$requestId}. Open PUPT-Registrar to view the details."
+                ? 'There is an update on one of your requests. Open PUPT-Registrar to view the details.'
                 : 'You have a new notification. Open PUPT-Registrar to view the details.');
 
         return [
@@ -86,10 +86,22 @@ class SendWebPushJob implements ShouldQueue
             'url'             => config('webpush.inbox_paths')[(int) $user->role_id] ?? '/',
             // Same tag = the OS replaces the earlier banner for that request
             // instead of stacking one per status change.
-            'tag'             => $requestId ? "request-{$requestId}" : "notification-{$notification->id}",
+            'tag'             => $requestId ? 'request-' . $this->requestTag((int) $requestId) : "notification-{$notification->id}",
             'notification_id' => $notification->id,
             'icon'            => config('webpush.icon'),
             'timestamp'       => $notification->created_at?->getTimestamp() * 1000,
         ];
+    }
+
+    /**
+     * Opaque, stable per-request tag. The tag is only used by the device to
+     * collapse repeat banners for the same request; it is visible to the push
+     * service and the OS, so it must not expose the sequential request_id.
+     * HMAC with the app key: stable for a given request, not reversible, and
+     * not guessable by enumerating ids.
+     */
+    private function requestTag(int $requestId): string
+    {
+        return substr(hash_hmac('sha256', (string) $requestId, (string) config('app.key')), 0, 16);
     }
 }

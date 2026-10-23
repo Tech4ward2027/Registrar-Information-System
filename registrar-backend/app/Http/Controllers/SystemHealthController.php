@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AuditLog;
 use App\Models\SecurityEvent;
 use App\Models\SystemAlert;
+use App\Models\SystemUser;
 use App\Services\AuditLogger;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -148,7 +149,7 @@ class SystemHealthController extends Controller
             ->paginate((int) ($v['per_page'] ?? 20));
 
         return response()->json([
-            'data' => $page->getCollection()->map(fn (SystemAlert $a) => $this->alertPayload($a))->values(),
+            'data' => $this->alertPayloads($page->getCollection()),
             'meta' => [
                 'current_page' => $page->currentPage(),
                 'last_page'    => $page->lastPage(),
@@ -184,7 +185,7 @@ class SystemHealthController extends Controller
             'severity' => $row->severity,
         ]);
 
-        return response()->json(['data' => $this->alertPayload($row->fresh())]);
+        return response()->json(['data' => $this->alertPayloads(collect([$row->fresh()]))[0]]);
     }
 
     // ------------------------------------------------------------------
@@ -233,6 +234,71 @@ class SystemHealthController extends Controller
             ->sort()
             ->values()
             ->all();
+    }
+
+    /**
+     * Alert rows -> API payloads. Repeat-failure alerts store only a user id
+     * (alerts hold no personal data by design); the account is resolved HERE,
+     * at read time and in one query, into a masked label so a Super Admin can
+     * tell who is involved without the table ever holding an email.
+     *
+     * @param  \Illuminate\Support\Collection<int, SystemAlert>  $alerts
+     * @return list<array<string, mixed>>
+     */
+    private function alertPayloads($alerts): array
+    {
+        $userIds = $alerts
+            ->filter(fn (SystemAlert $a) => $a->type === SystemAlert::TYPE_REPEAT_FAILURE)
+            ->map(fn (SystemAlert $a) => (int) (($a->context ?? [])['user_id'] ?? 0))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $users = $userIds->isEmpty()
+            ? collect()
+            : SystemUser::whereIn('user_id', $userIds->all())->get(['user_id', 'email', 'role_id'])->keyBy('user_id');
+
+        return $alerts->map(function (SystemAlert $a) use ($users) {
+            $payload = $this->alertPayload($a);
+
+            if ($a->type === SystemAlert::TYPE_REPEAT_FAILURE) {
+                $uid  = (int) (($a->context ?? [])['user_id'] ?? 0);
+                $user = $users->get($uid);
+
+                $payload['account'] = [
+                    'user_id' => $uid ?: null,
+                    'label'   => $user ? self::maskEmail((string) $user->email) : null,
+                    'role'    => $user ? self::roleLabel((int) $user->role_id) : null,
+                    'exists'  => $user !== null,
+                ];
+            }
+
+            return $payload;
+        })->values()->all();
+    }
+
+    /** a***@example.com — enough to recognise an account, not enough to contact or enumerate it. */
+    private static function maskEmail(string $email): string
+    {
+        [$local, $domain] = array_pad(explode('@', $email, 2), 2, '');
+
+        if ($local === '' || $domain === '') {
+            return '***';
+        }
+
+        return mb_substr($local, 0, 1) . '***@' . $domain;
+    }
+
+    private static function roleLabel(int $roleId): ?string
+    {
+        return match ($roleId) {
+            SystemUser::ROLE_STUDENT             => 'Student',
+            SystemUser::ROLE_ALUMNI              => 'Alumni',
+            SystemUser::ROLE_ADMIN               => 'Admin',
+            SystemUser::ROLE_SUPER_ADMIN         => 'Super Admin',
+            SystemUser::ROLE_UNDERGRAD_REQUESTOR => 'Undergrad Requestor',
+            default                              => null,
+        };
     }
 
     private function alertPayload(SystemAlert $a): array

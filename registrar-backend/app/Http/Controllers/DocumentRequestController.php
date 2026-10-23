@@ -314,7 +314,7 @@ class DocumentRequestController extends Controller
     // (read-only) from the Archived Records tab.
     public function show($id)
     {
-        $documentRequest = DocumentRequest::withArchived()->findOrFail($id);
+        $documentRequest = DocumentRequest::findByPublicIdOrFail($id, withArchived: true);
         $this->authorize('view', $documentRequest);
         return response()->json($documentRequest->load(self::RELATIONS), 200);
     }
@@ -1017,7 +1017,7 @@ class DocumentRequestController extends Controller
     // PATCH /document-requests/{id}/archive
     public function archive($id)
     {
-        $documentRequest = DocumentRequest::withArchived()->findOrFail($id);
+        $documentRequest = DocumentRequest::findByPublicIdOrFail($id, withArchived: true);
         $this->authorize('archive', $documentRequest);
 
         /** @var SystemUser $actor */
@@ -1037,7 +1037,7 @@ class DocumentRequestController extends Controller
     // PATCH /document-requests/{id}/restore
     public function restore($id)
     {
-        $documentRequest = DocumentRequest::withArchived()->findOrFail($id);
+        $documentRequest = DocumentRequest::findByPublicIdOrFail($id, withArchived: true);
         $this->authorize('restore', $documentRequest);
 
         /** @var SystemUser $actor */
