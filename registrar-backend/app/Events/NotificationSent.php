@@ -56,6 +56,10 @@ class NotificationSent implements ShouldBroadcast
         // BroadcastEvent runs. Scalars survive serialization untouched.
         public readonly string       $typeTitle        = '',
         public readonly string       $typeTriggerEvent = '',
+        // The request's public_id, resolved by the caller for the same reason
+        // (the relation would be stripped before the job runs). Null when the
+        // notification is not about a request.
+        public readonly ?string      $requestPublicId  = null,
     ) {}
 
     // -------------------------------------------------------
@@ -105,6 +109,7 @@ class NotificationSent implements ShouldBroadcast
             'message'      => $data['message'] ?? '',
             'type'         => $this->typeTriggerEvent,
             'request_id'   => $this->notification->request_id,
+            'request_public_id' => $this->requestPublicId,
             'read_at'      => $this->notification->read_at,
             'created_at'   => $this->notification->created_at->toISOString(),
         ];

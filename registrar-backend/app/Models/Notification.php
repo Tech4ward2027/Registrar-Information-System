@@ -98,6 +98,18 @@ class Notification extends Model
         return $this->belongsTo(DocumentRequest::class, 'request_id');
     }
 
+    /**
+     * Eager-load the request's public_id for NotificationResource, selecting
+     * only the two columns needed. Archived requests are included so a
+     * notification about an archived request still resolves.
+     */
+    public function scopeWithRequestPublicId(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        return $query->with([
+            'request' => fn ($relation) => $relation->withArchived()->select('request_id', 'public_id'),
+        ]);
+    }
+
     // -------------------------------------------------------
     // HELPERS
     // -------------------------------------------------------

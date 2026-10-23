@@ -1,4 +1,5 @@
 import { CATEGORY_MAP } from '../constants/notificationCategories';
+import { getNotificationRequestRef } from './requestRef';
 
 export const formatDateFull = (isoString) => {
   if (!isoString) return 'N/A';
@@ -159,11 +160,11 @@ export const getRequirementsList = (selectedMail, notifications, isClaiming) => 
     return selectedMail._raw.requirements;
   }
 
-  const reqId = selectedMail._raw?.request_id || selectedMail._raw?.data?.request_id;
+  const reqId = getNotificationRequestRef(selectedMail._raw);
   const matchingNotif = Array.isArray(notifications)
     ? notifications.find((n) => {
         if (!n?.requirements || n.requirements.length === 0) return false;
-        if (reqId && (n.request_id === reqId || n.data?.request_id === reqId)) return true;
+        if (reqId && getNotificationRequestRef(n) === reqId) return true;
         const nTitle = (n.title || n.message || '').toLowerCase();
         return nTitle.includes(docTitle) || docTitle.includes(nTitle);
       })

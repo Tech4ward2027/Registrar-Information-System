@@ -36,3 +36,28 @@ export const getRequestRef = (request) => {
     ?? null
   );
 };
+
+/**
+ * The request a notification is about, as a comparable reference, or null if
+ * it is not about a request.
+ *
+ * Reads the shapes a notification arrives in: the REST payload, the live
+ * broadcast payload, and either of them nested under `data`. Prefers
+ * `request_public_id`; the numeric `request_id` is only a fallback for a
+ * payload from an older deploy. Use it to test "is this about a request?" and
+ * to match notifications to each other, never as a URL segment.
+ *
+ * @param {object|null|undefined} notification
+ * @returns {string|number|null}
+ */
+export const getNotificationRequestRef = (notification) => {
+  if (!notification) return null;
+
+  return (
+    notification.request_public_id
+    ?? notification.data?.request_public_id
+    ?? notification.request_id
+    ?? notification.data?.request_id
+    ?? null
+  );
+};

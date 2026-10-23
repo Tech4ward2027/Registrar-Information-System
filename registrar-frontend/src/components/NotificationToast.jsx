@@ -3,6 +3,7 @@ import { XMarkIcon } from '@heroicons/react/24/solid';
 import { useTheme } from '../context/ThemeContext';
 import { useToast } from '../context/NotificationToastContext';
 import { useHeaderResponsiveState } from '../utils/helpers';
+import { getNotificationRequestRef } from '../utils/requestRef';
 
 // CATEGORY_MAP lives in src/constants/notificationCategories.js
 // — edit it there; changes apply to both NotificationModal and NotificationToast.
@@ -20,7 +21,7 @@ const SingleToast = ({ toast, onDismiss }) => {
     const handleClick = () => {
         onDismiss(toast.id);
 
-        if (!toast.request_id) return;
+        if (!getNotificationRequestRef(toast)) return;
 
         const roleRoot      = location.pathname.split('/')[1];
         const validRoles    = ['student', 'alumni', 'staff', 'super-admin'];
