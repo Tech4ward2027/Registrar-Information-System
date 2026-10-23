@@ -48,10 +48,18 @@ class DocumentRequestDetailResource extends JsonResource
 
     public function toArray(Request $request): array
     {
-        $viewer  = $request->user();
-        $isStaff = $viewer !== null && $viewer->isStaff();
+        $viewer = $request->user();
 
-        $data = $this->scrub($this->resource->toArray(), $isStaff);
+        return self::sanitize($this->resource->toArray(), $viewer !== null && $viewer->isStaff());
+    }
+
+    /**
+     * Shared by every request payload (single, staff list, logbook, a
+     * requester's own list) so they can never drift apart.
+     */
+    public static function sanitize(array $data, bool $isStaff): array
+    {
+        $data = self::scrub($data, $isStaff);
 
         if (isset($data['superseding_request']) && is_array($data['superseding_request'])) {
             $data['superseding_request'] = Arr::only($data['superseding_request'], self::SUPERSEDING_FIELDS);
@@ -64,7 +72,7 @@ class DocumentRequestDetailResource extends JsonResource
      * Walk the serialised tree. `user` is the requester; any key ending in
      * `_by_user` is a staff actor (archived_by_user, issued_by_user, ...).
      */
-    private function scrub(array $node, bool $isStaff): array
+    private static function scrub(array $node, bool $isStaff): array
     {
         foreach ($node as $key => $value) {
             if (!is_array($value)) {
@@ -87,7 +95,7 @@ class DocumentRequestDetailResource extends JsonResource
                 continue;
             }
 
-            $node[$key] = $this->scrub($value, $isStaff);
+            $node[$key] = self::scrub($value, $isStaff);
         }
 
         return $node;

@@ -72,8 +72,12 @@ it('still sends cashier patterns to staff', function () {
     $active = rdeDocType(false);
     Sanctum::actingAs(rdeUser(SystemUser::ROLE_ADMIN));
 
-    $this->getJson('/api/v1/document-types')->assertOk()
-        ->assertJsonPath('0.cashier_document_patterns.0', RDE_PATTERN);
+    // Migrations seed document types too, so find our own row rather than
+    // assuming it is first.
+    $rows = $this->getJson('/api/v1/document-types')->assertOk()->json();
+    $mine = collect($rows)->firstWhere('document_type_id', $active->document_type_id);
+
+    expect($mine['cashier_document_patterns'][0] ?? null)->toBe(RDE_PATTERN);
 
     $this->getJson('/api/v1/document-types/' . $active->document_type_id)->assertOk()
         ->assertJsonPath('cashier_document_patterns.0', RDE_PATTERN);

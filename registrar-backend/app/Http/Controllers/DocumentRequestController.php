@@ -178,11 +178,16 @@ class DocumentRequestController extends Controller
         if (!$user->isStaff()) {
             // Their volume is low enough that a full ->get() is safe, and
             // this is the requester's own data, so the full relations apply.
+            // Through the detail resource, not the raw models: each row used to
+            // carry staff account records and a superseding request's claim
+            // credential. user_id stays (StudentDashboard filters on it).
             return response()->json([
                 'data' => DocumentRequest::with(self::RELATIONS)
                     ->where('user_id', $user->user_id)
                     ->orderByDesc('requested_at')
-                    ->get(),
+                    ->get()
+                    ->map(fn (DocumentRequest $row) => (new DocumentRequestDetailResource($row))->resolve())
+                    ->all(),
             ], 200);
         }
 
