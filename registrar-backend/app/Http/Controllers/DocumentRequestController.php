@@ -1061,7 +1061,7 @@ class DocumentRequestController extends Controller
         $actor = Auth::user();
         $validated = $request->validated();
 
-        $result = $this->requestService->archiveRequests($validated['request_ids'], $actor);
+        $result = $this->requestService->archiveRequests($request->requestIds(), $actor);
 
         foreach ($result['archived'] as $requestId) {
             $this->auditLogger->log($request, $actor, AuditLog::ACTION_REQUEST_ARCHIVED, [
@@ -1080,7 +1080,7 @@ class DocumentRequestController extends Controller
         $actor = Auth::user();
         $validated = $request->validated();
 
-        $result = $this->requestService->restoreRequests($validated['request_ids'], $actor);
+        $result = $this->requestService->restoreRequests($request->requestIds(), $actor);
 
         foreach ($result['restored'] as $requestId) {
             $this->auditLogger->log($request, $actor, AuditLog::ACTION_REQUEST_RESTORED, [
@@ -1118,7 +1118,7 @@ class DocumentRequestController extends Controller
         $validated = $request->validated();
 
         $result = $this->itemStatusService->bulkAdvanceItems(
-            $validated['request_ids'],
+            $request->requestIds(),
             RequestStatusEnum::ReadyToClaim,
         );
 
@@ -1155,7 +1155,7 @@ class DocumentRequestController extends Controller
         $validated = $request->validated();
 
         $result = $this->itemStatusService->bulkAdvanceItems(
-            $validated['request_ids'],
+            $request->requestIds(),
             RequestStatusEnum::Completed,
         );
 

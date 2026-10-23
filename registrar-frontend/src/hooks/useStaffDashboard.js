@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import {
   getDocumentRequests,
@@ -133,6 +133,20 @@ export const useStaffDashboard = (viewMode) => {
     }
   }, [notifications[0]?.id, viewMode, queryClient, notifications]);
 
+  // Selection is held as numeric local keys (req.id), but the bulk endpoints
+  // are addressed by public_id. This map remembers key -> public_id for every
+  // request the dashboard has loaded, and is never cleared on a page change,
+  // so a selection that spans pages still resolves. See utils/requestRef.js.
+  const refByIdRef = useRef(new Map());
+  useEffect(() => {
+    (requests || []).forEach((r) => {
+      const ref = getRequestRef(r);
+      if (ref != null) refByIdRef.current.set(r.id, ref);
+    });
+  }, [requests]);
+
+  const toRequestRefs = (ids) => (ids || []).map((id) => refByIdRef.current.get(id) ?? id);
+
   /* ---------------- TANSTACK QUERY: MUTATIONS ---------------- */
   const invalidateRequests = () => {
     queryClient.invalidateQueries({ queryKey: ['documentRequests'] });
@@ -215,8 +229,9 @@ export const useStaffDashboard = (viewMode) => {
 
   // The single-request handlers below take the mapped dashboard request:
   // req.id is the local key for the row spinner, and the API is addressed by
-  // the request's public_id (see utils/requestRef.js). Bulk handlers further
-  // down still take numeric ids until their endpoints accept public ids.
+  // the request's public_id (see utils/requestRef.js). The bulk handlers
+  // below take the numeric selection keys and convert them with
+  // toRequestRefs() before calling the API.
   const handleStatusUpdate = (req, newStatusId) => {
     setUpdatingId(req.id);
     statusMutation.mutate({ id: getRequestRef(req), statusId: newStatusId }, {
@@ -227,7 +242,7 @@ export const useStaffDashboard = (viewMode) => {
   const handleBulkReady = (targetIds, callbacks = {}) => {
     const ids = targetIds || selectedIds;
     if (!ids || ids.length === 0) return;
-    bulkReadyMutation.mutate(ids, {
+    bulkReadyMutation.mutate(toRequestRefs(ids), {
       onSuccess: callbacks.onSuccess,
       onError: callbacks.onError,
     });
@@ -236,7 +251,7 @@ export const useStaffDashboard = (viewMode) => {
   const handleBulkDone = (targetIds, callbacks = {}) => {
     const ids = targetIds || selectedIds;
     if (!ids || ids.length === 0) return;
-    bulkDoneMutation.mutate(ids, {
+    bulkDoneMutation.mutate(toRequestRefs(ids), {
       onSuccess: callbacks.onSuccess,
       onError: callbacks.onError,
     });
@@ -256,17 +271,17 @@ export const useStaffDashboard = (viewMode) => {
   };
 
   const confirmDeleteSelected = () => {
-    deleteMutation.mutate(selectedIds);
+    deleteMutation.mutate(toRequestRefs(selectedIds));
   };
 
   const handleArchiveSelected = () => {
     if (selectedIds.length === 0) return;
-    archiveSelectedMutation.mutate(selectedIds);
+    archiveSelectedMutation.mutate(toRequestRefs(selectedIds));
   };
 
   const handleRestoreSelected = () => {
     if (selectedIds.length === 0) return;
-    restoreSelectedMutation.mutate(selectedIds);
+    restoreSelectedMutation.mutate(toRequestRefs(selectedIds));
   };
 
   const handleArchiveOne = (req) => {
