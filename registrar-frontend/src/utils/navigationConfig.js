@@ -13,6 +13,7 @@ import {
   ShieldCheckIcon,
   CalendarDaysIcon,
   ScaleIcon,
+  LifebuoyIcon,
 } from '@heroicons/react/24/outline';
 import { MODULE_KEYS } from './policy';
 
@@ -33,6 +34,7 @@ export const ROLE_CONFIG = {
         items: [
           { name: 'Document Lists', to: 'lists', icon: TableCellsIcon },
           { name: 'Undergrad Requests', to: 'request', icon: ClipboardDocumentCheckIcon },
+          { name: 'Ticketing System', to: 'tickets', icon: LifebuoyIcon },
           { name: 'FAQs & Support', to: 'faqs', icon: QuestionMarkCircleIcon },
         ],
       },
@@ -54,6 +56,7 @@ export const ROLE_CONFIG = {
         items: [
           { name: 'Document Lists', to: 'lists', icon: TableCellsIcon },
           { name: 'Student Requests', to: 'request', icon: ClipboardDocumentCheckIcon },
+          { name: 'Ticketing System', to: 'tickets', icon: LifebuoyIcon },
           { name: 'FAQs & Support', to: 'faqs', icon: QuestionMarkCircleIcon },
         ],
       },
@@ -75,6 +78,7 @@ export const ROLE_CONFIG = {
         items: [
           { name: 'Document Lists', to: 'lists', icon: TableCellsIcon },
           { name: 'Alumni Request', to: 'request', icon: AcademicCapIcon },
+          { name: 'Ticketing System', to: 'tickets', icon: LifebuoyIcon },
           { name: 'FAQs & Support', to: 'faqs', icon: QuestionMarkCircleIcon },
         ],
       },
@@ -173,6 +177,7 @@ export const ROLE_CONFIG = {
             ],
           },
           { name: 'Announcement management', to: 'settings', icon: Cog6ToothIcon },
+          { name: 'Ticketing management', to: 'tickets', icon: LifebuoyIcon },
           {
             name: 'Cashier reconciliation',
             to: 'cashier-reconciliation',
