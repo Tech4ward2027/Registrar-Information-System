@@ -146,10 +146,18 @@ Route::get('/undergrad-requestors/programs', [ProgramController::class, 'index']
 Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function () {
 
     // ── Alumni System (PUPTAPS) integration ─────────────────────────────────────
-    Route::prefix('alumni-system')->group(function () {
-        Route::get('/',      [AlumniSystemController::class, 'index']);
-        Route::get('/{id}',  [AlumniSystemController::class, 'show']);
-    });
+    // Staff only. These return alumni PII from the external system (name,
+    // birthday, email, phone), so they must never be open to every signed-in
+    // account — a student or alumni could otherwise browse the whole alumni
+    // directory. The frontend does not call them today. Same gate as the
+    // dashboard (an admin needs dashboard View access), plus a dedicated
+    // throttle because the list is searchable.
+    Route::prefix('alumni-system')
+        ->middleware(['role:3,4', 'module:dashboard,View', 'throttle:30,1,alumni-system'])
+        ->group(function () {
+            Route::get('/',      [AlumniSystemController::class, 'index']);
+            Route::get('/{id}',  [AlumniSystemController::class, 'show']);
+        });
 
     // Auth
     Route::get('/me',      [AuthController::class, 'me']);

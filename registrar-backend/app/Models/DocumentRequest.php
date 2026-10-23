@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
@@ -187,10 +188,44 @@ class DocumentRequest extends Model
         }
 
         if (config('public_ids.accept_legacy_numeric_request_ids', true) && ctype_digit($value)) {
+            static::logLegacyNumericUse();
+
             return 'request_id';
         }
 
         return null;
+    }
+
+    /**
+     * Record that a client addressed a request by its legacy integer id, so
+     * you can tell when it is safe to set PUBLIC_IDS_ACCEPT_LEGACY_NUMERIC=false:
+     * once `public_ids.legacy_numeric_id_used` stops appearing in the log, no
+     * client depends on it any more.
+     *
+     * Logged at most once per HTTP request (a bulk call can carry 200 ids) and
+     * never includes the id itself — only the route template, method, caller
+     * and user agent, which is what identifies the client still to be updated.
+     */
+    private static function logLegacyNumericUse(): void
+    {
+        if (!config('public_ids.log_legacy_numeric_use', true)) {
+            return;
+        }
+
+        $request = request();
+
+        if ($request->attributes->get('public_ids.legacy_logged')) {
+            return;
+        }
+
+        $request->attributes->set('public_ids.legacy_logged', true);
+
+        Log::info('public_ids.legacy_numeric_id_used', [
+            'method'  => $request->method(),
+            'route'   => $request->route()?->uri(),
+            'user_id' => $request->user()?->getAuthIdentifier(),
+            'client'  => substr((string) $request->userAgent(), 0, 120),
+        ]);
     }
 
     /** Normalise for lookup: public_id is stored lowercase (sqlite compares case-sensitively). */

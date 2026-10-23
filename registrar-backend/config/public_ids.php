@@ -29,6 +29,17 @@
  * false would break every existing client on deploy.
  */
 
+/*
+ * log_legacy_numeric_use
+ * ----------------------
+ * While the switch above is true, log one line (message
+ * `public_ids.legacy_numeric_id_used`) per HTTP request that still addresses
+ * a request by its integer id. Watch for it to stop appearing before setting
+ * PUBLIC_IDS_ACCEPT_LEGACY_NUMERIC=false. Turn off with
+ * PUBLIC_IDS_LOG_LEGACY=false once the switch has been flipped.
+ */
+
 return [
     'accept_legacy_numeric_request_ids' => (bool) env('PUBLIC_IDS_ACCEPT_LEGACY_NUMERIC', true),
+    'log_legacy_numeric_use'            => (bool) env('PUBLIC_IDS_LOG_LEGACY', true),
 ];
