@@ -251,6 +251,9 @@ export const mapDocumentRequest = (r, resolvedStatusIds, docTypeName) => {
 
   return {
     id: r.request_id,
+    // Identifier sent to the API (see utils/requestRef.js). `id` above stays the
+    // local React key; never send it to the server.
+    publicId: r.public_id ?? null,
     rawRequest: {
       ...r,
       status: {

@@ -4,6 +4,8 @@ import { CheckCircleIcon } from '@heroicons/react/24/solid';
 import { useNotificationsContext as useNotifications } from '../context/NotificationsContext';
 import { useTheme } from '../context/ThemeContext';
 import { useHeaderResponsiveState } from '../utils/helpers';
+import { usePushNotifications } from '../hooks/usePushNotifications';
+import { PushOptInCard, PushStatusRow } from './PushOptInCard';
 
 // CATEGORY_MAP lives in src/constants/notificationCategories.js
 // — edit it there; changes apply to both NotificationModal and NotificationToast.
@@ -92,6 +94,8 @@ const NotificationModal = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState('all');
   const { isDark } = useTheme();
   const { headerHeight, isMobile } = useHeaderResponsiveState(isOpen);
+  // Background (Web Push) opt-in. Deferred until the panel is first opened.
+  const push = usePushNotifications({ enabled: isOpen });
 
   const {
     notifications,
@@ -205,6 +209,9 @@ const NotificationModal = ({ isOpen, onClose }) => {
           </div>
         </div>
 
+        {/* Background-notification opt-in (renders nothing unless relevant) */}
+        <PushOptInCard push={push} />
+
         {/* List — scrollRef/sentinelRef power the IntersectionObserver
              that triggers loadMore() as the user reaches the bottom. */}
         <div
@@ -240,7 +247,9 @@ const NotificationModal = ({ isOpen, onClose }) => {
         </div>
 
         {/* Footer */}
-        <div className={`px-4 py-3 border-t flex justify-center sm:p-4 ${isDark ? 'bg-[#1a1b1e] border-[#3e4042]' : 'bg-[#510400] border-white/5'}`} />
+        <div className={`px-4 py-3 border-t flex justify-center sm:p-4 ${isDark ? 'bg-[#1a1b1e] border-[#3e4042]' : 'bg-[#510400] border-white/5'}`}>
+          <PushStatusRow push={push} />
+        </div>
       </div>
     </>
   );

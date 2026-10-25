@@ -21,6 +21,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\SsoCallbackController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\AiQueryController;
 use App\Http\Controllers\AnnouncementController;
@@ -145,10 +146,18 @@ Route::get('/undergrad-requestors/programs', [ProgramController::class, 'index']
 Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function () {
 
     // ── Alumni System (PUPTAPS) integration ─────────────────────────────────────
-    Route::prefix('alumni-system')->group(function () {
-        Route::get('/',      [AlumniSystemController::class, 'index']);
-        Route::get('/{id}',  [AlumniSystemController::class, 'show']);
-    });
+    // Staff only. These return alumni PII from the external system (name,
+    // birthday, email, phone), so they must never be open to every signed-in
+    // account — a student or alumni could otherwise browse the whole alumni
+    // directory. The frontend does not call them today. Same gate as the
+    // dashboard (an admin needs dashboard View access), plus a dedicated
+    // throttle because the list is searchable.
+    Route::prefix('alumni-system')
+        ->middleware(['role:3,4', 'module:dashboard,View', 'throttle:30,1,alumni-system'])
+        ->group(function () {
+            Route::get('/',      [AlumniSystemController::class, 'index']);
+            Route::get('/{id}',  [AlumniSystemController::class, 'show']);
+        });
 
     // Auth
     Route::get('/me',      [AuthController::class, 'me']);
@@ -180,6 +189,14 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::post('read-all',    [NotificationController::class, 'markAllAsRead']);
         Route::post('{id}/read',   [NotificationController::class, 'markAsRead']);
         Route::delete('{id}',      [NotificationController::class, 'destroy']);
+    });
+
+    // Web Push (background notifications) — all roles, own devices only.
+    // Throttled: a legitimate client calls these a handful of times per session.
+    Route::prefix('push')->middleware('throttle:30,1')->group(function () {
+        Route::get('public-key',                [PushSubscriptionController::class, 'publicKey']);
+        Route::post('subscriptions',            [PushSubscriptionController::class, 'store']);
+        Route::post('subscriptions/unsubscribe', [PushSubscriptionController::class, 'destroy']);
     });
 
     // Document requests
@@ -548,7 +565,8 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
     Route::get('document-types',             [DocumentTypeController::class, 'index']);
     Route::get('document-types/{id}',        [DocumentTypeController::class, 'show']);
     Route::get('certifications',             [CertificationTypeController::class, 'index']);
-    Route::get('certifications/layouts',     [CertificationTypeController::class, 'layouts']);
+    Route::get('certifications/layouts',     [CertificationTypeController::class, 'layouts'])
+        ->middleware('role:3,4');
     // Active template version of every certificate type (metadata only, no
     // bodies). Static path: must stay ahead of 'certifications/{id}'.
     Route::get('certifications/templates',   [CertificateTemplateController::class, 'summary'])

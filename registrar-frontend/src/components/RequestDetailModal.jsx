@@ -13,6 +13,7 @@ import InputGroup from './InputGroup';
 import ErrorToast from './ErrorToast';
 import SuccessToast from './SuccessToast';
 import { getProcessingClassification, getItemProgressPercentage, extractSeparatedItems } from '../utils/bulkRequestUtils';
+import { getRequestRef } from '../utils/requestRef';
 
 /**
  * Item-level "next action" for a single request_document/request_certificate
@@ -140,6 +141,8 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
   }, [request]);
 
   const activeRequest = liveRequest ?? request?.rawRequest ?? request;
+  // Identifier sent to the API (public_id). See utils/requestRef.js.
+  const requestRef = getRequestRef(activeRequest);
   const isUndergrad = activeRequest?.undergrad_requestor_profile != null || request?.userType === 'Undergrad' || activeRequest?.user?.role_id === 5;
   const isStudent = !isUndergrad && (activeRequest?.student_profile != null || request?.userType === 'Student');
   const isAlumni = !isUndergrad && !isStudent && (activeRequest?.alumni_profile != null || request?.userType === 'Alumni'); 
@@ -155,7 +158,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
   const refreshRequest = async () => {
     if (!activeRequest?.request_id) return;
     try {
-      const res = await getDocumentRequest(activeRequest.request_id);
+      const res = await getDocumentRequest(requestRef);
       setLiveRequest(res.data);
     } catch (err) {
       console.error("Failed to refresh request after item update:", err);
@@ -169,7 +172,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
     setItemError(null);
     setActionError(null);
     try {
-      await updateRequestDocumentStatus(activeRequest.request_id, item.request_document_id, targetStatusId);
+      await updateRequestDocumentStatus(requestRef, item.request_document_id, targetStatusId);
       await refreshRequest();
       setActionSuccess("Document status updated successfully.");
     } catch (err) {
@@ -186,7 +189,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
     setItemError(null);
     setActionError(null);
     try {
-      await updateRequestCertificateStatus(activeRequest.request_id, item.request_certificate_id, targetStatusId);
+      await updateRequestCertificateStatus(requestRef, item.request_certificate_id, targetStatusId);
       await refreshRequest();
       setActionSuccess("Certificate status updated successfully.");
     } catch (err) {
@@ -290,7 +293,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
     setActionLoading(true);
     setActionError(null);
     try {
-      const response = await withdrawDocumentRequest(activeRequest.request_id, {
+      const response = await withdrawDocumentRequest(requestRef, {
         withdrawal_reason: withdrawalReason,
         withdrawal_detail: withdrawalReason === 'other' ? withdrawalDetail.trim() : undefined,
         superseded_by_request_id: supersededByRequestId ? Number(supersededByRequestId) : undefined,
@@ -317,7 +320,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
     setActionLoading(true);
     setActionError(null);
     try {
-      const response = await issueDeficiencyNotice(activeRequest.request_id, {
+      const response = await issueDeficiencyNotice(requestRef, {
         item_key: deficiencyItem,
         detail: deficiencyItem === 'other' ? deficiencyDetail.trim() : undefined,
       });
@@ -374,7 +377,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
     setActionLoading(true);
     setActionError(null);
     try {
-      const response = await closeRequestUnableToProcess(activeRequest.request_id, {
+      const response = await closeRequestUnableToProcess(requestRef, {
         closure_reason: closureReason,
         closure_detail: closureReason === 'other' ? closureDetail.trim() : undefined,
         closure_proof_reference: closureProofReference.trim(),

@@ -28,6 +28,16 @@ use Illuminate\Support\Facades\Storage;
  */
 class CertificationTypeController extends Controller
 {
+    /** See DocumentTypeController::STAFF_ONLY_COLUMNS. */
+    private const STAFF_ONLY_COLUMNS = ['cashier_document_patterns', 'archived_by', 'archived_on'];
+
+    private function callerIsStaff(): bool
+    {
+        $user = Auth::user();
+
+        return $user !== null && $user->isStaff();
+    }
+
     public function __construct(
         private AuditLogger $auditLogger,
         private CertificationLayoutService $layoutService,
@@ -142,17 +152,31 @@ class CertificationTypeController extends Controller
             $query->where('is_archived', false);
         }
 
-        return response()->json($query->get(), 200);
+        $rows = $query->get();
+
+        if (!$this->callerIsStaff()) {
+            $rows->makeHidden(self::STAFF_ONLY_COLUMNS);
+        }
+
+        return response()->json($rows, 200);
     }
 
     public function show($id)
     {
         $cert = CertificationType::find($id);
-        if (!$cert) {
+
+        // Same rule as index(): archived types are not readable by id by non-staff.
+        if (!$cert || ($cert->is_archived && !$this->callerIsStaff())) {
             return response()->json(['message' => 'Certification type not found'], 404);
         }
 
-        return response()->json($this->freshRecord($id), 200);
+        $record = $this->freshRecord($id);
+
+        if (!$this->callerIsStaff()) {
+            $record->makeHidden(self::STAFF_ONLY_COLUMNS);
+        }
+
+        return response()->json($record, 200);
     }
 
     public function store(StoreCertificationTypeRequest $request)

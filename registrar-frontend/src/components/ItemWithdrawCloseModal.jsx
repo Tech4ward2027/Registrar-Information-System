@@ -23,7 +23,9 @@ const CLOSE_REASONS = [
  * ItemWithdrawCloseModal — Per-Document Withdraw and Close modal for Phase 4.
  * Integrates project-standard DropdownGroup and InputGroup UI components.
  */
-const ItemWithdrawCloseModal = ({ open, mode, reqId, subItem, onClose, onSuccess }) => {
+// reqId  — numeric request number, display only ("Request #12").
+// reqRef — identifier sent to the API (public_id); see utils/requestRef.js.
+const ItemWithdrawCloseModal = ({ open, mode, reqId, reqRef, subItem, onClose, onSuccess }) => {
   const { isDark } = useTheme();
 
   const isWithdraw = mode === 'withdraw';
@@ -79,7 +81,7 @@ const ItemWithdrawCloseModal = ({ open, mode, reqId, subItem, onClose, onSuccess
         };
 
         const itemType = subItem.type === 'cert' || subItem.type === 'certificate' ? 'certificate' : 'document';
-        const res = await withdrawRequestItem(reqId, itemType, realItemId, payload);
+        const res = await withdrawRequestItem(reqRef ?? reqId, itemType, realItemId, payload);
         onSuccess?.(res?.data ?? res, 'Item withdrawn successfully.');
       } else {
         if (isOther && !detail.trim()) {
@@ -101,7 +103,7 @@ const ItemWithdrawCloseModal = ({ open, mode, reqId, subItem, onClose, onSuccess
         };
 
         const itemType = subItem.type === 'cert' || subItem.type === 'certificate' ? 'certificate' : 'document';
-        const res = await closeRequestItem(reqId, itemType, realItemId, payload);
+        const res = await closeRequestItem(reqRef ?? reqId, itemType, realItemId, payload);
         onSuccess?.(res?.data ?? res, 'Item closed as unable to process.');
       }
       onClose();

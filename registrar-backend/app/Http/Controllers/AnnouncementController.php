@@ -27,14 +27,30 @@ class AnnouncementController extends Controller
         private AuditLogger $auditLogger,
     ) {}
 
+    /**
+     * These two routes are public (no auth middleware) so the landing page can
+     * show announcements, but disabled and archived ones are management data.
+     * The Sanctum user is still resolvable here (AuthenticateFromCookie runs on
+     * every API route), so staff keep seeing everything.
+     */
+    private function canSeeUnpublished(Request $request): bool
+    {
+        $user = $request->user('sanctum');
+
+        return $user !== null && $user->isStaff();
+    }
+
     public function index(Request $request)
     {
-        $perPage = $request->input('per_page', 4);
+        $perPage    = $request->input('per_page', 4);
+        $canSeeAll  = $this->canSeeUnpublished($request);
 
         // Archived tab: bypass the default ExcludeArchivedScope entirely and
         // return ONLY archived announcements, mirroring how
         // DocumentRequestController::index() handles ?view=archived.
         if ($request->query('view') === 'archived') {
+            abort_unless($canSeeAll, 403, 'Forbidden.');
+
             return response()->json(
                 Announcement::withArchived()
                     ->where('is_archived', true)
@@ -44,7 +60,9 @@ class AnnouncementController extends Controller
         }
 
         return response()->json(
-            Announcement::latest()->paginate($perPage)
+            Announcement::latest()
+                ->when(!$canSeeAll, fn ($query) => $query->where('enabled', true))
+                ->paginate($perPage)
         );
     }
 
@@ -55,8 +73,10 @@ class AnnouncementController extends Controller
         return response()->json($announcement, 201);
     }
 
-    public function show(Announcement $announcement)
+    public function show(Request $request, Announcement $announcement)
     {
+        abort_unless($announcement->enabled || $this->canSeeUnpublished($request), 404);
+
         return response()->json($announcement);
     }
 

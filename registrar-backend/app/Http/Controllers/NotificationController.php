@@ -30,6 +30,7 @@ class NotificationController extends Controller
         $user = $request->user();
 
         $query = Notification::with('type')
+            ->withRequestPublicId()
             ->where('notifiable_type', SystemUser::class)
             ->where('notifiable_id', $user->user_id)
             // SoftDeletes automatically appends WHERE deleted_at IS NULL —
@@ -64,6 +65,7 @@ class NotificationController extends Controller
         $user = $request->user();
 
         $notification = Notification::with('type')
+            ->withRequestPublicId()
             ->where('id', $id)
             ->where('notifiable_type', SystemUser::class)
             ->where('notifiable_id', $user->user_id)

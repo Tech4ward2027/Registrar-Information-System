@@ -22,6 +22,7 @@ use App\Http\Requests\DocumentRequest\VerifyOfficialReceiptRequest;
 use App\Http\Requests\DocumentRequest\WithdrawDocumentRequestRequest;
 use App\Http\Requests\RequestItem\UpdateRequestCertificateStatusRequest;
 use App\Http\Requests\RequestItem\UpdateRequestDocumentStatusRequest;
+use App\Http\Resources\DocumentRequestDetailResource;
 use App\Http\Resources\DocumentRequestListResource;
 use App\Services\DocumentRequestService;
 use App\Services\LogbookQueryService;
@@ -55,6 +56,18 @@ use Throwable;
  */
 class DocumentRequestController extends Controller
 {
+    /**
+     * Single-request response. Goes through DocumentRequestDetailResource so
+     * embedded accounts and the superseding request are reduced to a safe
+     * shape instead of serialising the raw model.
+     */
+    private function detailResponse(DocumentRequest $documentRequest, int $status = 200): JsonResponse
+    {
+        return (new DocumentRequestDetailResource($documentRequest))
+            ->response()
+            ->setStatusCode($status);
+    }
+
     private const RELATIONS = [
         'user',
         'studentProfile',
@@ -165,11 +178,16 @@ class DocumentRequestController extends Controller
         if (!$user->isStaff()) {
             // Their volume is low enough that a full ->get() is safe, and
             // this is the requester's own data, so the full relations apply.
+            // Through the detail resource, not the raw models: each row used to
+            // carry staff account records and a superseding request's claim
+            // credential. user_id stays (StudentDashboard filters on it).
             return response()->json([
                 'data' => DocumentRequest::with(self::RELATIONS)
                     ->where('user_id', $user->user_id)
                     ->orderByDesc('requested_at')
-                    ->get(),
+                    ->get()
+                    ->map(fn (DocumentRequest $row) => (new DocumentRequestDetailResource($row))->resolve())
+                    ->all(),
             ], 200);
         }
 
@@ -314,9 +332,9 @@ class DocumentRequestController extends Controller
     // (read-only) from the Archived Records tab.
     public function show($id)
     {
-        $documentRequest = DocumentRequest::withArchived()->findOrFail($id);
+        $documentRequest = DocumentRequest::findByPublicIdOrFail($id, withArchived: true);
         $this->authorize('view', $documentRequest);
-        return response()->json($documentRequest->load(self::RELATIONS), 200);
+        return $this->detailResponse($documentRequest->load(self::RELATIONS), 200);
     }
 
     // -------------------------------------------------------------------------
@@ -426,7 +444,7 @@ class DocumentRequestController extends Controller
             $this->consumeOverride($request, $consumedOverride, $documentRequest, Auth::user());
         }
 
-        return response()->json($documentRequest->load(self::RELATIONS), 201);
+        return $this->detailResponse($documentRequest->load(self::RELATIONS), 201);
     }
 
     // -------------------------------------------------------------------------
@@ -739,7 +757,7 @@ class DocumentRequestController extends Controller
 
         $documentRequest = $this->requestService->updateRequest($documentRequest, $validated);
 
-        return response()->json($documentRequest->load(self::RELATIONS), 200);
+        return $this->detailResponse($documentRequest->load(self::RELATIONS), 200);
     }
 
     // -------------------------------------------------------------------------
@@ -797,7 +815,7 @@ class DocumentRequestController extends Controller
             ]);
         }
 
-        return response()->json($documentRequest->load(self::RELATIONS), 200);
+        return $this->detailResponse($documentRequest->load(self::RELATIONS), 200);
     }
 
     // -------------------------------------------------------------------------
@@ -836,7 +854,7 @@ class DocumentRequestController extends Controller
             ]);
         }
 
-        return response()->json($documentRequest->load(self::RELATIONS), 200);
+        return $this->detailResponse($documentRequest->load(self::RELATIONS), 200);
     }
 
     // -------------------------------------------------------------------------
@@ -939,7 +957,7 @@ class DocumentRequestController extends Controller
     {
         $documentRequest = $this->requestService->claimRequest($request->validated());
 
-        return response()->json($documentRequest->load(self::RELATIONS), 200);
+        return $this->detailResponse($documentRequest->load(self::RELATIONS), 200);
     }
 
     // -------------------------------------------------------------------------
@@ -1017,7 +1035,7 @@ class DocumentRequestController extends Controller
     // PATCH /document-requests/{id}/archive
     public function archive($id)
     {
-        $documentRequest = DocumentRequest::withArchived()->findOrFail($id);
+        $documentRequest = DocumentRequest::findByPublicIdOrFail($id, withArchived: true);
         $this->authorize('archive', $documentRequest);
 
         /** @var SystemUser $actor */
@@ -1028,7 +1046,7 @@ class DocumentRequestController extends Controller
             'request_id' => $documentRequest->request_id,
         ]);
 
-        return response()->json(
+        return $this->detailResponse(
             DocumentRequest::withArchived()->with(self::RELATIONS)->find($documentRequest->request_id),
             200
         );
@@ -1037,7 +1055,7 @@ class DocumentRequestController extends Controller
     // PATCH /document-requests/{id}/restore
     public function restore($id)
     {
-        $documentRequest = DocumentRequest::withArchived()->findOrFail($id);
+        $documentRequest = DocumentRequest::findByPublicIdOrFail($id, withArchived: true);
         $this->authorize('restore', $documentRequest);
 
         /** @var SystemUser $actor */
@@ -1048,7 +1066,7 @@ class DocumentRequestController extends Controller
             'request_id' => $documentRequest->request_id,
         ]);
 
-        return response()->json(
+        return $this->detailResponse(
             DocumentRequest::withArchived()->with(self::RELATIONS)->find($documentRequest->request_id),
             200
         );
@@ -1061,7 +1079,7 @@ class DocumentRequestController extends Controller
         $actor = Auth::user();
         $validated = $request->validated();
 
-        $result = $this->requestService->archiveRequests($validated['request_ids'], $actor);
+        $result = $this->requestService->archiveRequests($request->requestIds(), $actor);
 
         foreach ($result['archived'] as $requestId) {
             $this->auditLogger->log($request, $actor, AuditLog::ACTION_REQUEST_ARCHIVED, [
@@ -1080,7 +1098,7 @@ class DocumentRequestController extends Controller
         $actor = Auth::user();
         $validated = $request->validated();
 
-        $result = $this->requestService->restoreRequests($validated['request_ids'], $actor);
+        $result = $this->requestService->restoreRequests($request->requestIds(), $actor);
 
         foreach ($result['restored'] as $requestId) {
             $this->auditLogger->log($request, $actor, AuditLog::ACTION_REQUEST_RESTORED, [
@@ -1118,7 +1136,7 @@ class DocumentRequestController extends Controller
         $validated = $request->validated();
 
         $result = $this->itemStatusService->bulkAdvanceItems(
-            $validated['request_ids'],
+            $request->requestIds(),
             RequestStatusEnum::ReadyToClaim,
         );
 
@@ -1155,7 +1173,7 @@ class DocumentRequestController extends Controller
         $validated = $request->validated();
 
         $result = $this->itemStatusService->bulkAdvanceItems(
-            $validated['request_ids'],
+            $request->requestIds(),
             RequestStatusEnum::Completed,
         );
 

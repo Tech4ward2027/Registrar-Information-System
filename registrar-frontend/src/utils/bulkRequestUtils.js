@@ -9,6 +9,7 @@
  */
 
 import { PROGRESS_MAP } from './constants';
+import { getRequestRef } from './requestRef';
 
 /**
  * Classifies a document or certificate based on its processing period.
@@ -236,6 +237,7 @@ export const groupRequestsForDashboard = (requests) => {
       group.items.push({
         ...item,
         parentRequestId: req.id || req.request_id,
+        parentRequestRef: getRequestRef(req),
         parentRequest: req,
       });
     });

@@ -3,10 +3,12 @@
 namespace App\Services;
 
 use App\Events\NotificationSent;
+use App\Models\DocumentRequest;
 use App\Models\Notification;
 use App\Models\NotificationType;
 use App\Models\SystemUser;
 use App\Jobs\SendBulkNotificationJob;
+use App\Jobs\SendWebPushJob;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use App\Contracts\NotificationServiceInterface;
@@ -90,6 +92,12 @@ class NotificationService implements NotificationServiceInterface
             $typeTitle        = $type->title;
             $typeTriggerEvent = $type->trigger_event;
 
+            // public_id for the broadcast payload, looked up now for the same
+            // reason. Archived requests included. One indexed primary-key read.
+            $requestPublicId = $requestId !== null
+                ? DocumentRequest::withArchived()->whereKey($requestId)->value('public_id')
+                : null;
+
             // Step 3 + 4: Save to DB and broadcast — atomically
             $notification = null;
             // &$notification — pass by reference so the Notification created
@@ -97,7 +105,7 @@ class NotificationService implements NotificationServiceInterface
             // transaction commits. Without &, PHP captures a copy and the
             // outer variable stays null (PHP closures are pass-by-value by default).
             DB::transaction(function () use (&$notification,
-                $recipient, $type, $typeTitle, $typeTriggerEvent, $message, $data, $requestId
+                $recipient, $type, $typeTitle, $typeTriggerEvent, $message, $data, $requestId, $requestPublicId
             ) {
                 $notification = Notification::create([
                     'notification_type_id' => $type->notification_type_id,
@@ -112,10 +120,15 @@ class NotificationService implements NotificationServiceInterface
                 // We pass typeTitle + typeTriggerEvent as plain strings so
                 // broadcastWith() never touches the relation (which would be
                 // stripped by SerializesModels before the job runs).
-                broadcast(new NotificationSent($notification, $recipient, $typeTitle, $typeTriggerEvent));
+                broadcast(new NotificationSent($notification, $recipient, $typeTitle, $typeTriggerEvent, $requestPublicId));
 
                 return $notification;
             });
+
+            // Step 5: Background (Web Push) delivery for urgent types only.
+            // Done after the transaction and isolated in its own try/catch so
+            // a queue hiccup can never turn a saved notification into a null.
+            $this->queueWebPush($notification, $type);
 
             // Return the notification created inside the transaction.
             // The closure's own "return $notification" returns to DB::transaction(),
@@ -131,6 +144,29 @@ class NotificationService implements NotificationServiceInterface
                 'error'         => $e->getMessage(),
             ]);
             return null;
+        }
+    }
+
+    // -------------------------------------------------------
+    // QUEUE WEB PUSH (background notification)
+    // -------------------------------------------------------
+    // Only types flagged send_push (urgent ones) are pushed to the lock
+    // screen. `getAttributes()` rather than `$type->send_push` because the
+    // type may come from a cache entry written before the column existed.
+    // -------------------------------------------------------
+    private function queueWebPush(Notification $notification, NotificationType $type): void
+    {
+        if (! config('webpush.enabled') || empty($type->getAttributes()['send_push'])) {
+            return;
+        }
+
+        try {
+            SendWebPushJob::dispatch($notification->id);
+        } catch (\Throwable $e) {
+            Log::warning('NotificationService: could not queue web push', [
+                'notification_id' => $notification->id,
+                'error'           => $e->getMessage(),
+            ]);
         }
     }
 

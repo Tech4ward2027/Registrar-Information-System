@@ -13,6 +13,7 @@ import {
 import { useAlertToast } from '../context/AlertToastContext';
 import DropdownGroup from './DropDown';
 import InputGroup from './InputGroup';
+import { getRequestRef } from '../utils/requestRef';
 
 const DEFICIENCY_ITEMS = [
   { key: 'missing_signature', label: 'Missing Signature / Thumbmark' },
@@ -53,13 +54,18 @@ const RequestActionModal = ({ isOpen, onClose, modalType, req, subItem, isDark, 
   const [voidReason, setVoidReason] = useState('');
   const [showVoidSection, setShowVoidSection] = useState(false);
 
-  const requestId = subItem?.parentRequestId || subItem?.parentRequest?.id || req?.rawRequest?.request_id || req?.id;
+  // Identifier sent to the API (public_id), never the numeric request_id.
+  // See utils/requestRef.js. Falls back through the shapes this modal is
+  // opened with: a per-item row (subItem) or a whole request (req).
+  const requestRef = subItem?.parentRequestRef
+    ?? getRequestRef(subItem?.parentRequest)
+    ?? getRequestRef(req);
 
   // Fetch full request details when modal opens to ensure open notices are loaded
   useEffect(() => {
-    if (!isOpen || !requestId || modalType !== 'deficiency') return;
+    if (!isOpen || !requestRef || modalType !== 'deficiency') return;
     let mounted = true;
-    getDocumentRequest(requestId)
+    getDocumentRequest(requestRef)
       .then((res) => {
         if (mounted && res?.data) {
           setFetchedRequest(res.data);
@@ -67,7 +73,7 @@ const RequestActionModal = ({ isOpen, onClose, modalType, req, subItem, isDark, 
       })
       .catch(() => {});
     return () => { mounted = false; };
-  }, [isOpen, requestId, modalType]);
+  }, [isOpen, requestRef, modalType]);
 
   if (!isOpen || !req) return null;
 
@@ -138,12 +144,12 @@ const RequestActionModal = ({ isOpen, onClose, modalType, req, subItem, isDark, 
           : null;
 
         if (subItem && realItemId && !String(realItemId).startsWith('fallback')) {
-          await issueItemDeficiencyNotice(requestId, subItem.type, realItemId, {
+          await issueItemDeficiencyNotice(requestRef, subItem.type, realItemId, {
             item_key: itemKey,
             ...(itemKey === 'other' ? { detail: deficiencyDetail.trim() } : {}),
           });
         } else {
-          await issueDeficiencyNotice(requestId, {
+          await issueDeficiencyNotice(requestRef, {
             item_key: itemKey,
             ...(itemKey === 'other' ? { detail: deficiencyDetail.trim() } : {}),
           });
@@ -152,7 +158,7 @@ const RequestActionModal = ({ isOpen, onClose, modalType, req, subItem, isDark, 
       } else if (modalType === 'withdraw') {
         const itemObj = WITHDRAWAL_REASONS.find((i) => i.label === withdrawalLabel);
         const reasonKey = itemObj?.key || 'other';
-        await withdrawDocumentRequest(requestId, {
+        await withdrawDocumentRequest(requestRef, {
           withdrawal_reason: reasonKey,
           ...(reasonKey === 'other' ? { withdrawal_detail: withdrawalDetail.trim() } : {}),
           ...(supersededByRequestId ? { superseded_by_request_id: Number(supersededByRequestId) } : {}),
@@ -161,7 +167,7 @@ const RequestActionModal = ({ isOpen, onClose, modalType, req, subItem, isDark, 
       } else if (modalType === 'close') {
         const itemObj = CLOSURE_REASONS.find((i) => i.label === closureLabel);
         const reasonKey = itemObj?.key || 'other';
-        await closeRequestUnableToProcess(requestId, {
+        await closeRequestUnableToProcess(requestRef, {
           closure_reason: reasonKey,
           closure_proof_reference: 'N/A',
           ...(reasonKey === 'other' ? { closure_detail: closureDetail.trim() } : {}),

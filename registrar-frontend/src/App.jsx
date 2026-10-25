@@ -17,6 +17,7 @@ import { AlertToastProvider } from './context/AlertToastContext.jsx';
 import { NotificationsProvider } from './context/NotificationsContext.jsx';
 import { ReferenceDataProvider } from './context/ReferenceDataContext.jsx';
 import FloatingActionMenu from './components/FloatingActionMenu.jsx';
+import PushNotificationBridge from './components/PushNotificationBridge.jsx';
 import { ScrollToTop } from './hooks/useScrollToTop';
 
 // Synchronous Role Shells & Main (for instant layout, header, sidebar & route evaluation)
@@ -89,6 +90,7 @@ const App = () => {
       <AlertToastProvider>
         <ReferenceDataProvider>
           <NotificationsProvider>
+            <PushNotificationBridge />
             <div className="flex flex-col min-h-screen">
               <ScrollToTop />
               {/* BUG FIX (QA #6) — resetKey={location.pathname} means that if

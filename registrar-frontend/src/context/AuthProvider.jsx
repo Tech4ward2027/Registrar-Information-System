@@ -10,6 +10,7 @@ import {
   fetchMyRoleAssignments,
 } from "../services/authService";
 import { resetEcho } from "../services/echo";
+import { disablePushOnLogout } from "../services/pushNotifications";
 import ErrorToast from "../components/ErrorToast";
 
 const AuthContext = createContext();
@@ -199,6 +200,10 @@ export const AuthProvider = ({ children }) => {
     setIdpOffline(false);
     localStorage.removeItem("hasAgreed");
     resetEcho();
+    // Stop background notifications for this account on this browser BEFORE
+    // the session cookie is cleared (the API call needs it). Never throws and
+    // is time-bounded, so it can't block logout.
+    await disablePushOnLogout();
     setUser(null);
     setRoleAssignments([]);
     try {

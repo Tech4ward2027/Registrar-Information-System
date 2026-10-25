@@ -26,6 +26,9 @@ class NotificationResource extends JsonResource
             'message'      => $this->data['message'] ?? '',
             'type'         => $this->type->trigger_event,
             'request_id'   => $this->request_id,
+            // Identifier the frontend uses to open the request (public_id).
+            // Eager-load with Notification::withRequestPublicId() to avoid an N+1.
+            'request_public_id' => $this->request?->public_id,
             'read_at'      => $this->read_at?->toISOString(),
             'created_at'   => $this->created_at->toISOString(),
             'is_unread'    => is_null($this->read_at),

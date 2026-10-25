@@ -4,6 +4,7 @@ import { CERT_CONFIG } from '../utils/Certification.jsx';
 import LoadingOverlay from './LoadingOverlay.jsx';
 import ConfirmationModal from './ConfirmationModal.jsx';
 import { createPortal } from 'react-dom';
+import { getRequestRef } from '../utils/requestRef';
 
 const CertificateModal = ({ request, onClose, onCertificatePrinted }) => {
   const normalizeCertName = (value) =>
@@ -104,7 +105,8 @@ const CertificateModal = ({ request, onClose, onCertificatePrinted }) => {
   if (!visible) return null;
 
   const initialData = {
-    requestId: request.id,
+    requestId: request.id,            // local/numeric key
+    requestRef: getRequestRef(request), // public_id sent to the API
     docType: selectedCert,
     certificateNames: hasMatchingCert ? certNames : [],
     fullName: request.studentName ?? '',

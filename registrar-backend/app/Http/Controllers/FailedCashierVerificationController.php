@@ -74,6 +74,7 @@ class FailedCashierVerificationController extends Controller
             'days'      => 'nullable|integer|min:1|max:' . self::MAX_DAYS,
             'or_number' => 'nullable|string|max:50',
             'email'     => 'nullable|string|min:3|max:100',
+            'user_id'   => 'nullable|integer|min:1',
             'code'      => ['nullable', 'string', 'max:50', 'regex:/^[A-Z0-9_]+$/'],
             'reason'    => 'nullable|in:NOT_FOUND,API_ERROR',
             'per_page'  => 'nullable|integer|min:1|max:' . self::MAX_PER_PAGE,
@@ -89,6 +90,9 @@ class FailedCashierVerificationController extends Controller
         }
         if (!empty($v['email'])) {
             $query->where('email', 'like', $this->escapeLike(trim($v['email'])) . '%');
+        }
+        if (!empty($v['user_id'])) {
+            $query->where('user_id', (int) $v['user_id']);
         }
         if (!empty($v['reason'])) {
             $query->where('metadata->failure_reason', $v['reason']);

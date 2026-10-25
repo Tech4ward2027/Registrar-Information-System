@@ -28,6 +28,9 @@ use Illuminate\Support\Arr;
  *     account type, so the frontend no longer has to know every profile
  *     shape (that gap is why Undergrad Requestors showed as "N/A").
  *
+ * 3. Embedded accounts and superseding_request are sanitised by
+ *    DocumentRequestDetailResource::sanitize() (see that class).
+ *
  * Everything else is the model's normal toArray() output, so existing
  * frontend field reads (status, documents, certificates, release_groups,
  * open_deficiency_notice, ...) keep working unchanged. Additive keys only.
@@ -66,12 +69,19 @@ class DocumentRequestListResource extends JsonResource
 
         $profile = $this->resolveProfile();
 
-        return array_merge($data, [
+        $row = array_merge($data, [
             'requester_type' => $this->requesterType(),
             'display_name'   => $profile ? $this->fullName($profile) : null,
             'student_number' => $this->studentNumber($profile),
             'gender'         => $this->undergradGender($profile),
         ], $this->progress());
+
+        // Embedded accounts are reduced to a safe shape and the superseding
+        // request to a pointer — the same rule as the single-request payload,
+        // applied here so a list row cannot carry what show() no longer does.
+        $viewer = $request->user();
+
+        return DocumentRequestDetailResource::sanitize($row, $viewer !== null && $viewer->isStaff());
     }
 
     /**
@@ -88,6 +98,7 @@ class DocumentRequestListResource extends JsonResource
 
         return array_merge([
             'request_id'     => $r->request_id,
+            'public_id'      => $r->public_id,
             'uuid'           => $r->uuid,
             'requested_at'   => $r->requested_at,
             'status_id'      => $r->status_id,

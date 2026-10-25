@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
@@ -96,8 +97,9 @@ class DocumentRequest extends Model
 
     /**
      * Auto-generate a UUID for every new request.
-     * The uuid is exposed in the UI instead of the integer PK
-     * to avoid leaking record counts and enabling enumeration.
+     * The public_id (ULID) is what URLs and API calls use instead of the
+     * integer PK, to avoid leaking record counts and enabling enumeration.
+     * The uuid stays the claim credential (QR) and is never used for routing.
      *
      * Also generates claim_code — the short human-typeable fallback used
      * when a student has no phone or the QR scan fails (see QR Code
@@ -128,6 +130,14 @@ class DocumentRequest extends Model
                 $request->uuid = (string) Str::uuid();
             }
 
+            // public_id is the identifier used in URLs and API calls. It is
+            // deliberately NOT the uuid: the uuid is the claim credential
+            // (embedded in the claim QR) and must not travel in URLs, logs or
+            // browser history. Lowercase ULID: 128 bits, time-ordered, URL-safe.
+            if (empty($request->public_id)) {
+                $request->public_id = strtolower((string) Str::ulid());
+            }
+
             if (empty($request->claim_code)) {
                 $request->claim_code = static::generateUniqueClaimCode();
             }
@@ -140,6 +150,122 @@ class DocumentRequest extends Model
         });
 
         static::addGlobalScope(new ExcludeArchivedScope());
+    }
+
+    // -------------------------------------------------------------------------
+    // Public identifier resolution
+    //
+    // The integer request_id is an internal key. Outside callers address a
+    // request by its `public_id` (a ULID): non-sequential, so it leaks neither
+    // volume nor neighbouring ids. This is defence in depth only — every
+    // endpoint must still authorize the caller against the record it finds.
+    //
+    // The `uuid` is NOT accepted here. It is the claim credential and is only
+    // ever used by the claim endpoints.
+    //
+    // MIGRATION (expand / contract): while config('public_ids.accept_legacy_
+    // numeric_request_ids') is true, an all-digit value is still accepted as
+    // the legacy request_id so existing clients keep working. Once every
+    // client sends the public_id, set PUBLIC_IDS_ACCEPT_LEGACY_NUMERIC=false
+    // and numeric ids start answering 404. A value that is neither a ULID nor
+    // an accepted legacy id never reaches the database.
+    // -------------------------------------------------------------------------
+
+    /**
+     * Which column a route/public identifier addresses, or null if the value
+     * is not an acceptable identifier at all.
+     */
+    public static function publicKeyColumnFor(mixed $value): ?string
+    {
+        if (!is_string($value) && !is_int($value)) {
+            return null;
+        }
+
+        $value = (string) $value;
+
+        if (Str::isUlid($value)) {
+            return 'public_id';
+        }
+
+        if (config('public_ids.accept_legacy_numeric_request_ids', true) && ctype_digit($value)) {
+            static::logLegacyNumericUse();
+
+            return 'request_id';
+        }
+
+        return null;
+    }
+
+    /**
+     * Record that a client addressed a request by its legacy integer id, so
+     * you can tell when it is safe to set PUBLIC_IDS_ACCEPT_LEGACY_NUMERIC=false:
+     * once `public_ids.legacy_numeric_id_used` stops appearing in the log, no
+     * client depends on it any more.
+     *
+     * Logged at most once per HTTP request (a bulk call can carry 200 ids) and
+     * never includes the id itself — only the route template, method, caller
+     * and user agent, which is what identifies the client still to be updated.
+     */
+    private static function logLegacyNumericUse(): void
+    {
+        if (!config('public_ids.log_legacy_numeric_use', true)) {
+            return;
+        }
+
+        $request = request();
+
+        if ($request->attributes->get('public_ids.legacy_logged')) {
+            return;
+        }
+
+        $request->attributes->set('public_ids.legacy_logged', true);
+
+        Log::info('public_ids.legacy_numeric_id_used', [
+            'method'  => $request->method(),
+            'route'   => $request->route()?->uri(),
+            'user_id' => $request->user()?->getAuthIdentifier(),
+            'client'  => substr((string) $request->userAgent(), 0, 120),
+        ]);
+    }
+
+    /** Normalise for lookup: public_id is stored lowercase (sqlite compares case-sensitively). */
+    private static function normaliseLookupValue(string $column, string|int $value): string
+    {
+        return $column === 'public_id' ? strtolower((string) $value) : (string) $value;
+    }
+
+    /**
+     * Implicit route-model binding ({documentRequest}). Goes through a normal
+     * query, so ExcludeArchivedScope keeps applying exactly as before.
+     */
+    public function resolveRouteBinding($value, $field = null)
+    {
+        if ($field !== null) {
+            return parent::resolveRouteBinding($value, $field);
+        }
+
+        $column = static::publicKeyColumnFor($value);
+
+        return $column === null
+            ? null
+            : $this->where($column, static::normaliseLookupValue($column, $value))->first();
+    }
+
+    /**
+     * Manual lookup for the controller methods that cannot use implicit
+     * binding (archived rows must stay reachable). Throws ModelNotFound -> 404.
+     */
+    public static function findByPublicIdOrFail(string|int $value, bool $withArchived = false): self
+    {
+        $column = static::publicKeyColumnFor($value);
+
+        if ($column === null) {
+            throw (new \Illuminate\Database\Eloquent\ModelNotFoundException())->setModel(static::class, [$value]);
+        }
+
+        $query = $withArchived ? static::withArchived() : static::query();
+
+        return $query->where($column, static::normaliseLookupValue($column, $value))->firstOrFail();
     }
 
     /**
