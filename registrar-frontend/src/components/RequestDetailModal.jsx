@@ -572,6 +572,64 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
             </div>
           </Section>
 
+          {/* Certificate Generation & Issuance History */}
+          {requestCerts.length > 0 && (
+            <Section title="Certificate Generation & Issuance History" isDark={isDark}>
+              <div className="space-y-3">
+                {requestCerts.map((cert, index) => {
+                  const certTitle = cert.certification_type?.certificate_name || certName(cert.certificate_type_id) || `Certificate #${cert.certificate_type_id}`;
+                  const isGenerated = Boolean(cert.generated_at);
+                  const generatedDate = isGenerated
+                    ? new Date(cert.generated_at).toLocaleString('en-US', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })
+                    : null;
+
+                  return (
+                    <div
+                      key={cert.request_certificate_id || index}
+                      className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isDark ? 'bg-[#1f1f1f] border-[#3e4042]' : 'bg-gray-50 border-gray-200'
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`font-bold text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                            {certTitle}
+                          </span>
+                          <span
+                            className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                              isGenerated
+                                ? isDark
+                                  ? 'bg-emerald-900/40 text-emerald-300 border border-emerald-800'
+                                  : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : isDark
+                                  ? 'bg-amber-900/40 text-amber-300 border border-amber-800'
+                                  : 'bg-amber-100 text-amber-800 border border-amber-300'
+                            }`}
+                          >
+                            {isGenerated ? 'Generated' : 'Pending Generation'}
+                          </span>
+                        </div>
+                        <p className={`text-xs ${isDark ? 'text-[#b0b3b8]' : 'text-gray-600'}`}>
+                          <strong>Issuance Log:</strong>{' '}
+                          {isGenerated ? `Generated on ${generatedDate}` : 'No issuance record found yet'}
+                        </p>
+                      </div>
+
+                      <div className="shrink-0 text-left sm:text-right">
+                        <p className={`text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                          Copies: {cert.number_of_copies || 1}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+          )}
+
           {/* Payment Details */}
           <Section title="Payment Details" isDark={isDark}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
