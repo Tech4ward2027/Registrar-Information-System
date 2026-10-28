@@ -34,6 +34,7 @@ final class FeatureFlags
         'analytics_ai_legacy',
         'system_health',
         'ai_label_suggestions',
+        'tickets',
     ];
 
     /**

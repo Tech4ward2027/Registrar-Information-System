@@ -27,6 +27,7 @@ class PolicyResource extends JsonResource
         'free_requests'     => 'Free Requests',
         'undergrad_verification' => 'Undergrad Requestors',
         'cashier_reconciliation' => 'Cashier Reconciliation',
+        'tickets'                => 'Support Tickets',
     ];
 
     public function toArray($request): array

@@ -110,6 +110,12 @@
         <server name="FEATURE_AI_LABEL_SUGGESTIONS" value="0" force="true"/>
         <server name="FEATURE_SYSTEM_HEALTH" value="0" force="true"/>
         <server name="FEATURE_ANALYTICS_AI_LEGACY" value="0" force="true"/>
+        <!-- Support Ticketing: forced OFF for the same host-.env leak reason
+             as the flags above (both <env> and <server>, value "0"). Ticket
+             tests turn it on locally with config(['features.tickets' => true])
+             and the 404-when-off tests rely on this being the default. -->
+        <env name="FEATURE_TICKETS" value="0" force="true"/>
+        <server name="FEATURE_TICKETS" value="0" force="true"/>
         <!-- Test database: forced to in-memory SQLite. Without force="true"
              (and the <server> twins), docker-compose.local.yml's
              `environment: DB_CONNECTION: mysql` wins, because PHPUnit never

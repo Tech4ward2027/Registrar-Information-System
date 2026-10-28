@@ -81,4 +81,23 @@ return [
     'system_health'        => (bool) env('FEATURE_SYSTEM_HEALTH', false),
     'analytics_ai_legacy'  => (bool) env('FEATURE_ANALYTICS_AI_LEGACY', false),
 
+    /*
+    |--------------------------------------------------------------------
+    | Support Ticketing (Chat Support & Ticketing System)
+    |--------------------------------------------------------------------
+    |
+    | Gates every ticketing route (student, staff and public) at the route
+    | layer with 'feature:tickets'. Off => 404, regardless of policy grants,
+    | so the whole module can be dark-launched, piloted per environment and
+    | killed instantly during an incident. Independent of, and in addition
+    | to, the per-account 'module:tickets,<Action>' gate on staff routes.
+    |
+    | Same fail-closed rule as every flag above: defaults to false, and is
+    | enabled per environment by setting FEATURE_TICKETS=true explicitly.
+    | Listed in App\Support\FeatureFlags::CLIENT_VISIBLE so the SPA can hide
+    | the Tickets menu entries while the feature is off.
+    |
+    */
+    'tickets' => (bool) env('FEATURE_TICKETS', false),
+
 ];

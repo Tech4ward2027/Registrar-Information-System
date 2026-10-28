@@ -74,6 +74,8 @@ services:
       FEATURE_FREE_REQUEST_PAGE: ${FEATURE_FREE_REQUEST_PAGE:-false}
       # system_health gates the System Health / Failed Verifications API.
       FEATURE_SYSTEM_HEALTH: ${FEATURE_SYSTEM_HEALTH:-false}
+      # tickets gates every Support Ticketing route (student, staff, public).
+      FEATURE_TICKETS: ${FEATURE_TICKETS:-false}
     ports:
       - "8000:8000"
     networks:
@@ -305,6 +307,9 @@ services:
       # health:rollup / health:detect are no-ops unless this flag is on, so the
       # scheduler needs the same value as the backend. Fail-closed default.
       FEATURE_SYSTEM_HEALTH: ${FEATURE_SYSTEM_HEALTH:-false}
+      # Ticket SLA / auto-close / retention commands are no-ops unless this
+      # flag is on, so the scheduler needs the same value as the backend.
+      FEATURE_TICKETS: ${FEATURE_TICKETS:-false}
       APP_ENV: ${APP_ENV:-production}
       APP_KEY: ${APP_KEY}
       APP_DEBUG: ${APP_DEBUG:-false}

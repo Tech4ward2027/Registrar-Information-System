@@ -49,6 +49,7 @@ use App\Http\Controllers\SystemHealthController;
 use App\Http\Controllers\SecurityEventController;
 use App\Http\Controllers\UndergradRequestorController;
 use App\Http\Controllers\UndergradRequestorVerificationController;
+use App\Http\Controllers\TicketCategoryController;
 
 /*
 |--------------------------------------------------------------------------
@@ -866,6 +867,18 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             // RoleAssignmentService::editPolicy().
             Route::patch('{roleAssignment}/policy',   [RoleAssignmentController::class, 'editPolicy']);
         });
+    });
+
+    // ── Support Ticketing ───────────────────────────────────────────────────────
+    // Every ticketing route lives under 'feature:tickets' (config/features.php,
+    // FEATURE_TICKETS, default false): the whole module answers 404 while the
+    // flag is off, whatever any policy grants. Staff routes additionally carry
+    // 'module:tickets,<Action>' (Policy::MODULE_ACTIONS['tickets']); student and
+    // public routes are added in later phases.
+    Route::middleware('feature:tickets')->prefix('tickets')->group(function () {
+        // Categories for the new-ticket form and queue filters. Any signed-in
+        // account; not sensitive.
+        Route::get('categories', [TicketCategoryController::class, 'index']);
     });
 });
 /*
