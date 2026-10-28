@@ -104,6 +104,15 @@ test('re-running the seeder is safe and never overwrites an admin edit', functio
         ->and($edited->is_active)->toBeFalse();
 });
 
+test('seeding before the tickets migration has run is skipped, not fatal (local boot runs db:seed before migrate)', function () {
+    Schema::drop('ticket_events');
+    Schema::drop('ticket_messages');
+    Schema::drop('tickets');
+    Schema::drop('ticket_categories');
+
+    expect(fn () => (new TicketCategorySeeder())->run())->not->toThrow(Throwable::class);
+});
+
 test('inactive categories are left out of the active scope', function () {
     TicketCategory::where('code', 'CAT-05')->update(['is_active' => false]);
 
