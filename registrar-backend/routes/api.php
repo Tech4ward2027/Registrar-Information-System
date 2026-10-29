@@ -50,6 +50,8 @@ use App\Http\Controllers\SecurityEventController;
 use App\Http\Controllers\UndergradRequestorController;
 use App\Http\Controllers\UndergradRequestorVerificationController;
 use App\Http\Controllers\TicketCategoryController;
+use App\Http\Controllers\TicketController;
+use App\Http\Controllers\StaffTicketController;
 
 /*
 |--------------------------------------------------------------------------
@@ -872,13 +874,61 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
     // ── Support Ticketing ───────────────────────────────────────────────────────
     // Every ticketing route lives under 'feature:tickets' (config/features.php,
     // FEATURE_TICKETS, default false): the whole module answers 404 while the
-    // flag is off, whatever any policy grants. Staff routes additionally carry
-    // 'module:tickets,<Action>' (Policy::MODULE_ACTIONS['tickets']); student and
-    // public routes are added in later phases.
-    Route::middleware('feature:tickets')->prefix('tickets')->group(function () {
+    // flag is off, whatever any policy grants.
+    //
+    // {ticket} is the lowercase ULID public_id, never the integer id; the
+    // pattern below also stops "categories" from ever being read as a ticket.
+    //
+    // Three layers guard each route: the flag (404), the coarse role/module
+    // middleware, and the Form Request's TicketPolicy check, which is the real
+    // one (ownership for requesters, per-action permission for staff).
+    //
+    // Throttles: the group's throttle:60,1 applies to everything. The two named
+    // limiters below add the ticket-specific ceilings and are registered in
+    // TicketServiceProvider (limits come from config/tickets.php).
+    Route::middleware('feature:tickets')->group(function () {
         // Categories for the new-ticket form and queue filters. Any signed-in
         // account; not sensitive.
-        Route::get('categories', [TicketCategoryController::class, 'index']);
+        Route::get('tickets/categories', [TicketCategoryController::class, 'index']);
+
+        // ── Requester side: Student, Alumni, Undergrad Requestor ────────────
+        // Ownership is enforced per ticket by TicketPolicy (404 if not theirs).
+        Route::prefix('tickets')
+            ->middleware('role:1,2,5')
+            ->where(['ticket' => '[0-9a-z]{26}'])
+            ->group(function () {
+                Route::get('/',  [TicketController::class, 'index']);
+                Route::post('/', [TicketController::class, 'store'])
+                    ->middleware('throttle:tickets-create');
+
+                Route::get('{ticket}',          [TicketController::class, 'show']);
+                Route::post('{ticket}/replies', [TicketController::class, 'reply'])
+                    ->middleware('throttle:tickets-reply');
+                Route::post('{ticket}/confirm', [TicketController::class, 'confirm']);
+                Route::post('{ticket}/return',  [TicketController::class, 'returnToProgress']);
+            });
+
+        // ── Staff side: the shared queue ────────────────────────────────────
+        // Policy Management module 'tickets' (Policy::MODULE_ACTIONS). View is
+        // required for every route here because every answer contains the
+        // ticket; each action then needs its own permission on top.
+        Route::prefix('admin/tickets')
+            ->middleware(['role:3,4', 'module:tickets,View'])
+            ->where(['ticket' => '[0-9a-z]{26}'])
+            ->group(function () {
+                Route::get('/',         [StaffTicketController::class, 'index']);
+                Route::get('{ticket}',  [StaffTicketController::class, 'show']);
+
+                Route::post('{ticket}/claim',   [StaffTicketController::class, 'claim'])
+                    ->middleware('module:tickets,Claim');
+                // The claimer (Claim) or a manager (Manage); TicketPolicy::release decides which.
+                Route::post('{ticket}/release', [StaffTicketController::class, 'release'])
+                    ->middleware('module:tickets,Claim|Manage');
+                Route::post('{ticket}/replies', [StaffTicketController::class, 'reply'])
+                    ->middleware('module:tickets,Reply');
+                Route::post('{ticket}/resolve', [StaffTicketController::class, 'resolve'])
+                    ->middleware('module:tickets,Resolve');
+            });
     });
 });
 /*

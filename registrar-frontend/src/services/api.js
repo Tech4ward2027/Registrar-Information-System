@@ -30,6 +30,25 @@ api.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem("user");
     }
+
+    // On 429 (a rate limit tripped) surface how long to wait, so a form can
+    // say "try again in 40 seconds" and disable its submit button until then.
+    // The value is in SECONDS. It comes from the Retry-After response header
+    // (which the backend exposes through CORS), falling back to the same
+    // number in the JSON body. null means the server did not say.
+    //   err.rateLimited         true
+    //   err.retryAfterSeconds   number | null
+    if (err.response?.status === 429) {
+      const fromHeader = Number.parseInt(err.response.headers?.["retry-after"], 10);
+      const fromBody = Number.parseInt(err.response.data?.retry_after, 10);
+      err.rateLimited = true;
+      err.retryAfterSeconds = Number.isFinite(fromHeader)
+        ? fromHeader
+        : Number.isFinite(fromBody)
+          ? fromBody
+          : null;
+    }
+
     return Promise.reject(err);
   }
 );
@@ -1167,5 +1186,132 @@ export const approveUndergradRequestor = (userId) =>
 // approve() above.
 export const rejectUndergradRequestor = (userId, reason) =>
   api.post(`/admin/undergrad-requestors/${userId}/reject`, { rejection_reason: reason });
+
+// -------------------------------------------------------
+// SUPPORT TICKETS
+// -------------------------------------------------------
+// Everything here answers 404 until the backend flag FEATURE_TICKETS is on
+// (the SPA can read it from the feature flags it is sent: `tickets`).
+//
+// A ticket is addressed by its `id`, a 26-character lowercase public id —
+// never the numeric id, and never the ticket number (TKT-2026-00001), which
+// is for display and search only.
+//
+// Errors the UI should handle (all JSON, with a stable `code`):
+//   409  the ticket's current state does not allow it. err.response.data.code:
+//          already_claimed        lost the claim race; data.claimed_by.name says who has it
+//          not_claimed            released a ticket nobody holds
+//          invalid_transition     e.g. confirming a ticket that is not Resolved
+//          action_not_allowed     e.g. replying to a Closed ticket
+//          return_limit_reached   "this isn't resolved" used up; data.limit
+//   403  not allowed to do this to this ticket (staff).
+//   404  not found — for a requester this ALSO means "not your ticket".
+//   422  validation; field errors under err.response.data.errors.
+//   429  rate limited; see err.retryAfterSeconds (interceptor above).
+// Every action that changes a ticket responds with the whole updated ticket
+// (`res.data.data`), so there is no need to refetch afterwards.
+
+// GET /tickets/categories
+// Throttle: group default (60/min). Module: none (any signed-in account).
+// The active categories for the new-ticket form: [{ code, name, description, priority }].
+export const getTicketCategories = () => api.get("/tickets/categories");
+
+// --- Requester (Student, Alumni, Undergrad Requestor) ----------------------
+
+// POST /tickets
+// Throttle: tickets-create (3 per 10 minutes per user; config/tickets.php).
+// Module: none (requester roles only).
+// data: { category_code: "CAT-01", subject, description }. Priority comes
+// from the category and cannot be sent. Returns 201 with the new ticket.
+export const createTicket = (data) => api.post("/tickets", data);
+
+// GET /tickets
+// Throttle: group default (60/min). Module: none (requester roles only).
+// The caller's own tickets, most recent activity first. Cursor paginated:
+//   params: { status?, per_page? (max 50), cursor? }
+// Response: { data: [...], links: { next, prev }, meta: { next_cursor, ... } }.
+// To load more, pass links.next's `cursor` back as params.cursor (or request
+// links.next directly). Rows are summaries: no messages.
+export const getMyTickets = (params = {}) => api.get("/tickets", { params });
+
+// GET /tickets/{id}
+// Throttle: group default (60/min). Module: none (owner only; 404 otherwise).
+// One ticket with its conversation and what the requester can do next:
+// data.actions = { can_reply, can_confirm, can_return }.
+export const getTicket = (id) => api.get(`/tickets/${id}`);
+
+// POST /tickets/{id}/replies
+// Throttle: tickets-reply (10 per ticket per hour; config/tickets.php).
+// Module: none (owner only). Returns 201 with the updated ticket.
+// A reply to a Pending Client ticket moves it back to In Progress; a reply
+// during the Resolved window counts as "this isn't resolved".
+export const replyToTicket = (id, body) => api.post(`/tickets/${id}/replies`, { body });
+
+// POST /tickets/{id}/confirm
+// Throttle: group default (60/min). Module: none (owner only).
+// Confirms the resolution: Resolved -> Closed (final). 409 unless Resolved.
+export const confirmTicketResolution = (id) => api.post(`/tickets/${id}/confirm`);
+
+// POST /tickets/{id}/return
+// Throttle: group default (60/min). Module: none (owner only).
+// "This isn't resolved": Resolved -> In Progress, limited per ticket
+// (data.returns_remaining says how many are left). `reason` is optional and
+// is added to the conversation. 409 return_limit_reached once used up.
+export const returnTicket = (id, reason = null) =>
+  api.post(`/tickets/${id}/return`, reason ? { reason } : {});
+
+// --- Staff (under /admin/tickets) -------------------------------------------
+// Module: 'tickets' (Policy Management) — View for everything below, plus the
+// action noted on each call. Super Admin holds every action.
+
+// GET /admin/tickets
+// Throttle: group default (60/min). Module: tickets,View.
+// The shared queue, most urgent first and oldest first within a priority.
+// Cursor paginated (same shape as getMyTickets).
+//   params: {
+//     scope?:    "unclaimed" (default) | "mine" | "all",
+//     status?:   "open" | "in_progress" | "pending_client" | "resolved" | "closed"
+//                (omit for the three active statuses),
+//     priority?: "high" | "medium" | "low",
+//     category?: "CAT-01" ... "CAT-05",
+//     q?:        ticket number prefix ("TKT-2026-0012") or words from the subject,
+//     per_page?: max 50, cursor?
+//   }
+export const getTicketQueue = (params = {}) => api.get("/admin/tickets", { params });
+
+// GET /admin/tickets/{id}
+// Throttle: group default (60/min). Module: tickets,View.
+// One ticket with its conversation, activity log and
+// data.actions = { can_claim, can_release, can_reply, can_resolve }.
+export const getStaffTicket = (id) => api.get(`/admin/tickets/${id}`);
+
+// POST /admin/tickets/{id}/claim
+// Throttle: group default (60/min). Module: tickets,Claim.
+// Takes the ticket from the queue (Open -> In Progress). Two people clicking
+// at once: exactly one wins; the other gets 409 already_claimed with
+// data.claimed_by = { id, name }.
+export const claimTicket = (id) => api.post(`/admin/tickets/${id}/claim`);
+
+// POST /admin/tickets/{id}/release
+// Throttle: group default (60/min). Module: tickets,Claim (the claimer) or
+// tickets,Manage (anyone's). Puts the ticket back in the queue; status is
+// unchanged.
+export const releaseTicket = (id) => api.post(`/admin/tickets/${id}/release`);
+
+// POST /admin/tickets/{id}/replies
+// Throttle: group default (60/min). Module: tickets,Reply.
+// Replying to an unclaimed ticket claims it for you first. Pass
+// awaitRequester = true when the reply asks a question, which sets
+// Pending Client. Returns 201 with the updated ticket.
+export const replyAsStaff = (id, body, awaitRequester = false) =>
+  api.post(`/admin/tickets/${id}/replies`, { body, await_requester: awaitRequester });
+
+// POST /admin/tickets/{id}/resolve
+// Throttle: group default (60/min). Module: tickets,Resolve.
+// `resolutionNote` is required (minimum 10 characters) and is what the
+// requester reads. The ticket auto-closes 3 calendar days later unless the
+// requester confirms sooner or sends it back.
+export const resolveTicket = (id, resolutionNote) =>
+  api.post(`/admin/tickets/${id}/resolve`, { resolution_note: resolutionNote });
 
 export default api;

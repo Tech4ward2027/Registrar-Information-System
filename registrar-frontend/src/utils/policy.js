@@ -31,6 +31,10 @@ export const MODULE_KEYS = {
   // Cashier Reconciliation — Phase 1. Mirrors the backend's
   // App\Models\Policy::MODULE_KEYS entry (single-token 'Access' module).
   CASHIER_RECONCILIATION: "cashier_reconciliation",
+  // Support Ticketing — Phase 3. Mirrors the backend's App\Models\Policy
+  // MODULE_KEYS / MODULE_ACTIONS entry for 'tickets'. The whole module is
+  // behind the backend flag FEATURE_TICKETS (default off).
+  TICKETS: "tickets",
 };
 
 export const KEY_TO_LABEL = {
@@ -45,6 +49,7 @@ export const KEY_TO_LABEL = {
   free_requests: "Free Requests",
   undergrad_verification: "Undergrad Requestor Verification",
   cashier_reconciliation: "Cashier Reconciliation",
+  tickets: "Support Tickets",
 };
 
 export const LABEL_TO_KEY = Object.fromEntries(
@@ -67,6 +72,8 @@ export const MODULE_ACTIONS = {
   // Undergrad Requestor Registration — Phase 0/4. Mirrors the backend's
   // App\Models\Policy::MODULE_ACTIONS entry for 'undergrad_verification'.
   undergrad_verification: ["View", "Approve", "Reject"],
+  // Support Ticketing — Phase 3. Mirrors Policy::MODULE_ACTIONS['tickets'].
+  tickets: ["View", "Claim", "Reply", "Resolve", "Manage"],
 };
 
 /**

@@ -129,6 +129,25 @@ return [
         'description_min_length' => (int) env('TICKETS_DESCRIPTION_MIN_LENGTH', 20),
         'message_max_length'     => (int) env('TICKETS_MESSAGE_MAX_LENGTH', 5000),
         'max_links_per_message'  => (int) env('TICKETS_MAX_LINKS_PER_MESSAGE', 2),
+        // [DEFAULT] A resolution note is what the requester reads when their
+        // ticket is marked Resolved, so a bare "done" is not accepted.
+        'resolution_note_min_length' => (int) env('TICKETS_RESOLUTION_NOTE_MIN_LENGTH', 10),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | API paging
+    |--------------------------------------------------------------------------
+    |
+    | [DEFAULT] Lists use cursor pagination: cost stays flat however deep the
+    | queue grows, and a ticket arriving mid-scroll cannot shift or repeat rows.
+    | A client may ask for fewer or more rows with ?per_page=, never more than
+    | max_page_size.
+    |
+    */
+    'api' => [
+        'page_size'     => (int) env('TICKETS_API_PAGE_SIZE', 20),
+        'max_page_size' => (int) env('TICKETS_API_MAX_PAGE_SIZE', 50),
     ],
 
     /*

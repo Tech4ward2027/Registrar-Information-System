@@ -92,4 +92,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(function ($request, $e) {
             return true; // always return JSON, never HTML error pages
         });
+
+        // Support Ticketing: a refusal by the ticket rules (lost claim race,
+        // wrong status, return limit) is a 409/403 with a stable `code`, not
+        // a 500. One mapping here keeps every ticket controller free of
+        // try/catch. See TicketExceptionRenderer for the codes.
+        $exceptions->render(function (\App\Exceptions\Tickets\TicketException $e, $request) {
+            return \App\Exceptions\Tickets\TicketExceptionRenderer::render($e);
+        });
     })->create();

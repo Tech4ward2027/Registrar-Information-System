@@ -50,6 +50,7 @@ class Ticket extends Model
     protected $casts = [
         'status'              => TicketStatusEnum::class,
         'priority'            => TicketPriorityEnum::class,
+        'priority_weight'     => 'integer',
         'requester_returns'   => 'integer',
         'claimed_at'          => 'datetime',
         'claim_expires_at'    => 'datetime',
@@ -67,6 +68,18 @@ class Ticket extends Model
         static::creating(function (Ticket $ticket) {
             if (empty($ticket->public_id)) {
                 $ticket->public_id = strtolower((string) Str::ulid());
+            }
+        });
+
+        // priority_weight is the sortable twin of `priority` (the staff queue
+        // pages by cursor and cannot order by a string). It is derived here,
+        // in the one place every write passes through, so it can never drift.
+        static::saving(function (Ticket $ticket) {
+            $priority = $ticket->priority;
+
+            if ($priority instanceof TicketPriorityEnum
+                && (! $ticket->exists || $ticket->isDirty('priority'))) {
+                $ticket->priority_weight = $priority->weight();
             }
         });
     }
