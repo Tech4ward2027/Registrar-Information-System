@@ -73,6 +73,7 @@ class DocumentRequestListResource extends JsonResource
             'requester_type' => $this->requesterType(),
             'display_name'   => $profile ? $this->fullName($profile) : null,
             'student_number' => $this->studentNumber($profile),
+            'course'         => $this->course($profile),
             'gender'         => $this->undergradGender($profile),
         ], $this->progress());
 
@@ -107,6 +108,7 @@ class DocumentRequestListResource extends JsonResource
             'requester_type' => $this->requesterType(),
             'display_name'   => $profile ? $this->fullName($profile) : null,
             'student_number' => $this->studentNumber($profile),
+            'course'         => $this->course($profile),
         ], $this->progress());
     }
 
@@ -171,6 +173,18 @@ class DocumentRequestListResource extends JsonResource
             self::TYPE_STUDENT   => $r->relationLoaded('academicRecord') ? $r->academicRecord?->student_number : null,
             self::TYPE_ALUMNI    => $r->relationLoaded('alumniAcademicRecord') ? $r->alumniAcademicRecord?->student_number : null,
             self::TYPE_UNDERGRAD => $profile?->student_number,
+            default              => null,
+        };
+    }
+
+    private function course(mixed $profile): ?string
+    {
+        $r = $this->resource;
+
+        return match ($this->requesterType()) {
+            self::TYPE_STUDENT   => $r->relationLoaded('academicRecord') ? $r->academicRecord?->course : null,
+            self::TYPE_ALUMNI    => $r->relationLoaded('alumniAcademicRecord') ? $r->alumniAcademicRecord?->course : null,
+            self::TYPE_UNDERGRAD => $profile?->program,
             default              => null,
         };
     }

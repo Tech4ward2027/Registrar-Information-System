@@ -13,6 +13,7 @@ import {
   getProcessingMinutes,
   getClaimedAt,
   findMatchingItem,
+  flattenLogbookRows,
 } from './logbookHelpers.js';
 // FE-2 migration: helpers imported from logbookHelpers.js
 const fetchImageData = async (src) => {
@@ -273,7 +274,9 @@ export const logbookDocx = async (sectionsOrRows, pupLogoSrc = null, bpLogoSrc =
   const sections = normalizeSections();
 
   const buildRows = (rows, sectionTitle = '') => {
-    if (!Array.isArray(rows) || rows.length === 0) {
+    const flatRows = flattenLogbookRows(rows, sectionTitle, logbookCategoryNameById);
+
+    if (!Array.isArray(flatRows) || flatRows.length === 0) {
       return [new TableRow({
         children: [
           new TableCell({
@@ -296,8 +299,8 @@ export const logbookDocx = async (sectionsOrRows, pupLogoSrc = null, bpLogoSrc =
       })];
     }
 
-    return rows.map((row) => {
-      const targetItem = findMatchingItem(row, sectionTitle, logbookCategoryNameById);
+    return flatRows.map((row) => {
+      const targetItem = row.targetItem || findMatchingItem(row, sectionTitle, logbookCategoryNameById);
       return new TableRow({
         children: [
           cell(formatDateLong(row.requested_at) || 'N/A', { width: colWidths[0], align: AlignmentType.CENTER, size: DEFAULT_TEXT_SIZE }),
