@@ -219,6 +219,7 @@ test('getCourse and getGender ignore the removed verification lookups', () => {
 });
 
 test('getCourse and getGender still read the profiles that carry them', () => {
+  assert.equal(getCourse({ course: 'BSIT' }), 'BSIT');
   assert.equal(getCourse({ undergrad_requestor_profile: { program: ' BSCS ' } }), 'BSCS');
   assert.equal(getCourse({ student_profile: { academic_records: [{ course: 'BSA' }] } }), 'BSA');
   assert.equal(getGender({ gender: 'Female' }), 'Female');

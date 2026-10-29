@@ -19,6 +19,7 @@ import {
   formatDateTimeLong,
   getClaimedAt,
   findMatchingItem,
+  flattenLogbookRows,
   rowHasLabel,
 } from '../utils/logbookHelpers.js';
 
@@ -335,6 +336,13 @@ const LogbookRecords = () => {
   const indexOfFirstItem = (currentPage - 1) * rowsPerPage;
   const indexOfLastItem = currentPage * rowsPerPage;
 
+  // Flatten rows so that bulk requests have per-document row granularity.
+  // When a request has multiple document/certificate line items, each line item
+  // appears on its own row with its specific processing timestamp, minutes, and claimed status.
+  const displayRows = useMemo(() => {
+    return flattenLogbookRows(rows, targetCategory, logbookCategoryNameById, isCertificationMode);
+  }, [rows, targetCategory, logbookCategoryNameById, isCertificationMode]);
+
   // Build sections for DOCX export from the FULL filtered result (every page,
   // not just the one on screen). Section titles/grouping are the resolved
   // logbook label (post-rollup) so the exported document groups requests
@@ -581,14 +589,14 @@ const LogbookRecords = () => {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {displayRows.map((row) => (
                 (() => {
-                  const targetItem = targetCategory ? findMatchingItem(row, targetCategory, logbookCategoryNameById) : null;
+                  const targetItem = row.targetItem || (targetCategory ? findMatchingItem(row, targetCategory, logbookCategoryNameById) : null);
                   const processedAt = getProcessedAt(row, targetItem);
                   const claimedAt = getClaimedAt(row, targetItem);
 
                   return (
-                    <tr key={row.request_id || row.id} className={`border-b text-[11px] sm:text-[12px] transition-colors 
+                    <tr key={row.rowKey || row.request_id || row.id} className={`border-b text-[11px] sm:text-[12px] transition-colors 
                     ${isDark ? 'border-[#3e4042] hover:bg-[#3a3b3c] text-[#b0b3b8]' : 
                     'border-gray-200 hover:bg-gray-50 text-gray-700'}`}>
 
@@ -629,7 +637,7 @@ const LogbookRecords = () => {
                 })()
               ))}
 
-              {!loading && Array.from({ length: Math.max(0, rowsPerPage - rows.length) }).map((_, i) => (
+              {!loading && Array.from({ length: Math.max(0, rowsPerPage - displayRows.length) }).map((_, i) => (
                 <tr key={`empty-${i}`} className="h-11.25 sm:h-13.25 border-b border-gray-100">
                   <td colSpan="8"></td>
                 </tr>
@@ -640,20 +648,20 @@ const LogbookRecords = () => {
 
         {/* Mobile Card View (visible on mobile, hidden md and up) */}
         <div className="block md:hidden flex-1 px-4 py-2 space-y-3">
-          {rows.length === 0 && !loading && !tableLoading && (
+          {displayRows.length === 0 && !loading && !tableLoading && (
             <div className={`text-center py-8 text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
               No logbook records found for this period.
             </div>
           )}
 
-          {rows.map((row) => {
-            const targetItem = targetCategory ? findMatchingItem(row, targetCategory, logbookCategoryNameById) : null;
+          {displayRows.map((row) => {
+            const targetItem = row.targetItem || (targetCategory ? findMatchingItem(row, targetCategory, logbookCategoryNameById) : null);
             const processedAt = getProcessedAt(row, targetItem);
             const claimedAt = getClaimedAt(row, targetItem);
 
             return (
               <div
-                key={row.request_id || row.id}
+                key={row.rowKey || row.request_id || row.id}
                 className={`p-4 rounded-xl border transition-all shadow-sm ${
                   isDark
                     ? 'bg-[#1e1f20] border-[#3e4042] text-[#e4e6eb]'

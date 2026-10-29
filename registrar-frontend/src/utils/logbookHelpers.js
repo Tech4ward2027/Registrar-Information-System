@@ -370,6 +370,115 @@ export const findMatchingItem = (row, categoryOrTitle, categoryNameById) => {
 };
 
 /**
+ * Find ALL document or certificate items inside a request row whose
+ * resolved logbook label equals the target (case-insensitive, exact).
+ * If target is null or an umbrella title ("all document", "all certification"),
+ * returns all items belonging to that mode.
+ */
+export const findMatchingItems = (row, categoryOrTitle, categoryNameById) => {
+  if (!row) return [];
+  const target = String(categoryOrTitle || '').trim().toLowerCase();
+  const isAllDoc = !target || target === 'all document';
+  const isAllCert = target === 'all certification';
+
+  const labelOf = (categoryId, ownName) =>
+    resolveLogbookLabel(categoryId, ownName, categoryNameById);
+
+  const matched = [];
+
+  if (Array.isArray(row.documents) && !isAllCert) {
+    row.documents.forEach((d) => {
+      const type = d?.documentType ?? d?.document_type;
+      const categoryId = type?.logbook_category_id ?? d?.logbook_category_id ?? null;
+      const ownName = type?.document_name ?? d?.document_name ?? d?.name ?? '';
+      const label = labelOf(categoryId, ownName);
+      if (isAllDoc || label.toLowerCase() === target) {
+        matched.push({
+          itemType: 'document',
+          item: d,
+          itemId: d?.request_document_id ?? null,
+          label,
+          name: ownName,
+        });
+      }
+    });
+  }
+
+  if (Array.isArray(row.certificates) && !isAllDoc) {
+    row.certificates.forEach((c) => {
+      const type = c?.certificationType ?? c?.certification_type;
+      const categoryId = type?.logbook_category_id ?? c?.logbook_category_id ?? null;
+      const ownName = type?.certificate_name ?? c?.certificate_name ?? c?.name ?? '';
+      const label = labelOf(categoryId, ownName);
+      if (isAllCert || label.toLowerCase() === target) {
+        matched.push({
+          itemType: 'certificate',
+          item: c,
+          itemId: c?.request_certificate_id ?? null,
+          label,
+          name: ownName,
+        });
+      }
+    });
+  }
+
+  return matched;
+};
+
+/**
+ * Flatten an array of request rows into individual document/certificate line-item rows
+ * so that bulk requests have per-document granularity in the logbook table & exports.
+ *
+ * Each flattened entry contains:
+ *   - all properties of the original `row`
+ *   - `targetItem`: the specific document/certificate item (used by getProcessing, getProcessedAt, etc.)
+ *   - `itemType`: 'document' | 'certificate' | null
+ *   - `itemLabel`: resolved logbook label
+ *   - `itemName`: specific document/certificate name
+ *   - `rowKey`: unique key for React lists / tables
+ */
+export const flattenLogbookRows = (rows, categoryOrTitle, categoryNameById, isCertificationMode = false) => {
+  if (!Array.isArray(rows)) return [];
+
+  const flattened = [];
+
+  rows.forEach((row) => {
+    let target = categoryOrTitle;
+    if (!target) {
+      target = isCertificationMode ? 'All Certification' : 'All Document';
+    }
+
+    const items = findMatchingItems(row, target, categoryNameById);
+
+    if (items.length === 0) {
+      // Fallback: if no specific items match, keep the row intact
+      flattened.push({
+        ...row,
+        targetItem: null,
+        itemType: null,
+        itemLabel: null,
+        itemName: null,
+        rowKey: `${row.request_id || row.id || Math.random()}`,
+      });
+    } else {
+      items.forEach((it, idx) => {
+        flattened.push({
+          ...row,
+          targetItem: it.item,
+          itemType: it.itemType,
+          itemId: it.itemId,
+          itemLabel: it.label,
+          itemName: it.name,
+          rowKey: `${row.request_id || row.id}_${it.itemType}_${it.itemId || idx}`,
+        });
+      });
+    }
+  });
+
+  return flattened;
+};
+
+/**
  * Whether a row has a document (or certificate) line logged under `label`.
  * Used to group rows into sections for the DOCX export.
  */
