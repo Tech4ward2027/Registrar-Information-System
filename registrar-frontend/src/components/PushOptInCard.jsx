@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BellIcon } from '@heroicons/react/24/outline';
+import { BellIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthProvider';
 import { useTheme } from '../context/ThemeContext';
 
@@ -53,42 +53,47 @@ export const PushOptInCard = ({ push }) => {
   return (
     <section
       aria-label="Background notifications"
-      className={`mx-3 mt-3 rounded-2xl border p-4 ${
-        isDark ? 'bg-[#1a1b1e] border-[#3e4042]' : 'bg-[#f5eeee] border-[#e5c9c9]'
+      className={`px-4 py-3 border-b flex items-center justify-between gap-3 ${
+        isDark ? 'bg-[#1e1f23] border-[#3e4042]' : 'bg-[#4a0808] border-black/20'
       }`}
     >
-      <div className="flex items-start gap-3">
-        <BellIcon aria-hidden="true" className={`w-5 h-5 mt-0.5 shrink-0 ${isDark ? 'text-pup-yellow' : 'text-pup-maroon'}`} />
-        <div className="min-w-0">
-          <h3 className={`text-sm font-bold ${isDark ? 'text-[#e4e6eb]' : 'text-gray-900'}`}>
-            Enable Background Notifications
-          </h3>
-          <p className={`mt-1 text-xs leading-relaxed ${isDark ? 'text-[#b0b3b8]' : 'text-gray-500'}`}>
-            Receive urgent status updates even when PUPT-Registrar is closed.
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <BellIcon
+          aria-hidden="true"
+          className="w-5 h-5 shrink-0 text-pup-yellow"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs sm:text-[13px] font-semibold text-white leading-snug">
+            Get status updates even when PUPT-Registrar is closed.
           </p>
+          {push.error && (
+            <p role="alert" className="mt-0.5 text-[11px] font-medium text-red-300">
+              {push.error}
+            </p>
+          )}
         </div>
       </div>
 
-      {push.error && (
-        <p role="alert" className="mt-2 text-xs font-semibold text-red-500">{push.error}</p>
-      )}
+      <div className="flex items-center gap-2.5 shrink-0">
+        <button
+          type="button"
+          onClick={handleEnable}
+          disabled={push.busy}
+          className="rounded-xl bg-pup-yellow px-4 py-1.5 text-xs sm:text-sm font-bold text-pup-maroon hover:brightness-105 active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-60 shadow-xs"
+        >
+          {push.busy ? 'Enabling…' : 'Enable'}
+        </button>
 
-      <button
-        type="button"
-        onClick={handleEnable}
-        disabled={push.busy}
-        className="mt-3 w-full rounded-xl bg-pup-maroon bg-pup-maroon-hover py-2.5 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {push.busy ? 'Enabling…' : 'Enable'}
-      </button>
-
-      <button
-        type="button"
-        onClick={handleDismiss}
-        className={`mt-2 w-full text-center text-[11px] font-semibold ${isDark ? 'text-[#b0b3b8] hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}
-      >
-        Not now
-      </button>
+        <button
+          type="button"
+          onClick={handleDismiss}
+          aria-label="Dismiss notification prompt"
+          title="Dismiss"
+          className="p-1 text-white/70 hover:text-white transition-colors"
+        >
+          <XMarkIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+        </button>
+      </div>
     </section>
   );
 };
