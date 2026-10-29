@@ -101,11 +101,20 @@ class Ticket extends Model
         return $this->belongsTo(SystemUser::class, 'resolved_by_user_id', 'user_id');
     }
 
+    /**
+     * The conversation, oldest first. The order is part of the relation, so a
+     * further orderBy() is appended AFTER it and silently changes nothing; to
+     * read newest-first use ->reorder('id', 'desc').
+     */
     public function messages(): HasMany
     {
         return $this->hasMany(TicketMessage::class, 'ticket_id')->orderBy('id');
     }
 
+    /**
+     * The activity log in chain order (seq 1, 2, 3 ...). Same note as
+     * messages(): use ->reorder('seq', 'desc') for newest-first.
+     */
     public function events(): HasMany
     {
         return $this->hasMany(TicketEvent::class, 'ticket_id')->orderBy('seq');
