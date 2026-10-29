@@ -7,7 +7,7 @@ const isDesktopPointer = () =>
   typeof window !== 'undefined' &&
   window.matchMedia('(pointer: fine) and (hover: hover)').matches;
 
-const DropdownGroup = ({ label, name, value, onChange, options, required = false, labelColor = 'text-white', direction = 'auto', isDark: isDarkProp }) => {
+const DropdownGroup = ({ label, name, value, onChange, options, required = false, labelColor = 'text-white', direction = 'auto', isDark: isDarkProp, error }) => {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [openUpward, setOpenUpward] = useState(false);
@@ -100,8 +100,18 @@ const DropdownGroup = ({ label, name, value, onChange, options, required = false
           onClick={handleToggle}
           className={`
             w-full flex items-center justify-between gap-2 pl-3 pr-10 py-3 rounded-lg text-sm font-medium shadow-sm focus:outline-none border transition-colors text-left cursor-pointer
-            ${open ? 'ring-2 ring-[#FFC72C] border-transparent' : 'border-transparent hover:border-gray-200'}
-            ${isDark ? 'bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042]' : 'bg-white text-gray-700 border-gray-200'}
+            ${
+              error
+                ? 'border-red-500 ring-1 ring-red-500'
+                : open
+                  ? 'ring-2 ring-[#FFC72C] border-transparent'
+                  : 'border-transparent hover:border-gray-200'
+            }
+            ${
+              isDark
+                ? `${error ? 'bg-[#2a1b1b] border-red-500' : 'bg-[#1f1f1f] border-[#3e4042]'} text-[#e4e6eb]`
+                : `${error ? 'bg-red-50/30 border-red-400' : 'bg-white border-gray-200'} text-gray-700`
+            }
           `}
         >
           <span className={value ? '' : (isDark ? 'text-gray-500' : 'text-gray-400')}>
@@ -116,7 +126,7 @@ const DropdownGroup = ({ label, name, value, onChange, options, required = false
         >
           <ChevronDownIcon
             className={`w-4 h-4 transition-transform duration-200 
-              ${isDark ? 'text-[#b0b3b8]' : 'text-gray-400'} 
+              ${error ? 'text-red-500' : isDark ? 'text-[#b0b3b8]' : 'text-gray-400'} 
               ${open ? 'rotate-180 text-[#FFC72C]' : ''}
             `}
           />
@@ -190,6 +200,11 @@ const DropdownGroup = ({ label, name, value, onChange, options, required = false
           </div>
         )}
       </div>
+      {error && (
+        <p role="alert" className="mt-1 text-xs font-medium text-red-500 dark:text-red-400 animate-in fade-in duration-150">
+          {error}
+        </p>
+      )}
     </div>
   );
 };
@@ -203,6 +218,7 @@ DropdownGroup.propTypes = {
   required: PropTypes.bool,
   labelColor: PropTypes.string,
   direction: PropTypes.string,
+  error: PropTypes.string,
 };
 
 export default DropdownGroup;
