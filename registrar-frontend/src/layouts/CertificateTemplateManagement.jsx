@@ -286,6 +286,23 @@ const CertificateTemplateManagement = () => {
     return () => { cancelled = true; };
   }, [selectedCertId]);
 
+  const isTypingRef = useRef(false);
+
+  // Sync external template content changes or live preview toggle to the editor DOM
+  useEffect(() => {
+    const editor = templateEditorRef.current;
+    if (!editor) return;
+
+    if (isLivePreview) {
+      editor.innerHTML = previewTemplate(templateContent, mergeTags, true);
+    } else {
+      const renderedMarkup = previewTemplate(templateContent, mergeTags, false);
+      if (!isTypingRef.current && editor.innerHTML !== renderedMarkup) {
+        editor.innerHTML = renderedMarkup;
+      }
+    }
+  }, [templateContent, isLivePreview, mergeTags]);
+
   const saveTemplateSelection = () => {
     const editor = templateEditorRef.current;
     const selection = window.getSelection();
@@ -1083,11 +1100,15 @@ const CertificateTemplateManagement = () => {
                   onMouseUp={saveTemplateSelection}
                   onKeyUp={saveTemplateSelection}
                   onPaste={handlePaste}
-                  onInput={(event) => setTemplateContent(event.currentTarget.innerHTML)}
-                  className={`min-h-96 focus:outline-none ${!templateContent ? "before:pointer-events-none before:text-gray-400 before:content-[attr(data-placeholder)]" : ""}`}
-                  dangerouslySetInnerHTML={{
-                    __html: previewTemplate(templateContent, mergeTags, isLivePreview),
+                  onInput={(event) => {
+                    isTypingRef.current = true;
+                    setTemplateContent(event.currentTarget.innerHTML);
+                    saveTemplateSelection();
                   }}
+                  onBlur={() => {
+                    isTypingRef.current = false;
+                  }}
+                  className={`min-h-96 focus:outline-none ${!templateContent ? "before:pointer-events-none before:text-gray-400 before:content-[attr(data-placeholder)]" : ""}`}
                 />
                 <CertFooter layout={layout} />
               </div>

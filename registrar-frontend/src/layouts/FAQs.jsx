@@ -1688,20 +1688,6 @@ export const UserGuideCompact = ({ fullGuideHref = '/faqs' }) => {
           </div>
         ))}
       </div>
-
-      {/* Link to the complete guide */}
-      <div className="mt-10 text-center">
-        <Link
-          to={fullGuideHref}
-          className={`inline-flex items-center gap-2 rounded-xl px-6 py-3 font-bold ${c.primary} ${focusRing}`}
-        >
-          Open the full user guide
-          <ArrowTopRightOnSquareIcon className="h-4 w-4" aria-hidden="true" />
-        </Link>
-        <p className="mt-2 text-xs text-gray-300">
-          Every FAQ, the complete receipt guide, a search box, and all official contacts.
-        </p>
-      </div>
     </section>
   );
 };
