@@ -1,5 +1,6 @@
 <?php
 
+use PHPUnit\Framework\Assert;
 use Symfony\Component\Process\Process;
 
 /*
@@ -46,6 +47,8 @@ test('when several staff claim the same tickets at once, exactly one wins each',
         return json_decode(end($lines), true, 512, JSON_THROW_ON_ERROR);
     };
 
+    $stray = []; // non-result lines the workers printed
+
     try {
         $setup = $run(['setup', (string) $ticketCount, (string) $staffCount]);
         $setup->mustRun();
@@ -64,10 +67,19 @@ test('when several staff claim the same tickets at once, exactly one wins each',
         $results = []; // ticket id => list of [staff id, outcome]
         foreach ($racers as $staffId => $p) {
             $p->wait();
-            expect($p->getExitCode())->toBe(0, $p->getErrorOutput() . $p->getOutput());
+            Assert::assertSame(0, $p->getExitCode(), $p->getErrorOutput() . $p->getOutput());
 
             foreach (array_filter(explode("\n", trim($p->getOutput()))) as $line) {
-                [$ticketId, $outcome, $claimer] = array_pad(explode(':', $line), 3, null);
+                // Only tagged lines are results. Anything else a worker prints
+                // (a PHP notice, a framework warning) must never be parsed as
+                // a ticket id; it is kept so a failure can show it.
+                if (! str_starts_with($line, 'RESULT|')) {
+                    $stray[] = "staff {$staffId}: {$line}";
+
+                    continue;
+                }
+
+                [, $ticketId, $outcome, $claimer] = array_pad(explode('|', $line), 4, null);
                 $results[(int) $ticketId][] = ['staff' => $staffId, 'outcome' => $outcome, 'claimer' => $claimer];
             }
         }
@@ -82,7 +94,10 @@ test('when several staff claim the same tickets at once, exactly one wins each',
         @rmdir($dir);
     }
 
-    expect($results)->toHaveCount($ticketCount);
+    $noise = $stray === [] ? '' : "\nworkers also printed:\n" . implode("\n", array_slice($stray, 0, 10));
+
+    // Assert (not expect) so the message is actually shown on failure.
+    Assert::assertEqualsCanonicalizing($data['tickets'], array_keys($results), 'expected one result set per ticket' . $noise);
 
     foreach ($data['tickets'] as $ticketId) {
         $attempts = $results[$ticketId];

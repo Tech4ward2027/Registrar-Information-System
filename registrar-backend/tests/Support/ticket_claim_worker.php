@@ -8,8 +8,9 @@
  *   setup <tickets> <staff>            migrate a fresh SQLite file, create the
  *                                      data, print JSON {tickets:[ids],staff:[ids]}
  *   run <staffId> <startAt> <ids,...>  wait for the shared start time, then try
- *                                      to claim each ticket; print "id:WON" or
- *                                      "id:LOST:<claimerId>" per ticket
+ *                                      to claim each ticket; print
+ *                                      "RESULT|id|WON|" or "RESULT|id|LOST|<claimerId>"
+ *                                      per ticket (other output is ignored by the test)
  *   inspect <ids,...>                  print JSON describing each ticket's final
  *                                      state and event-chain verdict
  *
@@ -68,9 +69,9 @@ if ($mode === 'run') {
     foreach (array_map('intval', explode(',', $argv[4])) as $id) {
         try {
             $service->claim(Ticket::findOrFail($id), $staff);
-            echo "{$id}:WON", PHP_EOL;
+            echo "RESULT|{$id}|WON|", PHP_EOL;
         } catch (TicketClaimException $e) {
-            echo "{$id}:LOST:{$e->claimerId}", PHP_EOL;
+            echo "RESULT|{$id}|LOST|{$e->claimerId}", PHP_EOL;
         }
     }
     exit(0);

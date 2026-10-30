@@ -174,7 +174,10 @@ test('both Phase 5 jobs are scheduled and registered with the job monitor', func
     }
 
     Artisan::call('schedule:list');
-    $list = Artisan::output();
+
+    // schedule:list pads the cron column to the widest expression, so collapse
+    // runs of whitespace before matching literal cron strings.
+    $list = preg_replace('/\s+/', ' ', Artisan::output());
 
     expect($list)->toContain('tickets:sla-sweep')
         ->toContain('7,22,37,52 * * * *')
