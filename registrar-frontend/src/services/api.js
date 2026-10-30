@@ -1363,6 +1363,7 @@ export const resendPublicTicketLink = (email, ticketNumber) =>
 //                (omit for the three active statuses),
 //     priority?: "high" | "medium" | "low",
 //     category?: "CAT-01" ... "CAT-05",
+//     sla?:      "at_risk" | "breached" (tickets the SLA sweep has flagged),
 //     q?:        ticket number prefix ("TKT-2026-0012") or words from the subject,
 //     per_page?: max 50, cursor?
 //   }

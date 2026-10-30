@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Str;
 
 /**
@@ -32,6 +33,19 @@ class Ticket extends Model
     /** close_reason values. */
     public const CLOSE_REASON_CONFIRMED = 'confirmed'; // requester confirmed the resolution
     public const CLOSE_REASON_AUTO      = 'auto';      // auto-closed after the Resolved window
+
+    /** The two SLA targets a ticket is measured against. */
+    public const SLA_FIRST_RESPONSE = 'first_response';
+    public const SLA_RESOLUTION     = 'resolution';
+
+    /** Values returned by slaState(). */
+    public const SLA_STATE_NONE      = 'none';       // no due date (SLA could not be computed)
+    public const SLA_STATE_ON_TRACK  = 'on_track';
+    public const SLA_STATE_AT_RISK   = 'at_risk';
+    public const SLA_STATE_BREACHED  = 'breached';   // still open and past due
+    public const SLA_STATE_PAUSED    = 'paused';     // waiting on the requester
+    public const SLA_STATE_MET       = 'met';        // done on time
+    public const SLA_STATE_MISSED    = 'missed';     // done, but late
 
     protected $table = 'tickets';
 
@@ -57,6 +71,13 @@ class Ticket extends Model
         'first_responded_at'  => 'datetime',
         'last_activity_at'    => 'datetime',
         'resolved_at'         => 'datetime',
+        'first_response_due_at'      => 'datetime',
+        'resolution_due_at'          => 'datetime',
+        'sla_paused_at'              => 'datetime',
+        'first_response_at_risk_at'  => 'datetime',
+        'first_response_breached_at' => 'datetime',
+        'resolution_at_risk_at'      => 'datetime',
+        'resolution_breached_at'     => 'datetime',
         'auto_close_at'       => 'datetime',
         'reminder_sent_at'    => 'datetime',
         'closed_at'           => 'datetime',
@@ -168,5 +189,52 @@ class Ticket extends Model
     public function isClaimed(): bool
     {
         return $this->claimed_by_user_id !== null;
+    }
+
+    /**
+     * Where this ticket stands against one SLA target, from stored columns only
+     * (no calendar, no query), so it is safe to call once per row in a list.
+     *
+     * "At risk" is the one state that needs the calendar to decide, so it comes
+     * from the flag the sweep set (tickets:sla-sweep), not from arithmetic here;
+     * a ticket can therefore read on_track for up to one sweep interval after it
+     * becomes at risk. Breached needs no calendar (due dates are absolute
+     * instants), so it is exact the moment the due time passes.
+     *
+     * @param  self::SLA_FIRST_RESPONSE|self::SLA_RESOLUTION  $target
+     */
+    public function slaState(string $target, ?CarbonInterface $now = null): string
+    {
+        $now ??= now();
+
+        if ($target === self::SLA_FIRST_RESPONSE) {
+            $due      = $this->first_response_due_at;
+            $doneAt   = $this->first_responded_at;
+            $atRisk   = $this->first_response_at_risk_at;
+            $finished = $doneAt !== null;
+        } else {
+            $due      = $this->resolution_due_at;
+            $doneAt   = $this->resolved_at;
+            $atRisk   = $this->resolution_at_risk_at;
+            $finished = in_array($this->status, [TicketStatusEnum::Resolved, TicketStatusEnum::Closed], true);
+        }
+
+        if ($due === null) {
+            return self::SLA_STATE_NONE;
+        }
+
+        if ($finished) {
+            return $doneAt !== null && $doneAt->lessThanOrEqualTo($due) ? self::SLA_STATE_MET : self::SLA_STATE_MISSED;
+        }
+
+        if ($this->sla_paused_at !== null) {
+            return self::SLA_STATE_PAUSED;
+        }
+
+        if ($now->greaterThan($due)) {
+            return self::SLA_STATE_BREACHED;
+        }
+
+        return $atRisk !== null ? self::SLA_STATE_AT_RISK : self::SLA_STATE_ON_TRACK;
     }
 }

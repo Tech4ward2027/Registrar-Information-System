@@ -84,6 +84,10 @@ class StaffTicketController extends Controller
             $query->whereIn('category_id', fn ($sub) => $sub->select('id')->from('ticket_categories')->where('code', $v['category']));
         }
 
+        if (isset($v['sla'])) {
+            $this->applySlaFilter($query, $v['sla']);
+        }
+
         if (isset($v['q']) && trim($v['q']) !== '') {
             $this->applySearch($query, trim($v['q']));
         }
@@ -141,6 +145,30 @@ class StaffTicketController extends Controller
         $this->tickets->resolve($ticket, $request->user(), $request->validated('resolution_note'));
 
         return $this->respond($ticket);
+    }
+
+    /**
+     * Narrow the queue to tickets the SLA sweep has flagged, counting only the
+     * targets still open: a first response already given, or a ticket no longer
+     * being worked, is not something staff can act on.
+     *
+     *   breached  a target is past due and still unmet
+     *   at_risk   a target is close to its deadline (flagged, not yet breached)
+     *
+     * Reads the stored flags (set by tickets:sla-sweep), so it is a plain
+     * indexed-column filter with no calendar arithmetic per row.
+     */
+    private function applySlaFilter(Builder $query, string $filter): void
+    {
+        $query->whereIn('status', TicketStatusEnum::activeValues())
+            ->whereNull('sla_paused_at')
+            ->where(function (Builder $q) use ($filter) {
+                $filter === 'breached'
+                    ? $q->where(fn (Builder $r) => $r->whereNotNull('first_response_breached_at')->whereNull('first_responded_at'))
+                        ->orWhereNotNull('resolution_breached_at')
+                    : $q->where(fn (Builder $r) => $r->whereNotNull('first_response_at_risk_at')->whereNull('first_response_breached_at')->whereNull('first_responded_at'))
+                        ->orWhere(fn (Builder $r) => $r->whereNotNull('resolution_at_risk_at')->whereNull('resolution_breached_at'));
+            });
     }
 
     /**

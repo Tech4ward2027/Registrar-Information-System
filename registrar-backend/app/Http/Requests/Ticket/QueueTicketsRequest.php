@@ -15,6 +15,8 @@ use Illuminate\Validation\Rule;
  *   status    one status; omitted means the three active statuses
  *   priority  high | medium | low
  *   category  a category code (CAT-01 ...)
+ *   sla       at_risk | breached — only tickets being worked that the SLA
+ *             sweep has flagged (see tickets:sla-sweep)
  *   q         ticket number prefix, or words from the subject
  *   per_page  capped by config('tickets.api.max_page_size')
  *   cursor    opaque, taken from the previous page's links.next
@@ -22,6 +24,7 @@ use Illuminate\Validation\Rule;
 class QueueTicketsRequest extends FormRequest
 {
     public const SCOPES = ['unclaimed', 'mine', 'all'];
+    public const SLA_FILTERS = ['at_risk', 'breached'];
 
     public function authorize(): bool
     {
@@ -35,6 +38,7 @@ class QueueTicketsRequest extends FormRequest
             'status'   => ['sometimes', Rule::enum(TicketStatusEnum::class)],
             'priority' => ['sometimes', Rule::enum(TicketPriorityEnum::class)],
             'category' => ['sometimes', 'string', 'max:20', Rule::exists('ticket_categories', 'code')],
+            'sla'      => ['sometimes', Rule::in(self::SLA_FILTERS)],
             'q'        => ['sometimes', 'nullable', 'string', 'max:100'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:' . (int) config('tickets.api.max_page_size')],
         ];

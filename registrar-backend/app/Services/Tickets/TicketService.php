@@ -13,6 +13,7 @@ use App\Models\TicketCategory;
 use App\Models\TicketEvent;
 use App\Models\TicketMessage;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use InvalidArgumentException;
@@ -41,8 +42,13 @@ use InvalidArgumentException;
  *   One action can therefore write more than one event (a staff reply that
  *   auto-claims writes `claimed` then `replied`), and each is chained.
  *
- * Not in this class (later phases): notifications (6), SLA due dates (5),
- * auto-close and claim-timeout sweeps (5 and 7). Hooks are marked below.
+ * SLA (Phase 5): due dates, the Pending Client pause and the claim timeout are
+ * COMPUTED by SlaService and merged into the same save as the status change they
+ * belong to, so they share this class's transaction and row lock. The periodic
+ * sweeps live elsewhere (TicketSlaMonitor, and expireClaim() below, called by
+ * tickets:release-stale-claims).
+ *
+ * Not in this class (later phases): notifications (6), the auto-close sweep (7).
  */
 class TicketService
 {
@@ -50,6 +56,7 @@ class TicketService
         private readonly TicketNumberGenerator $numbers,
         private readonly TicketStateMachine $machine,
         private readonly TicketEventRecorder $events,
+        private readonly SlaService $sla,
     ) {
     }
 
@@ -129,7 +136,7 @@ class TicketService
                 'status'           => TicketStatusEnum::Open,
                 'requester_ip'     => $ip,
                 'last_activity_at' => $now,
-            ])->save();
+            ] + $this->sla->startAttributes($category->priority, $now))->save();
 
             // The description is the first message of the thread.
             $message = $this->addMessage($ticket, TicketSenderTypeEnum::Requester, $actorUserId, $description);
@@ -225,6 +232,53 @@ class TicketService
         });
     }
 
+    /**
+     * Release a claim that has gone stale (called by tickets:release-stale-claims).
+     *
+     * Re-checks everything under the row lock, so it is safe to run twice, to
+     * overlap with a human release, or to race with the claimer replying (a
+     * reply renews the expiry, and this then sees an unexpired claim and does
+     * nothing). Returns true only when it actually released the claim.
+     *
+     * Not released: a Pending Client ticket (the wait is on the requester, not
+     * the claimer), or one that is no longer being worked.
+     */
+    public function expireClaim(Ticket $ticket, CarbonInterface $now): bool
+    {
+        // Stored as given, so put it in the application zone first.
+        $now = Carbon::instance($now)->setTimezone(config('app.timezone'));
+
+        return DB::transaction(function () use ($ticket, $now) {
+            $locked = $this->lock($ticket);
+
+            if ($locked->claimed_by_user_id === null
+                || $locked->claim_expires_at === null
+                || $locked->claim_expires_at->greaterThan($now)
+                || ! $locked->status->isActive()
+                || $locked->status === TicketStatusEnum::PendingClient) {
+                return false;
+            }
+
+            $previous  = (int) $locked->claimed_by_user_id;
+            $expiredAt = $locked->claim_expires_at;
+
+            $locked->forceFill([
+                'claimed_by_user_id' => null,
+                'claimed_at'         => null,
+                'claim_expires_at'   => null,
+                'last_activity_at'   => $now,
+            ])->save();
+
+            $this->events->record(
+                $locked, TicketEvent::TYPE_CLAIM_EXPIRED, TicketSenderTypeEnum::System, null,
+                null, null,
+                ['previous_claimer' => $previous, 'expired_at' => $expiredAt->toIso8601String()],
+            );
+
+            return true;
+        });
+    }
+
     // =====================================================================
     // REPLIES
     // =====================================================================
@@ -271,13 +325,24 @@ class TicketService
             $message = $this->addMessage($locked, TicketSenderTypeEnum::Staff, $staff->user_id, $body);
 
             $from      = $locked->status;
-            $attrs     = ['last_activity_at' => now()];
+            $now       = now();
+            $attrs     = ['last_activity_at' => $now];
             if ($locked->first_responded_at === null) {
-                $attrs['first_responded_at'] = now();
+                $attrs['first_responded_at'] = $now;
+            }
+
+            // The claimer replying is staff activity: it restarts the claim
+            // timeout. A colleague covering for them does not.
+            if ((int) $locked->claimed_by_user_id === (int) $staff->user_id) {
+                $expiry = $this->sla->claimExpiresAt($now);
+                if ($expiry !== null) {
+                    $attrs['claim_expires_at'] = $expiry;
+                }
             }
 
             if ($awaitRequester && $locked->status !== TicketStatusEnum::PendingClient) {
-                $this->machine->transition($locked, TicketStatusEnum::PendingClient, $attrs);
+                // The wait is now on the requester: stop the resolution clock.
+                $this->machine->transition($locked, TicketStatusEnum::PendingClient, $attrs + $this->sla->pauseAttributes($now));
             } else {
                 $locked->forceFill($attrs)->save();
             }
@@ -330,10 +395,13 @@ class TicketService
             $message = $this->addMessage($locked, TicketSenderTypeEnum::Requester, $actorId, $body);
 
             $from  = $locked->status;
-            $attrs = ['last_activity_at' => now()];
+            $now   = now();
+            $attrs = ['last_activity_at' => $now];
 
             if ($from === TicketStatusEnum::PendingClient) {
-                $this->machine->transition($locked, TicketStatusEnum::InProgress, $attrs);
+                // The requester answered: restart the resolution clock, pushed
+                // back by the working time spent waiting.
+                $this->machine->transition($locked, TicketStatusEnum::InProgress, $attrs + $this->sla->resumeAttributes($locked, $now));
             } else {
                 $locked->forceFill($attrs)->save();
             }
@@ -385,6 +453,7 @@ class TicketService
                 'claimed_by_user_id'  => null,
                 'claimed_at'          => null,
                 'claim_expires_at'    => null,
+                'sla_paused_at'       => null, // resolving straight from Pending Client ends the pause
                 'first_responded_at'  => $locked->first_responded_at ?? $now,
                 'last_activity_at'    => $now,
             ]);
@@ -481,6 +550,8 @@ class TicketService
         $previousNote = $locked->resolution_note;
         $returns      = $locked->requester_returns + 1;
 
+        $now = now();
+
         $this->machine->transition($locked, TicketStatusEnum::InProgress, [
             'requester_returns' => $returns,
             'resolution_note'   => null,
@@ -488,8 +559,8 @@ class TicketService
             'resolved_by_user_id' => null,
             'auto_close_at'     => null,
             'reminder_sent_at'  => null,
-            'last_activity_at'  => now(),
-        ]);
+            'last_activity_at'  => $now,
+        ] + $this->sla->restartAttributes($locked->priority, $now));
 
         $this->events->record(
             $locked, TicketEvent::TYPE_RETURNED, TicketSenderTypeEnum::Requester, $actorId,
@@ -563,16 +634,14 @@ class TicketService
     }
 
     /**
-     * When a claim lapses if the claimer does nothing.
-     *
-     * HOOK for Phase 5: the policy default is 24 WORKING hours on the business
-     * calendar (config 'tickets.claim_timeout_working_hours'), which needs the
-     * SLA phase's calendar arithmetic. Until then claims do not expire on their
-     * own; staff release them, or a Manager does.
+     * When a claim lapses if the claimer does nothing: the configured number of
+     * WORKING hours on the business calendar (see SlaService). Null if the
+     * calendar cannot say, in which case the claim just does not expire by
+     * itself and staff release it by hand.
      */
     private function claimExpiresAt(CarbonInterface $from): ?CarbonInterface
     {
-        return null;
+        return $this->sla->claimExpiresAt($from);
     }
 
     /**

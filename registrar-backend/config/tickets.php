@@ -38,6 +38,19 @@ return [
     |
     */
     'sla' => [
+        // Which business calendar the ticket clocks run on. null = the calendar
+        // flagged is_default (the same one request processing uses), which is
+        // what the policy wants: one calendar, kept up to date by one team.
+        // Set an id only if tickets ever need a calendar of their own, and note
+        // holidays are per calendar then.
+        'calendar_id' => env('TICKETS_SLA_CALENDAR_ID') !== null ? (int) env('TICKETS_SLA_CALENDAR_ID') : null,
+
+        // [DEFAULT] Length of one "operating day" in working hours, used to turn
+        // resolution_days into working minutes. The policy's 8 AM–8 PM schedule
+        // is 12 hours. `php artisan tickets:verify-calendar` warns when the
+        // calendar's real hours differ.
+        'operating_day_hours' => (int) env('TICKETS_SLA_OPERATING_DAY_HOURS', 12),
+
         'first_response_hours' => [
             'high'   => (int) env('TICKETS_SLA_FIRST_RESPONSE_HOURS_HIGH', 4),
             'medium' => (int) env('TICKETS_SLA_FIRST_RESPONSE_HOURS_MEDIUM', 8),
@@ -78,11 +91,18 @@ return [
     |--------------------------------------------------------------------------
     |
     | [DEFAULT] A claim that sees no staff activity for this many WORKING hours
-    | is released automatically so an abandoned claim cannot hide a ticket from
-    | the rest of the team. Counted on the business calendar, like the SLA.
+    | is released automatically (tickets:release-stale-claims) so an abandoned
+    | claim cannot hide a ticket from the rest of the team. Counted on the
+    | business calendar, like the SLA. Activity means the CLAIMER replying; it
+    | restarts the timeout. While a ticket is Pending Client the claim is not
+    | released (the wait is on the requester), and the timeout restarts when the
+    | requester answers.
     |
     */
     'claim_timeout_working_hours' => (int) env('TICKETS_CLAIM_TIMEOUT_WORKING_HOURS', 24),
+    // Tickets handled per database chunk by the SLA sweep and the stale-claim
+    // sweep. Only bounds memory; every ticket is still visited each run.
+    'sweep_chunk_size'            => (int) env('TICKETS_SWEEP_CHUNK_SIZE', 100),
 
     /*
     |--------------------------------------------------------------------------

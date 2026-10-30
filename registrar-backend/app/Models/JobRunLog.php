@@ -75,6 +75,8 @@ class JobRunLog extends Model
         'health:detect'                          => 'Hourly :25',
         'health:prune'                           => 'Daily 08:40',
         'tickets:prune-public-submissions'       => 'Daily 08:45',
+        'tickets:sla-sweep'                      => 'Every 15 min',
+        'tickets:release-stale-claims'           => 'Every 30 min',
     ];
 
     /**
@@ -129,5 +131,7 @@ class JobRunLog extends Model
         'health:detect'                          => 120,
         'health:prune'                           => 1560,
         'tickets:prune-public-submissions'       => 1560,
+        'tickets:sla-sweep'                      => 30,
+        'tickets:release-stale-claims'           => 60,
     ];
 }

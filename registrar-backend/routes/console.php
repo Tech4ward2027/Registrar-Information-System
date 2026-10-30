@@ -334,3 +334,24 @@ Schedule::command('tickets:prune-public-submissions')
     ->withoutOverlapping()
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+/*
+|--------------------------------------------------------------------------
+| Support Ticketing — SLA sweep and stale-claim release (Phase 5)
+|--------------------------------------------------------------------------
+| The SLA sweep runs every 15 minutes (at :07, :22, :37, :52), the claim
+| release every 30 (at :12 and :42): both clear of the hourly :10 and :25
+| health jobs. Both only touch rows the ticket feature created, so they are
+| harmless while FEATURE_TICKETS is off.
+*/
+Schedule::command('tickets:sla-sweep')
+    ->cron('7,22,37,52 * * * *')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+Schedule::command('tickets:release-stale-claims')
+    ->cron('12,42 * * * *')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
