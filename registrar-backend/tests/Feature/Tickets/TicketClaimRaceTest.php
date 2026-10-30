@@ -48,6 +48,7 @@ test('when several staff claim the same tickets at once, exactly one wins each',
     };
 
     $stray = []; // non-result lines the workers printed
+    $raw   = []; // staff id => everything that worker wrote to stdout
 
     try {
         $setup = $run(['setup', (string) $ticketCount, (string) $staffCount]);
@@ -67,6 +68,7 @@ test('when several staff claim the same tickets at once, exactly one wins each',
         $results = []; // ticket id => list of [staff id, outcome]
         foreach ($racers as $staffId => $p) {
             $p->wait();
+            $raw[$staffId] = $p->getOutput();
             Assert::assertSame(0, $p->getExitCode(), $p->getErrorOutput() . $p->getOutput());
 
             foreach (array_filter(explode("\n", trim($p->getOutput()))) as $line) {
@@ -103,8 +105,15 @@ test('when several staff claim the same tickets at once, exactly one wins each',
         $attempts = $results[$ticketId];
         $winners  = array_values(array_filter($attempts, fn ($a) => $a['outcome'] === 'WON'));
 
-        expect($attempts)->toHaveCount($staffCount)
-            ->and($winners)->toHaveCount(1, "ticket {$ticketId} must have exactly one winner");
+        if (count($attempts) !== $staffCount) {
+            $dump = '';
+            foreach ($raw as $sid => $out) {
+                $dump .= "\n--- stdout of staff {$sid} (" . strlen($out) . " bytes) ---\n" . substr($out, 0, 1500);
+            }
+            Assert::fail("ticket {$ticketId} got " . count($attempts) . " result(s), expected {$staffCount}." . $dump);
+        }
+
+        expect($winners)->toHaveCount(1);
 
         $winner = $winners[0]['staff'];
 
