@@ -12,6 +12,17 @@ require_once __DIR__ . '/../../Support/TicketPublicTestHelpers.php';
 
 uses(RefreshDatabase::class);
 
+/**
+ * Replace the HTTP client with a fresh fake. Http::fake() only ADDS stubs, and
+ * the first stub matching a URL wins, so re-faking the same URL inside one
+ * test silently keeps answering with the first response.
+ */
+function tkFakeCaptchaHttp(mixed $stub): void
+{
+    Http::swap(new \Illuminate\Http\Client\Factory());
+    Http::fake($stub);
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // CAPTCHA verifier
 // ═════════════════════════════════════════════════════════════════════════════
@@ -19,12 +30,12 @@ uses(RefreshDatabase::class);
 test('Turnstile accepts only an explicit success from the provider', function () {
     config(['tickets.public.captcha.secret' => 's3cret', 'tickets.public.captcha.verify_url' => 'https://captcha.test/verify']);
 
-    Http::fake(['captcha.test/*' => Http::response(['success' => true])]);
+    tkFakeCaptchaHttp(['captcha.test/*' => Http::response(['success' => true])]);
     expect((new TurnstileCaptchaVerifier())->verify('token-1', '203.0.113.9'))->toBeTrue();
 
     Http::assertSent(fn ($r) => $r['secret'] === 's3cret' && $r['response'] === 'token-1' && $r['remoteip'] === '203.0.113.9');
 
-    Http::fake(['captcha.test/*' => Http::response(['success' => false, 'error-codes' => ['invalid-input-response']])]);
+    tkFakeCaptchaHttp(['captcha.test/*' => Http::response(['success' => false, 'error-codes' => ['invalid-input-response']])]);
     expect((new TurnstileCaptchaVerifier())->verify('token-1', null))->toBeFalse();
 });
 
@@ -35,13 +46,17 @@ test('Turnstile fails closed: no token, no secret, a provider error or an outage
     expect((new TurnstileCaptchaVerifier())->verify(null, null))->toBeFalse()
         ->and((new TurnstileCaptchaVerifier())->verify('  ', null))->toBeFalse();
 
-    Http::fake(['captcha.test/*' => Http::response('oops', 500)]);
+    tkFakeCaptchaHttp(['captcha.test/*' => Http::response('oops', 500)]);
     expect((new TurnstileCaptchaVerifier())->verify('t', null))->toBeFalse();
 
-    Http::fake(['captcha.test/*' => Http::response('not json', 200)]);
+    tkFakeCaptchaHttp(['captcha.test/*' => Http::response('not json', 200)]);
     expect((new TurnstileCaptchaVerifier())->verify('t', null))->toBeFalse();
 
-    Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('timeout'));
+    tkFakeCaptchaHttp(fn () => throw new \Illuminate\Http\Client\ConnectionException('timeout'));
+    expect((new TurnstileCaptchaVerifier())->verify('t', null))->toBeFalse();
+
+    // Only a literal boolean true counts: a truthy string is not a success.
+    tkFakeCaptchaHttp(['captcha.test/*' => Http::response(['success' => 'true'])]);
     expect((new TurnstileCaptchaVerifier())->verify('t', null))->toBeFalse();
 });
 

@@ -39,6 +39,13 @@ function tkPubCaptcha(bool $passes): void
             return $this->passes;
         }
     });
+
+    // The router keeps the controller instance it built on the first request,
+    // and that controller holds the verifier that was current then. Without
+    // this, swapping the verifier after a request has been made has no effect.
+    foreach (app('router')->getRoutes() as $route) {
+        $route->flushController();
+    }
 }
 
 function tkPubPayload(array $overrides = []): array
