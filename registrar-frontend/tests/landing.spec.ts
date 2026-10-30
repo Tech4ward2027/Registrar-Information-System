@@ -257,23 +257,9 @@ test.describe('Landing Page Tests', () => {
 
     await expect(commonQuestionsRegion).toBeVisible();
 
-    // Verify full FAQ/User Guide link
-    const fullFaqLink = page.getByRole('link', {
-      name: /Open the full user guide/i,
-    });
-
-    await expect(fullFaqLink).toBeVisible();
-
-    await expect(fullFaqLink).toHaveAttribute(
-      'href',
-      '/faqs'
-    );
-
-    // Verify FAQ page description
+    // Verify FAQ items inside Common questions
     await expect(
-      page.getByText(
-        'Every FAQ, the complete receipt guide, a search box, and all official contacts.'
-      )
+      commonQuestionsRegion.getByText('How do I log in to RIS?')
     ).toBeVisible();
   });
 
