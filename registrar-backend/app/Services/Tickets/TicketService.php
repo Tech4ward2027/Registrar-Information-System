@@ -172,8 +172,18 @@ class TicketService
      */
     public function claim(Ticket $ticket, SystemUser $staff): Ticket
     {
-        return DB::transaction(function () use ($ticket, $staff) {
-            $from = $this->claimAtomically($ticket->getKey(), $staff);
+        // Work out the claim timing BEFORE the transaction opens. It reads the
+        // business calendar, and a read inside a deferred SQLite transaction
+        // takes a snapshot that cannot later be upgraded to a write while
+        // another connection has written ("database is locked", with no
+        // busy-timeout wait). The claim UPDATE must be the first statement in
+        // the transaction. It also keeps calendar reads out of the row lock on
+        // MySQL, so the lock is held for less time.
+        $now    = now();
+        $expiry = $this->claimExpiresAt($now);
+
+        return DB::transaction(function () use ($ticket, $staff, $now, $expiry) {
+            $from = $this->claimAtomically($ticket->getKey(), $staff, $now, $expiry);
 
             if ($from === null) {
                 $this->explainFailedClaim($ticket->getKey());
@@ -579,10 +589,20 @@ class TicketService
      * status without a SELECT, so the race stays closed on every database.
      * The target status comes from the state machine, not a literal.
      */
-    private function claimAtomically(int|string $ticketId, SystemUser $staff): ?TicketStatusEnum
-    {
-        $now    = now();
-        $expiry = $this->claimExpiresAt($now);
+    private function claimAtomically(
+        int|string $ticketId,
+        SystemUser $staff,
+        ?CarbonInterface $now = null,
+        ?CarbonInterface $expiry = null,
+    ): ?TicketStatusEnum {
+        // Callers that are not racing on the first statement of a transaction
+        // (a staff reply that claims, after taking the row lock) let this
+        // compute the timing; claim() passes it in, computed before its
+        // transaction opened.
+        if ($now === null) {
+            $now    = now();
+            $expiry = $this->claimExpiresAt($now);
+        }
 
         $claim = [
             'claimed_by_user_id' => $staff->user_id,

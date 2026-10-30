@@ -98,6 +98,11 @@ test('when several staff claim the same tickets at once, exactly one wins each',
 
     $noise = $stray === [] ? '' : "\nworkers also printed:\n" . implode("\n", array_slice($stray, 0, 10));
 
+    // A worker that crashes can still exit 0 (the framework's handler prints the
+    // error and returns), so its output is the only evidence. Any line that is
+    // not a RESULT line means something went wrong in a worker.
+    Assert::assertSame([], $stray, 'a worker printed output other than results (it probably crashed):' . $noise);
+
     // Assert (not expect) so the message is actually shown on failure.
     Assert::assertEqualsCanonicalizing($data['tickets'], array_keys($results), 'expected one result set per ticket' . $noise);
 
