@@ -74,6 +74,7 @@ class JobRunLog extends Model
         'health:rollup'                          => 'Hourly :10',
         'health:detect'                          => 'Hourly :25',
         'health:prune'                           => 'Daily 08:40',
+        'tickets:prune-public-submissions'       => 'Daily 08:45',
     ];
 
     /**
@@ -127,5 +128,6 @@ class JobRunLog extends Model
         'health:rollup'                          => 120,
         'health:detect'                          => 120,
         'health:prune'                           => 1560,
+        'tickets:prune-public-submissions'       => 1560,
     ];
 }

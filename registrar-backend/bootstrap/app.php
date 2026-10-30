@@ -58,6 +58,9 @@ return Application::configure(basePath: dirname(__DIR__))
             // Fine-grained policy enforcement on top of 'role' — see
             // EnsureModuleAccess docblock for how the two interact.
             'module' => \App\Http\Middleware\EnsureModuleAccess::class,
+            // Support Ticketing magic-link gate (public submitters) — see
+            // EnsureTicketAccessToken's docblock.
+            'ticket.token' => \App\Http\Middleware\EnsureTicketAccessToken::class,
             // Re-checks status on every request (not just at login) — see
             // EnsureAccountActive docblock. Applied to the shared protected
             // route group in routes/api.php, not globally here, since public

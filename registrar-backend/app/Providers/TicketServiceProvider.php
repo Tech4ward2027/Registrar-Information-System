@@ -3,6 +3,10 @@
 namespace App\Providers;
 
 use App\Models\Ticket;
+use App\Services\Tickets\Captcha\CaptchaVerifier;
+use App\Services\Tickets\Captcha\NullCaptchaVerifier;
+use App\Services\Tickets\Captcha\TurnstileCaptchaVerifier;
+use App\Services\Tickets\PublicSubmission\TicketAccessTokenService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -28,6 +32,14 @@ use Illuminate\Support\Str;
  */
 class TicketServiceProvider extends ServiceProvider
 {
+    public function register(): void
+    {
+        // Decided when first resolved (not at boot) so the setting is read at request time.
+        $this->app->bind(CaptchaVerifier::class, fn () => config('tickets.public.captcha_enabled')
+            ? new TurnstileCaptchaVerifier()
+            : new NullCaptchaVerifier());
+    }
+
     public function boot(): void
     {
         // New tickets: N per window per signed-in user (policy: 3 per 10 min).
@@ -49,6 +61,75 @@ class TicketServiceProvider extends ServiceProvider
         RateLimiter::for('tickets-reply', function (Request $request) {
             return Limit::perHour(max(1, (int) config('tickets.rate_limits.replies_per_ticket_per_hour')))
                 ->by('tickets-reply:ticket:' . $this->ticketKey($request))
+                ->response($this->tooMany('This ticket has received too many replies. Please try again later.'));
+        });
+
+        $this->registerPublicLimiters();
+    }
+
+    /**
+     * Phase 4: the public (unauthenticated) limiters. All keyed by IP except where noted.
+     *
+     * The per-ADDRESS hourly ceiling on verification emails is not here: it is
+     * counted inside PublicSubmissionService after the anti-bot checks, so that
+     * junk requests naming someone else's address cannot use up their allowance.
+     */
+    private function registerPublicLimiters(): void
+    {
+        RateLimiter::for('tickets-public-form', fn (Request $r) => Limit::perMinute(
+            max(1, (int) config('tickets.rate_limits.public.form_per_ip_per_minute'))
+        )->by('tickets-public-form:' . $this->callerKey($r))
+            ->response($this->tooMany('Too many requests. Please slow down.')));
+
+        // A burst ceiling and the policy's hourly one, both per IP.
+        RateLimiter::for('tickets-public-start', function (Request $r) {
+            $limits = config('tickets.rate_limits.public');
+            $ip     = $this->callerKey($r);
+
+            return [
+                Limit::perMinute(max(1, (int) $limits['start_per_ip_per_minute']))
+                    ->by('tickets-public-start-min:' . $ip)
+                    ->response($this->tooMany('Too many attempts. Please wait a moment and try again.')),
+                Limit::perHour(max(1, (int) $limits['verification_emails_per_ip_per_hour']))
+                    ->by('tickets-public-start-hour:' . $ip)
+                    ->response($this->tooMany('Too many requests from your network. Please try again later.')),
+            ];
+        });
+
+        RateLimiter::for('tickets-public-confirm', fn (Request $r) => Limit::perMinute(
+            max(1, (int) config('tickets.rate_limits.public.confirm_per_ip_per_minute'))
+        )->by('tickets-public-confirm:' . $this->callerKey($r))
+            ->response($this->tooMany('Too many attempts. Please wait a moment and try again.')));
+
+        // Counts EVERY request, matched or not, so the limit itself reveals nothing
+        // about which tickets exist. The per-address bucket is separate from the
+        // verification one (see the config note on resend_per_email_per_hour).
+        RateLimiter::for('tickets-public-resend', function (Request $r) {
+            $limits = config('tickets.rate_limits.public');
+            $email  = mb_strtolower(trim((string) $r->input('email')));
+
+            return [
+                Limit::perHour(max(1, (int) $limits['resend_per_ip_per_hour']))
+                    ->by('tickets-public-resend-ip:' . $this->callerKey($r))
+                    ->response($this->tooMany('Too many requests from your network. Please try again later.')),
+                Limit::perHour(max(1, (int) $limits['resend_per_email_per_hour']))
+                    ->by('tickets-public-resend-email:' . sha1($email))
+                    ->response($this->tooMany('Too many link requests for this address. Please try again later.')),
+            ];
+        });
+
+        RateLimiter::for('tickets-public-track', fn (Request $r) => Limit::perMinute(
+            max(1, (int) config('tickets.rate_limits.public.track_per_ip_per_minute'))
+        )->by('tickets-public-track:' . $this->callerKey($r))
+            ->response($this->tooMany('Too many requests. Please slow down.')));
+
+        // Replies per TICKET per hour (policy: 10). The ticket comes from the token,
+        // not the URL; an invalid token falls back to the IP so it cannot dodge the limit.
+        RateLimiter::for('tickets-public-reply', function (Request $r) {
+            $ticket = app(TicketAccessTokenService::class)->ticketFor($r);
+
+            return Limit::perHour(max(1, (int) config('tickets.rate_limits.replies_per_ticket_per_hour')))
+                ->by('tickets-public-reply:' . ($ticket ? 'ticket:' . $ticket->public_id : 'ip:' . $this->callerKey($r)))
                 ->response($this->tooMany('This ticket has received too many replies. Please try again later.'));
         });
     }

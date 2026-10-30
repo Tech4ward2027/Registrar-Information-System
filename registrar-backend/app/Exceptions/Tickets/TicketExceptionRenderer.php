@@ -38,6 +38,18 @@ final class TicketExceptionRenderer
                 'limit'   => $e->limit,
             ], 409),
 
+            $e instanceof TicketRateLimitedException => response()->json([
+                'message'     => $e->getMessage(),
+                'code'        => 'rate_limited',
+                'retry_after' => $e->retryAfterSeconds,
+            ], 429, ['Retry-After' => $e->retryAfterSeconds]),
+
+            $e instanceof PublicOpenTicketLimitException => response()->json([
+                'message' => $e->getMessage(),
+                'code'    => 'open_tickets_limit',
+                'limit'   => $e->limit,
+            ], 409),
+
             $e instanceof TicketTransitionException => response()->json([
                 'message' => $e->getMessage(),
                 'code'    => 'invalid_transition',

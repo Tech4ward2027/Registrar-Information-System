@@ -322,3 +322,15 @@ Schedule::command('health:prune')
     ->withoutOverlapping()
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/scheduler.log'));
+/*
+|--------------------------------------------------------------------------
+| Support Ticketing — pending public submissions retention (Phase 4)
+|--------------------------------------------------------------------------
+| Daily 08:45, after health:prune (08:40). Harmless while FEATURE_TICKETS is
+| off: it only deletes rows the feature itself created.
+*/
+Schedule::command('tickets:prune-public-submissions')
+    ->dailyAt('08:45')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));

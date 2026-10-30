@@ -48,11 +48,8 @@ services:
       OGOS_CLIENT_SECRET: ${OGOS_CLIENT_SECRET}
       APP_NAME: ${APP_NAME:-RIS}
       FILESYSTEM_DISK: ${FILESYSTEM_DISK:-local}
-      # App-specific names (APP_ prefix) so the CI deploy job's exported
-      # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (ris-ci-deploy) can't
-      # override the app's S3 credentials (ris-s3-user).
-      AWS_ACCESS_KEY_ID: ${APP_AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${APP_AWS_SECRET_ACCESS_KEY}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-ap-southeast-1}
       AWS_BUCKET: ${AWS_BUCKET}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -79,6 +76,13 @@ services:
       FEATURE_SYSTEM_HEALTH: ${FEATURE_SYSTEM_HEALTH:-false}
       # tickets gates every Support Ticketing route (student, staff, public).
       FEATURE_TICKETS: ${FEATURE_TICKETS:-false}
+      # Public ticket CAPTCHA (Cloudflare Turnstile by default). With CAPTCHA
+      # enabled (the default) and no secret, public submissions are refused, by
+      # design. The ticketing tuning values (TICKETS_RL_*, TICKETS_PUBLIC_*) are
+      # read from the container environment too; add any you change here.
+      TICKETS_PUBLIC_CAPTCHA_ENABLED: ${TICKETS_PUBLIC_CAPTCHA_ENABLED:-true}
+      TICKETS_CAPTCHA_SITE_KEY: ${TICKETS_CAPTCHA_SITE_KEY:-}
+      TICKETS_CAPTCHA_SECRET: ${TICKETS_CAPTCHA_SECRET:-}
     ports:
       - "8000:8000"
     networks:
@@ -122,8 +126,8 @@ services:
       OGOS_CLIENT_SECRET: ${OGOS_CLIENT_SECRET}
       APP_NAME: ${APP_NAME:-RIS}
       FILESYSTEM_DISK: ${FILESYSTEM_DISK:-local}
-      AWS_ACCESS_KEY_ID: ${APP_AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${APP_AWS_SECRET_ACCESS_KEY}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-ap-southeast-1}
       AWS_BUCKET: ${AWS_BUCKET}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -190,8 +194,8 @@ services:
       OGOS_CLIENT_SECRET: ${OGOS_CLIENT_SECRET}
       APP_NAME: ${APP_NAME:-RIS}
       FILESYSTEM_DISK: ${FILESYSTEM_DISK:-local}
-      AWS_ACCESS_KEY_ID: ${APP_AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${APP_AWS_SECRET_ACCESS_KEY}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-ap-southeast-1}
       AWS_BUCKET: ${AWS_BUCKET}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -273,8 +277,8 @@ services:
       OGOS_CLIENT_SECRET: ${OGOS_CLIENT_SECRET}
       APP_NAME: ${APP_NAME:-RIS}
       FILESYSTEM_DISK: ${FILESYSTEM_DISK:-local}
-      AWS_ACCESS_KEY_ID: ${APP_AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${APP_AWS_SECRET_ACCESS_KEY}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-ap-southeast-1}
       AWS_BUCKET: ${AWS_BUCKET}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -343,8 +347,8 @@ services:
       OGOS_CLIENT_SECRET: ${OGOS_CLIENT_SECRET}
       APP_NAME: ${APP_NAME:-RIS}
       FILESYSTEM_DISK: ${FILESYSTEM_DISK:-local}
-      AWS_ACCESS_KEY_ID: ${APP_AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${APP_AWS_SECRET_ACCESS_KEY}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-ap-southeast-1}
       AWS_BUCKET: ${AWS_BUCKET}
       REDIS_PASSWORD: ${REDIS_PASSWORD}

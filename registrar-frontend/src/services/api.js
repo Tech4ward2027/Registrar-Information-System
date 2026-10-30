@@ -1260,6 +1260,95 @@ export const confirmTicketResolution = (id) => api.post(`/tickets/${id}/confirm`
 export const returnTicket = (id, reason = null) =>
   api.post(`/tickets/${id}/return`, reason ? { reason } : {});
 
+// --- Public (no account) ----------------------------------------------------
+// For people without a login. None of these send credentials that matter; they
+// are throttled per IP and each layer of the spam controls can answer 422/429:
+//   422  the form was sent too fast / the form token is stale (field `form_token`),
+//        the CAPTCHA failed (field `captcha_token`), or a field is invalid.
+//   429  a rate limit tripped; use err.retryAfterSeconds.
+//   409  code open_tickets_limit: the address already has the maximum open tickets.
+//
+// The journey:
+//   1. getPublicTicketForm()            -> categories, form_token, CAPTCHA setup
+//   2. startPublicTicket(form)          -> 202; a confirmation email is sent. NO ticket yet.
+//   3. the person clicks the emailed link, which opens a page of yours at
+//        <FRONTEND_URL>/support/confirm#token=...
+//      Read the token from window.location.hash (it is in the fragment so it
+//      never reaches a server log), then call
+//   4. confirmPublicTicketEmail(token)  -> 201: the ticket, plus `tracking_token`
+//   5. follow the ticket with that tracking token (also emailed as a link to
+//        <FRONTEND_URL>/support/ticket#token=...).
+// Show the confirm step as a BUTTON the person presses, not an automatic call on
+// page load: some mail scanners open links, and the confirmation link is single-use.
+// After reading a token from the fragment, strip it with
+// history.replaceState(null, "", location.pathname) so it is not left in history.
+//
+// The tracking token is the person's whole credential for that ticket. Keep it in
+// memory or sessionStorage, send it only in the X-Ticket-Token header (these
+// helpers do that), and never put it in a URL or a log line. 404 code
+// `invalid_ticket_link` means it is unknown, expired (a ticket stays reachable
+// until about 7 days after it closes) or wrong: offer resendPublicTicketLink().
+
+const ticketTokenHeaders = (token) => ({ headers: { "X-Ticket-Token": token } });
+
+// GET /public/tickets/form
+// Throttle: tickets-public-form (30/min per IP). Module: none.
+// Returns data = { form_token, honeypot_field, captcha: { enabled, site_key },
+//   categories: [...], limits: { subject_max_length, description_min_length,
+//   message_max_length, max_links_per_message } }.
+// form_token starts the minimum-fill-time clock: fetch it when the form is
+// shown, not earlier. Render the honeypot field (its name is data.honeypot_field)
+// as an input real people never see or fill: visually hidden with CSS,
+// tabindex=-1, autocomplete="off", aria-hidden. Do not use type="hidden".
+export const getPublicTicketForm = () => api.get("/public/tickets/form");
+
+// POST /public/tickets/start
+// Throttle: tickets-public-start (5/min and 10/hour per IP) plus 3 emails per
+// address per hour. Module: none.
+// form: { name, email, category_code, subject, description, form_token,
+//   captcha_token, [honeypot_field]: "" }. Always 202 with the same message once
+// accepted (it deliberately does not say whether anything was sent).
+export const startPublicTicket = (form) => api.post("/public/tickets/start", form);
+
+// POST /public/tickets/confirm-email
+// Throttle: tickets-public-confirm (10/min per IP). Module: none.
+// token: the value after #token= in the emailed link. 201 with the ticket in
+// `data` and the magic-link token in `tracking_token`. A used, expired or wrong
+// link is a 422 on field `token`.
+export const confirmPublicTicketEmail = (token) => api.post("/public/tickets/confirm-email", { token });
+
+// GET /public/tickets/track
+// Throttle: tickets-public-track (60/min per IP). Module: none (the token is the credential).
+// The ticket and its conversation, as a requester sees it (staff are never named):
+// data.actions = { can_reply, can_confirm, can_return }.
+export const getPublicTicket = (token) => api.get("/public/tickets/track", ticketTokenHeaders(token));
+
+// POST /public/tickets/track/replies
+// Throttle: tickets-public-reply (10 per ticket per hour) plus the tracking limit.
+// Module: none. At most 2 links per message. Returns 201 with the updated ticket.
+export const replyPublicTicket = (token, body) =>
+  api.post("/public/tickets/track/replies", { body }, ticketTokenHeaders(token));
+
+// POST /public/tickets/track/confirm
+// Throttle: tickets-public-track (60/min per IP). Module: none.
+// Confirms the resolution: Resolved -> Closed (final).
+export const confirmPublicTicketResolution = (token) =>
+  api.post("/public/tickets/track/confirm", {}, ticketTokenHeaders(token));
+
+// POST /public/tickets/track/return
+// Throttle: tickets-public-track (60/min per IP). Module: none.
+// "This isn't resolved", limited per ticket (409 return_limit_reached).
+export const returnPublicTicket = (token, reason = null) =>
+  api.post("/public/tickets/track/return", reason ? { reason } : {}, ticketTokenHeaders(token));
+
+// POST /public/tickets/resend-link
+// Throttle: tickets-public-resend (10/hour per IP, 3/hour per address).
+// Module: none. Always 202 with the same message whether or not the email and
+// ticket number matched anything: show that message as is, and do not try to
+// tell the person whether it worked.
+export const resendPublicTicketLink = (email, ticketNumber) =>
+  api.post("/public/tickets/resend-link", { email, ticket_number: ticketNumber });
+
 // --- Staff (under /admin/tickets) -------------------------------------------
 // Module: 'tickets' (Policy Management) — View for everything below, plus the
 // action noted on each call. Super Admin holds every action.

@@ -52,6 +52,8 @@ use App\Http\Controllers\UndergradRequestorVerificationController;
 use App\Http\Controllers\TicketCategoryController;
 use App\Http\Controllers\TicketController;
 use App\Http\Controllers\StaffTicketController;
+use App\Http\Controllers\PublicTicketController;
+use App\Http\Controllers\PublicTicketTrackingController;
 
 /*
 |--------------------------------------------------------------------------
@@ -135,6 +137,34 @@ Route::get('/undergrad-requestors/registration-notice', [UndergradRequestorContr
 // (ogos_course_id, code, name), so nothing here requires gating behind a
 // session. ProgramController is already imported above for the
 // authenticated /programs route.
+// ── Support Ticketing: PUBLIC submission (no account) ────────────────────────
+// Unauthenticated, behind the same 'feature:tickets' flag as the rest of the
+// module (404 while off). Layers, outermost first: the flag, the per-IP
+// limiters below (registered in TicketServiceProvider, values in
+// config/tickets.php), then PublicSubmissionService's own checks (honeypot,
+// minimum fill time, CAPTCHA, blocklist, per-address and per-day ceilings).
+//
+//   form          categories + a form token + CAPTCHA setup, in one call
+//   start         validate, run the checks, email a confirmation link (202)
+//   confirm-email the emailed token creates the ticket (201)
+//   resend-link   always the same 202 message, whatever matched
+//   track/*       follow and reply through the magic link: the token travels
+//                 in the X-Ticket-Token header (never in a URL), and the
+//                 'ticket.token' middleware turns it into the ticket.
+Route::middleware('feature:tickets')->prefix('public/tickets')->group(function () {
+    Route::get('form',          [PublicTicketController::class, 'form'])->middleware('throttle:tickets-public-form');
+    Route::post('start',        [PublicTicketController::class, 'start'])->middleware('throttle:tickets-public-start');
+    Route::post('confirm-email', [PublicTicketController::class, 'confirmEmail'])->middleware('throttle:tickets-public-confirm');
+    Route::post('resend-link',  [PublicTicketController::class, 'resendLink'])->middleware('throttle:tickets-public-resend');
+
+    Route::prefix('track')->middleware(['throttle:tickets-public-track', 'ticket.token'])->group(function () {
+        Route::get('/',          [PublicTicketTrackingController::class, 'show']);
+        Route::post('replies',   [PublicTicketTrackingController::class, 'reply'])->middleware('throttle:tickets-public-reply');
+        Route::post('confirm',   [PublicTicketTrackingController::class, 'confirm']);
+        Route::post('return',    [PublicTicketTrackingController::class, 'returnToProgress']);
+    });
+});
+
 Route::get('/undergrad-requestors/programs', [ProgramController::class, 'index'])
     ->middleware('throttle:undergrad-requestor-programs');
 

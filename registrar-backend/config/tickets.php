@@ -170,6 +170,16 @@ return [
             'tickets_per_email_per_day'              => (int) env('TICKETS_RL_TICKETS_PER_EMAIL_DAY', 3),
             'tickets_per_ip_per_day'                 => (int) env('TICKETS_RL_TICKETS_PER_IP_DAY', 10),
             'open_tickets_per_email'                 => (int) env('TICKETS_RL_OPEN_PER_EMAIL', 3),
+            // [DEFAULT] Not fixed by policy. A short burst ceiling per IP on top of the
+            // hourly one, and the ceilings on "resend my link" and on the tracking
+            // pages. Resend has its own per-address bucket so that hammering it for
+            // someone else's address cannot use up THEIR allowance to file a ticket.
+            'start_per_ip_per_minute'                => (int) env('TICKETS_RL_START_PER_IP_MINUTE', 5),
+            'resend_per_email_per_hour'              => (int) env('TICKETS_RL_RESEND_PER_EMAIL_HOUR', 3),
+            'resend_per_ip_per_hour'                 => (int) env('TICKETS_RL_RESEND_PER_IP_HOUR', 10),
+            'confirm_per_ip_per_minute'              => (int) env('TICKETS_RL_CONFIRM_PER_IP_MINUTE', 10),
+            'track_per_ip_per_minute'                => (int) env('TICKETS_RL_TRACK_PER_IP_MINUTE', 60),
+            'form_per_ip_per_minute'                 => (int) env('TICKETS_RL_FORM_PER_IP_MINUTE', 30),
         ],
         'authenticated' => [
             'tickets_per_window'     => (int) env('TICKETS_RL_AUTH_TICKETS', 3),
@@ -199,6 +209,35 @@ return [
         'min_fill_seconds'         => (int) env('TICKETS_PUBLIC_MIN_FILL_SECONDS', 3),
         'honeypot_field'           => env('TICKETS_PUBLIC_HONEYPOT_FIELD', 'website'),
         'captcha_enabled'          => (bool) env('TICKETS_PUBLIC_CAPTCHA_ENABLED', true),
+
+        // [DEFAULT] How long a form token (issued when the form loads, used to
+        // measure fill time) stays usable.
+        'form_token_max_age_minutes' => (int) env('TICKETS_PUBLIC_FORM_TOKEN_MAX_AGE_MINUTES', 120),
+        // [DEFAULT] Magic links alive at once per ticket; issuing more retires the oldest.
+        'max_access_tokens_per_ticket' => (int) env('TICKETS_PUBLIC_MAX_ACCESS_TOKENS', 5),
+        // [DEFAULT] Confirmed/expired pending submissions are deleted after this long.
+        'pending_retention_days'   => (int) env('TICKETS_PUBLIC_PENDING_RETENTION_DAYS', 7),
+
+        // [DEFAULT] Front-end pages the emailed links open. The token travels in
+        // the URL FRAGMENT (#token=...), which browsers never send to a server, so
+        // it stays out of access logs and Referer headers; the page reads it and
+        // sends it in the X-Ticket-Token header.
+        'links' => [
+            'confirm_path' => env('TICKETS_PUBLIC_CONFIRM_PATH', '/support/confirm'),
+            'track_path'   => env('TICKETS_PUBLIC_TRACK_PATH', '/support/ticket'),
+        ],
+
+        // [DEFAULT] CAPTCHA. Cloudflare Turnstile out of the box; hCaptcha and
+        // reCAPTCHA accept the same request (secret, response, remoteip), so
+        // switching provider is a matter of verify_url, site_key and secret.
+        // Fails CLOSED: enabled with no secret, or an unreachable provider, means
+        // every public submission is refused, never waved through.
+        'captcha' => [
+            'site_key'   => env('TICKETS_CAPTCHA_SITE_KEY'),
+            'secret'     => env('TICKETS_CAPTCHA_SECRET'),
+            'verify_url' => env('TICKETS_CAPTCHA_VERIFY_URL', 'https://challenges.cloudflare.com/turnstile/v0/siteverify'),
+            'timeout'    => (int) env('TICKETS_CAPTCHA_TIMEOUT_SECONDS', 5),
+        ],
     ],
 
     /*
