@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { XMarkIcon, FunnelIcon, ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
+import { XMarkIcon, FunnelIcon, ChevronDownIcon, ChevronUpIcon, ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 import { useTheme } from "../context/ThemeContext";
 import { useReferenceData } from "../context/ReferenceDataContext";
 import SuccessToast from "../components/SuccessToast.jsx";
@@ -122,6 +122,7 @@ const UnmatchedCashierItemsManagement = () => {
       const res = await getUnmatchedCashierItems({
         resolved: showResolved ? 1 : 0,
         page,
+        per_page: 5,
       });
       setItems(res.data?.data ?? []);
       setMeta({
@@ -525,26 +526,63 @@ const UnmatchedCashierItemsManagement = () => {
         </div>
       </div>
 
-      {/* Pagination */}
-      {meta.last_page > 1 && (
-        <div className="flex flex-wrap justify-center items-center gap-3 sm:gap-4 mt-4 text-xs sm:text-sm">
-          <button
-            disabled={meta.current_page <= 1 || loading}
-            onClick={() => loadItems(meta.current_page - 1)}
-            className={`px-3 py-1.5 rounded-lg border disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${rowBorder}`}
-          >
-            Previous
-          </button>
-          <span className={subtleText}>Page {meta.current_page} of {meta.last_page}</span>
-          <button
-            disabled={meta.current_page >= meta.last_page || loading}
-            onClick={() => loadItems(meta.current_page + 1)}
-            className={`px-3 py-1.5 rounded-lg border disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${rowBorder}`}
-          >
-            Next
-          </button>
-        </div>
-      )}
+      {/* Pagination Footer (Centered Admin Management Style matching FailedVerificationsPanel) */}
+      {items.length > 0 && (() => {
+        const totalPages = Math.max(1, meta.last_page || 1);
+        const page = meta.current_page || 1;
+        const pageNumbers = () => {
+          if (totalPages <= 6) return Array.from({ length: totalPages }, (_, i) => i + 1);
+          const pages = [1, 2, 3];
+          if (page > 4) pages.push('...');
+          if (page > 3 && page < totalPages - 2) pages.push(page);
+          pages.push('...', totalPages - 1, totalPages);
+          return [...new Set(pages)];
+        };
+
+        return (
+          <div className={`flex items-center justify-center gap-1 pt-3 border-t text-xs ${isDark ? 'border-[#3e4042]' : 'border-gray-100'}`}>
+            <button
+              type="button"
+              disabled={page <= 1 || loading}
+              onClick={() => loadItems(Math.max(1, page - 1))}
+              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg disabled:opacity-40 cursor-pointer transition-colors ${
+                isDark ? 'text-[#b0b3b8] hover:text-white hover:bg-[#2a2a2f]' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'
+              }`}
+            >
+              <ChevronLeftIcon className="w-3.5 h-3.5" /> Previous
+            </button>
+            {pageNumbers().map((p, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => typeof p === 'number' && loadItems(p)}
+                disabled={p === '...' || loading}
+                className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-center ${
+                  page === p
+                    ? isDark
+                      ? 'bg-yellow-400 text-gray-900 font-bold'
+                      : 'bg-pup-dark-maroon text-white font-bold'
+                    : isDark
+                      ? 'text-[#b0b3b8] hover:bg-[#2a2a2f]'
+                      : 'text-gray-500 hover:bg-gray-100'
+                } ${p === '...' ? 'cursor-default pointer-events-none' : ''}`}
+              >
+                {p}
+              </button>
+            ))}
+            <button
+              type="button"
+              disabled={page >= totalPages || loading}
+              onClick={() => loadItems(Math.min(totalPages, page + 1))}
+              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg disabled:opacity-40 cursor-pointer transition-colors ${
+                isDark ? 'text-[#b0b3b8] hover:text-white hover:bg-[#2a2a2f]' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'
+              }`}
+            >
+              Next <ChevronRightIcon className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Resolve modal */}
       {resolveModal.open && (
