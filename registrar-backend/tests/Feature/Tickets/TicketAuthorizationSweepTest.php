@@ -85,7 +85,7 @@ function tkSweepActors(): array
 }
 
 /** 'allow' or the exact denial status. */
-function tkSweepExpected(string $routeKind, array $need, bool $isTicketRoute, string $actorName, array $actor): string
+function tkSweepExpected(string $routeKind, array $need, string $method, string $actorName, array $actor): string
 {
     if ($actorName === 'guest') {
         return $routeKind === 'public' ? 'allow' : '401';
@@ -98,7 +98,12 @@ function tkSweepExpected(string $routeKind, array $need, bool $isTicketRoute, st
         'any_auth'      => 'allow',
         'public'        => 'allow',
         'requester_any' => $isRequesterSide ? 'allow' : '403',
-        'requester'     => $actor['kind'] === 'owner' ? 'allow' : ($isRequesterSide ? '404' : '403'),
+        // The codebase's RoleMiddleware lets a Super Admin through every role gate, so a Super Admin
+        // reaches the requester routes; TicketPolicy then lets them READ any ticket (staff may) but
+        // hides every requester action (reply/confirm/return) as 404, because they are not the owner.
+        'requester'     => $actor['kind'] === 'owner' ? 'allow'
+            : ($actor['kind'] === 'super' ? ($method === 'GET' ? 'allow' : '404')
+            : ($isRequesterSide ? '404' : '403')),
         'staff'         => ! $isStaffSide ? '403'
             : ($actor['kind'] === 'super' ? 'allow'
             : (! in_array('View', $actor['actions'], true) ? '403'
@@ -154,7 +159,7 @@ test('authenticated routes: every caller gets exactly the right answer, flag on'
         }
 
         foreach ($actors as $name => $actor) {
-            $expected = tkSweepExpected($kind, $need, str_contains($uri, '{ticket}'), $name, $actor);
+            $expected = tkSweepExpected($kind, $need, $method, $name, $actor);
             $url      = tkSweepUrl($uri, $actor, $owner);
             $status   = tkSweepCall($method, $url, tkSweepPayload($uri), $actor['user'])->getStatusCode();
 

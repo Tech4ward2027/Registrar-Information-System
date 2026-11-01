@@ -61,8 +61,14 @@ class StaffTicketBlockController extends Controller
     }
 
     // DELETE /admin/tickets/blocks/{block}
-    public function destroy(ManageTicketsRequest $request, TicketBlock $block): JsonResponse
+    //
+    // {block} is taken as a plain id and looked up AFTER the Form Request has authorized the
+    // caller. With implicit model binding the lookup ran first, so anyone (even a student)
+    // got 404 for a missing id but 403 for an existing one, which revealed which ids exist.
+    public function destroy(ManageTicketsRequest $request, int $block): JsonResponse
     {
+        $block = TicketBlock::query()->findOrFail($block);
+
         $this->admin->removeBlock($request, $request->user(), $block);
 
         return response()->json(['message' => 'Block removed.']);

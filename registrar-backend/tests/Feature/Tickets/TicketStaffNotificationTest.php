@@ -25,6 +25,9 @@ afterEach(fn () => Carbon::setTestNow());
 
 function tkStaffSweep(string $manila): void
 {
+    // Move the clock with the sweep. Notification ids are random UUIDs, so entries stamped with
+    // the same frozen instant come back in random order; distinct times keep "oldest first" true.
+    tkSlaNow($manila);
     app(TicketSlaMonitor::class)->run(tkSlaAt($manila));
 }
 

@@ -18,7 +18,6 @@ uses(RefreshDatabase::class);
 
 function tkQueryCount(Closure $request): array
 {
-    DB::flushQueryListeners();
     DB::connection()->flushQueryLog();
     DB::connection()->enableQueryLog();
 
