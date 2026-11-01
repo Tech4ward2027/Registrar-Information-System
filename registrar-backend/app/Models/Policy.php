@@ -32,7 +32,7 @@ class Policy extends Model
      * touching this array (plus the frontend's mirrored MODULE_KEYS in
      * src/utils/policy.js).
      */
-    public const MODULE_KEYS = ['dashboard', 'inbox', 'analytics', 'logbook', 'profile', 'access_requests', 'business_calendar', 'cashier_overrides', 'free_requests', 'undergrad_verification', 'cashier_reconciliation'];
+    public const MODULE_KEYS = ['dashboard', 'inbox', 'analytics', 'logbook', 'profile', 'access_requests', 'business_calendar', 'cashier_overrides', 'free_requests', 'undergrad_verification', 'cashier_reconciliation', 'tickets'];
 
     /**
      * Per-module action vocabulary — the single source of truth for
@@ -107,6 +107,27 @@ class Policy extends Model
         // who may Approve/Reject vs. merely View the queue should live
         // in policy configuration, not a hardcoded role check.
         'undergrad_verification' => ['View', 'Approve', 'Reject'],
+
+        // Support Ticketing — Phase 0.
+        //   View    — see the shared staff queue and open any ticket
+        //             (read-only). Every other action implies View; the
+        //             sanitizer in PolicyService backfills it.
+        //   Claim   — claim a ticket from the queue (Open -> In Progress)
+        //             and release a claim. There is no permanent assignment.
+        //   Reply   — post a staff reply on a ticket.
+        //   Resolve — mark a ticket Resolved (requires a resolution note).
+        //             Any staff holding this action may resolve, not only
+        //             the current claimer (default; see config/tickets.php).
+        //   Manage  — administrative actions: category management, SLA and
+        //             volume reporting, audited log export, spam flagging
+        //             and blocking repeat offenders.
+        //
+        // Separate tokens (as with free_requests / undergrad_verification)
+        // so who may Resolve or Manage is policy configuration, never a
+        // hardcoded role check. Deliberately NOT backfilled onto existing
+        // policies: a new module is deny-by-default until a Super Admin
+        // grants it through Policy Management.
+        'tickets' => ['View', 'Claim', 'Reply', 'Resolve', 'Manage'],
     ];
 
     /**

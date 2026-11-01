@@ -36,6 +36,10 @@ class DatabaseSeeder extends Seeder
         $this->seedCertificateTypes();
         $this->call(FailureReasonCodeSeeder::class);
 
+        // Support Ticketing — the five approved categories (CAT-01..CAT-05).
+        // Insert-if-absent, so re-running never overwrites an admin's edits.
+        $this->call(TicketCategorySeeder::class);
+
         // Overrides the inline cashier_document_patterns set above with the
         // authoritative, more recently verified pattern list (see that
         // seeder's docblock for its source-of-truth note). Must run after
@@ -54,6 +58,11 @@ class DatabaseSeeder extends Seeder
         // "unknown trigger_event" and the decision notification silently
         // never exists, including in every RefreshDatabase test run.
         $this->call(UndergradRequestorNotificationTypeSeeder::class);
+
+        // Support Ticketing — Phase 6. The ten ticket notification types
+        // (insert-if-absent, keyed on trigger_event). The migration adds them
+        // too; this keeps `db:seed` and fresh dev databases complete.
+        $this->call(TicketNotificationTypeSeeder::class);
 
         // LocalAuthPasswordSeeder was removed — it contained real plaintext
         // passwords committed to source control. Do not recreate it with

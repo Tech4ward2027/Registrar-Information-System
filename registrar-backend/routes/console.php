@@ -322,3 +322,59 @@ Schedule::command('health:prune')
     ->withoutOverlapping()
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/scheduler.log'));
+/*
+|--------------------------------------------------------------------------
+| Support Ticketing — pending public submissions retention (Phase 4)
+|--------------------------------------------------------------------------
+| Daily 08:45, after health:prune (08:40). Harmless while FEATURE_TICKETS is
+| off: it only deletes rows the feature itself created.
+*/
+Schedule::command('tickets:prune-public-submissions')
+    ->dailyAt('08:45')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+/*
+|--------------------------------------------------------------------------
+| Support Ticketing — SLA sweep and stale-claim release (Phase 5)
+|--------------------------------------------------------------------------
+| The SLA sweep runs every 15 minutes (at :07, :22, :37, :52), the claim
+| release every 30 (at :12 and :42): both clear of the hourly :10 and :25
+| health jobs. Both only touch rows the ticket feature created, so they are
+| harmless while FEATURE_TICKETS is off.
+*/
+Schedule::command('tickets:sla-sweep')
+    ->cron('7,22,37,52 * * * *')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+Schedule::command('tickets:release-stale-claims')
+    ->cron('12,42 * * * *')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+/*
+|--------------------------------------------------------------------------
+| Support Ticketing — auto-close and retention (Phase 7)
+|--------------------------------------------------------------------------
+| tickets:auto-close runs every 30 minutes (at :17 and :47, clear of the SLA
+| sweep at :07/:22/:37/:52 and the claim release at :12/:42), so a ticket
+| closes within half an hour of its window ending. tickets:anonymize-expired
+| runs daily at 03:45, after audit:verify (03:00) and requests:check-consistency
+| (03:30). Both are harmless while FEATURE_TICKETS is off: they only touch rows
+| the ticket feature created, and are idempotent.
+*/
+Schedule::command('tickets:auto-close')
+    ->cron('17,47 * * * *')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+Schedule::command('tickets:anonymize-expired')
+    ->dailyAt('03:45')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));

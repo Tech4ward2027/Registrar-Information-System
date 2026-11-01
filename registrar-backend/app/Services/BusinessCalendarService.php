@@ -123,6 +123,75 @@ class BusinessCalendarService
     }
 
     /**
+     * The instant at which $minutes of open time have elapsed after $from: the
+     * inverse of minutesBetween(), built on the same dayWindow() so the two can
+     * never disagree about what counts as open time. For any whole-minute $from
+     * and $minutes > 0, minutesBetween($from, addBusinessMinutes($from, $minutes))
+     * equals $minutes.
+     *
+     * Used for due dates ("4 working hours from now"). A $from that falls
+     * outside open hours simply starts counting at the next opening, so a
+     * request filed Friday 9 PM, on a holiday or on a closed Monday begins
+     * accumulating when the office next opens. A result that lands exactly on a
+     * closing time is returned as that closing time (the deadline is "by 8 PM").
+     *
+     * Counted in whole seconds, so a $from with seconds is handled exactly.
+     * Returns $from unchanged for 0 minutes. Like the other methods here the
+     * result is in config('app.display_timezone'); convert before storing.
+     *
+     * @throws InvalidArgumentException  $minutes is negative
+     * @throws RuntimeException          no open time was found within MAX_DAYS (a
+     *                                   calendar with every day closed)
+     */
+    public function addBusinessMinutes(CarbonInterface $from, int $minutes, ?int $calendarId = null): CarbonInterface
+    {
+        if ($minutes < 0) {
+            throw new InvalidArgumentException('Cannot add a negative number of business minutes.');
+        }
+
+        $timezone = config('app.display_timezone', 'Asia/Manila');
+        $start    = Carbon::instance($from)->clone()->setTimezone($timezone);
+
+        if ($minutes === 0) {
+            return $start;
+        }
+
+        $calendar    = $this->resolveCalendar($calendarId);
+        $weeklyHours = $calendar->weekly_hours ?? [];
+        $horizon     = $start->clone()->addDays(self::MAX_DAYS);
+
+        $exceptions = $this->exceptionsOverlapping($calendar, $start, $horizon);
+        $overrides  = $this->activeOverrides($calendar, $start, $horizon);
+
+        $remaining = $minutes * 60; // seconds
+        $cursor    = $start->clone()->startOfDay();
+
+        for ($walked = 0; $walked <= self::MAX_DAYS; $walked++) {
+            $window = $this->dayWindow($cursor, $weeklyHours, $exceptions, $overrides);
+
+            if ($window !== null) {
+                $windowStart = $window['open']->greaterThan($start) ? $window['open'] : $start;
+                $available   = $window['close']->getTimestamp() - $windowStart->getTimestamp();
+
+                if ($available > 0) {
+                    if ($available >= $remaining) {
+                        return $windowStart->clone()->addSeconds($remaining);
+                    }
+
+                    $remaining -= $available;
+                }
+            }
+
+            $cursor->addDay();
+        }
+
+        throw new RuntimeException(
+            'BusinessCalendarService::addBusinessMinutes found no open time within '.self::MAX_DAYS.
+            " days for calendar '{$calendar->name}' — check its weekly_hours/exceptions/overrides configuration."
+        );
+    }
+
+    /**
      * Whether $at falls inside $calendarId's office hours right now, and —
      * if not — the next instant it will. Powers the public "we're
      * open/closed" notice on the student request form: a request filed at
