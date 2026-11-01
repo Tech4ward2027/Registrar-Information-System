@@ -41,3 +41,17 @@ Broadcast::channel('notifications.{userId}', function (SystemUser $user, int $us
 Broadcast::channel('admin.notifications', function (SystemUser $user) {
     return $user->isAdmin() || $user->isSuperAdmin();
 });
+
+/*
+|--------------------------------------------------------------------------
+| PRIVATE CHANNELS: tickets.staff and ticket.{publicId}  (Support Ticketing)
+|--------------------------------------------------------------------------
+| Live "something changed" pings (App\Events\TicketUpdated). Authorisation is
+| delegated to TicketChannelAuthorizer, which asks TicketPolicy: staff who can
+| see the queue may join tickets.staff; a ticket's owner (or such staff) may join
+| ticket.{publicId}. Public submitters have no account and no channel.
+|--------------------------------------------------------------------------
+*/
+Broadcast::channel('tickets.staff', fn (SystemUser $user) => \App\Support\Tickets\TicketChannelAuthorizer::staffQueue($user));
+
+Broadcast::channel('ticket.{publicId}', fn (SystemUser $user, string $publicId) => \App\Support\Tickets\TicketChannelAuthorizer::ticket($user, $publicId));

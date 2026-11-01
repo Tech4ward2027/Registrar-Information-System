@@ -262,6 +262,30 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Notifications (Phase 6)
+    |--------------------------------------------------------------------------
+    |
+    | email_enabled        master switch for the emails sent to requesters
+    |                      (signed-in AND public). The in-app bell is unaffected.
+    | live_updates_enabled the Reverb TicketUpdated event that refreshes open
+    |                      queues and ticket pages. Off = pages refresh on reload.
+    | requester_path       where a signed-in requester's email links, appended to
+    |                      FRONTEND_URL. {public_id} is the ticket's public id.
+    |                      (Public submitters get their magic link instead.)
+    | dedupe_ttl_hours     how long a delivered (notification, recipient,
+    |                      channel) is remembered so a retried job never sends
+    |                      the same bell entry or email twice.
+    |
+    */
+    'notifications' => [
+        'email_enabled'        => filter_var(env('TICKETS_NOTIFY_EMAIL', true), FILTER_VALIDATE_BOOLEAN),
+        'live_updates_enabled' => filter_var(env('TICKETS_LIVE_UPDATES', true), FILTER_VALIDATE_BOOLEAN),
+        'requester_path'       => env('TICKETS_REQUESTER_PATH', '/tickets/{public_id}'),
+        'dedupe_ttl_hours'     => (int) env('TICKETS_NOTIFY_DEDUPE_HOURS', 24),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Ticket numbers
     |--------------------------------------------------------------------------
     |

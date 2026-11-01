@@ -29,6 +29,10 @@ class NotificationResource extends JsonResource
             // Identifier the frontend uses to open the request (public_id).
             // Eager-load with Notification::withRequestPublicId() to avoid an N+1.
             'request_public_id' => $this->request?->public_id,
+            // Support Ticketing: the ticket a ticket notification is about, so
+            // the bell can open it. Null for every other notification.
+            'ticket_public_id' => $this->data['ticket_public_id'] ?? null,
+            'ticket_number'    => $this->data['ticket_number'] ?? null,
             'read_at'      => $this->read_at?->toISOString(),
             'created_at'   => $this->created_at->toISOString(),
             'is_unread'    => is_null($this->read_at),

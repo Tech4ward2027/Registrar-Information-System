@@ -2,6 +2,7 @@
 
 namespace App\Services\Tickets;
 
+use App\Enums\TicketNotificationKindEnum;
 use App\Enums\TicketSenderTypeEnum;
 use App\Enums\TicketStatusEnum;
 use App\Exceptions\Tickets\TicketActionNotAllowedException;
@@ -12,6 +13,7 @@ use App\Models\Ticket;
 use App\Models\TicketCategory;
 use App\Models\TicketEvent;
 use App\Models\TicketMessage;
+use App\Services\Tickets\Notifications\TicketNotifier;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -48,7 +50,12 @@ use InvalidArgumentException;
  * sweeps live elsewhere (TicketSlaMonitor, and expireClaim() below, called by
  * tickets:release-stale-claims).
  *
- * Not in this class (later phases): notifications (6), the auto-close sweep (7).
+ * Notifications (Phase 6): after each change is saved, the action tells
+ * TicketNotifier what happened. That only QUEUES the notification job and the
+ * live update, both dispatched after commit, so nothing goes out for a change
+ * that rolls back and the notifier never touches the database mid-transaction.
+ *
+ * Not in this class (later phases): the auto-close sweep (7).
  */
 class TicketService
 {
@@ -57,6 +64,7 @@ class TicketService
         private readonly TicketStateMachine $machine,
         private readonly TicketEventRecorder $events,
         private readonly SlaService $sla,
+        private readonly TicketNotifier $notifier,
     ) {
     }
 
@@ -147,7 +155,10 @@ class TicketService
                 ['category' => $category->code, 'channel' => $channel, 'message_id' => $message->getKey()],
             );
 
-            return $ticket->refresh();
+            $ticket->refresh();
+            $this->notifier->liveUpdate($ticket, 'created');
+
+            return $ticket;
         });
     }
 
@@ -197,6 +208,8 @@ class TicketService
                 ['claim_expires_at' => $fresh->claim_expires_at?->toIso8601String()],
             );
 
+            $this->notifier->liveUpdate($fresh, 'claimed');
+
             return $fresh;
         });
     }
@@ -237,6 +250,8 @@ class TicketService
                 null, null,
                 ['previous_claimer' => $previous, 'released_by_other' => $previous !== (int) $actor->user_id],
             );
+
+            $this->notifier->liveUpdate($locked, 'released');
 
             return $locked;
         });
@@ -284,6 +299,8 @@ class TicketService
                 null, null,
                 ['previous_claimer' => $previous, 'expired_at' => $expiredAt->toIso8601String()],
             );
+
+            $this->notifier->notify($locked, TicketNotificationKindEnum::ClaimExpired, ['previous_claimer' => $previous]);
 
             return true;
         });
@@ -364,6 +381,14 @@ class TicketService
                 ['message_id' => $message->getKey(), 'awaiting_requester' => $awaitRequester],
             );
 
+            // Exactly one notification per staff reply, whatever else the reply
+            // did (auto-claim, status change): the requester is told once.
+            $this->notifier->notify(
+                $locked,
+                $awaitRequester ? TicketNotificationKindEnum::Question : TicketNotificationKindEnum::StaffReply,
+                ['message_id' => $message->getKey()],
+            );
+
             return $message;
         });
     }
@@ -398,8 +423,12 @@ class TicketService
                 throw new TicketActionNotAllowedException('reply to', $locked->status);
             }
 
+            $resolver = null;
+            $returned = false;
+
             if ($locked->status === TicketStatusEnum::Resolved) {
-                $this->applyReturn($locked, $actorId, 'reply');
+                $resolver = $this->applyReturn($locked, $actorId, 'reply');
+                $returned = true;
             }
 
             $message = $this->addMessage($locked, TicketSenderTypeEnum::Requester, $actorId, $body);
@@ -422,6 +451,14 @@ class TicketService
                 $from !== $locked->status ? $locked->status : null,
                 ['message_id' => $message->getKey()],
             );
+
+            // A reply that sent a Resolved ticket back is one notification
+            // ("sent back", to whoever resolved it), not two.
+            if ($returned) {
+                $this->notifier->notify($locked, TicketNotificationKindEnum::Returned, ['resolver' => $resolver]);
+            } else {
+                $this->notifier->notify($locked, TicketNotificationKindEnum::RequesterReply, ['message_id' => $message->getKey()]);
+            }
 
             return $message;
         });
@@ -474,6 +511,10 @@ class TicketService
                 ['resolution_note' => $note, 'previous_claimer' => $previousClaimer],
             );
 
+            $this->notifier->notify($locked, TicketNotificationKindEnum::Resolved, [
+                'auto_close_at' => $locked->auto_close_at?->toIso8601String(),
+            ]);
+
             return $locked;
         });
     }
@@ -502,6 +543,8 @@ class TicketService
                 TicketStatusEnum::Resolved, TicketStatusEnum::Closed,
             );
 
+            $this->notifier->liveUpdate($locked, 'closed');
+
             return $locked;
         });
     }
@@ -522,11 +565,13 @@ class TicketService
             $locked  = $this->lock($ticket);
             $actorId = $requester?->user_id;
 
-            $this->applyReturn($locked, $actorId, 'button');
+            $resolver = $this->applyReturn($locked, $actorId, 'button');
 
             if ($reason !== null) {
                 $this->addMessage($locked, TicketSenderTypeEnum::Requester, $actorId, $reason);
             }
+
+            $this->notifier->notify($locked, TicketNotificationKindEnum::Returned, ['resolver' => $resolver]);
 
             return $locked;
         });
@@ -545,8 +590,11 @@ class TicketService
      * the `resolved` event, and is repeated in this event for convenience.
      * The ticket comes back UNCLAIMED, so it reappears at the top of the queue
      * for whoever is free.
+     *
+     * Returns the user id of whoever had resolved it (null if unknown), so the
+     * caller can tell them it came back.
      */
-    private function applyReturn(Ticket $locked, ?int $actorId, string $via): void
+    private function applyReturn(Ticket $locked, ?int $actorId, string $via): ?int
     {
         if ($locked->status !== TicketStatusEnum::Resolved) {
             throw new TicketActionNotAllowedException('send back', $locked->status);
@@ -558,6 +606,7 @@ class TicketService
         }
 
         $previousNote = $locked->resolution_note;
+        $resolver     = $locked->resolved_by_user_id; // cleared below; the resolver is who gets told
         $returns      = $locked->requester_returns + 1;
 
         $now = now();
@@ -577,6 +626,8 @@ class TicketService
             TicketStatusEnum::Resolved, TicketStatusEnum::InProgress,
             ['return_number' => $returns, 'via' => $via, 'previous_resolution_note' => $previousNote],
         );
+
+        return $resolver === null ? null : (int) $resolver;
     }
 
     /**

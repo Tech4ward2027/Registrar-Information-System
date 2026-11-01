@@ -59,6 +59,11 @@ class DatabaseSeeder extends Seeder
         // never exists, including in every RefreshDatabase test run.
         $this->call(UndergradRequestorNotificationTypeSeeder::class);
 
+        // Support Ticketing — Phase 6. The ten ticket notification types
+        // (insert-if-absent, keyed on trigger_event). The migration adds them
+        // too; this keeps `db:seed` and fresh dev databases complete.
+        $this->call(TicketNotificationTypeSeeder::class);
+
         // LocalAuthPasswordSeeder was removed — it contained real plaintext
         // passwords committed to source control. Do not recreate it with
         // real credentials. For local dev accounts, use LocalDevSeeder,

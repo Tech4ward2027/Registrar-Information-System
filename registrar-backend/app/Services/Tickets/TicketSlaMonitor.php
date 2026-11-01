@@ -2,10 +2,12 @@
 
 namespace App\Services\Tickets;
 
+use App\Enums\TicketNotificationKindEnum;
 use App\Enums\TicketSenderTypeEnum;
 use App\Enums\TicketStatusEnum;
 use App\Models\Ticket;
 use App\Models\TicketEvent;
+use App\Services\Tickets\Notifications\TicketNotifier;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -47,6 +49,7 @@ final class TicketSlaMonitor
     public function __construct(
         private readonly SlaService $sla,
         private readonly TicketEventRecorder $events,
+        private readonly TicketNotifier $notifier,
     ) {
     }
 
@@ -128,6 +131,9 @@ final class TicketSlaMonitor
 
                 $this->events->record($ticket, TicketEvent::TYPE_SLA_BREACHED, TicketSenderTypeEnum::System, null, null, null, $metadata);
 
+                // Told once: the flag above is what stops the next sweep repeating this.
+                $this->notifier->notify($ticket, TicketNotificationKindEnum::SlaBreached, ['target' => $target]);
+
                 return 'breached';
             }
 
@@ -135,6 +141,8 @@ final class TicketSlaMonitor
                 $ticket->forceFill([$atRiskColumn => $now])->save();
 
                 $this->events->record($ticket, TicketEvent::TYPE_SLA_AT_RISK, TicketSenderTypeEnum::System, null, null, null, $metadata);
+
+                $this->notifier->notify($ticket, TicketNotificationKindEnum::SlaAtRisk, ['target' => $target]);
 
                 return 'at_risk';
             }
