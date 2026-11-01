@@ -81,7 +81,7 @@ test('the notification and the email never carry the text of the reply', functio
 
     tkService()->replyAsStaff($ticket, tkStaff(), 'Your OR number 98765 was keyed in wrongly.');
 
-    $html = tkNotifMails()->first()->render();
+    $html = tkNotifRender(tkNotifMails()->first());
 
     expect($html)->toContain($ticket->ticket_number)->not->toContain('98765')
         ->and(json_encode(tkNotifs($requester)->map->data))->not->toContain('98765');
@@ -102,7 +102,7 @@ test('resolving tells the requester, with the date the ticket will close', funct
     Mail::assertQueued(TicketNotificationMail::class, 1);
     expect(tkNotifMails()->first()->kind)->toBe('resolved')
         ->and(tkNotifMails()->first()->closeDate)->toBe($closes)
-        ->and(tkNotifMails()->first()->render())->toContain($closes)
+        ->and(tkNotifRender(tkNotifMails()->first()))->toContain($closes)
         ->and(tkNotifTypes($requester))->toBe(['ticket_resolved'])
         ->and(tkNotifs($requester)->first()->data['message'])->toContain($closes);
 });
@@ -316,7 +316,7 @@ test('every requester email renders, with and without a close date', function ()
         foreach ([null, 'November 6, 2026'] as $closeDate) {
             foreach ([false, true] as $isPublic) {
                 $mail = new TicketNotificationMail($kind->value, 'TKT-2026-00042', 'https://example.test/t', $isPublic, $closeDate);
-                $html = $mail->render();
+                $html = tkNotifRender($mail);
 
                 expect($html)->toContain('TKT-2026-00042')->toContain('https://example.test/t');
                 expect($mail->build()->subject)->toContain('TKT-2026-00042');
@@ -326,14 +326,14 @@ test('every requester email renders, with and without a close date', function ()
 });
 
 test('a public email warns against forwarding it; an account email does not', function () {
-    $public  = (new TicketNotificationMail('staff_reply', 'TKT-2026-00042', 'https://example.test/t', true))->render();
-    $account = (new TicketNotificationMail('staff_reply', 'TKT-2026-00042', 'https://example.test/t', false))->render();
+    $public  = tkNotifRender(new TicketNotificationMail('staff_reply', 'TKT-2026-00042', 'https://example.test/t', true));
+    $account = tkNotifRender(new TicketNotificationMail('staff_reply', 'TKT-2026-00042', 'https://example.test/t', false));
 
     expect($public)->toContain('forward')->and($account)->not->toContain('forward');
 });
 
 test('the Resolved email says when the ticket closes', function () {
-    $html = (new TicketNotificationMail('resolved', 'TKT-2026-00042', 'https://example.test/t', false, 'November 6, 2026'))->render();
+    $html = tkNotifRender(new TicketNotificationMail('resolved', 'TKT-2026-00042', 'https://example.test/t', false, 'November 6, 2026'));
 
     expect($html)->toContain('November 6, 2026')->toContain('isn');
 });

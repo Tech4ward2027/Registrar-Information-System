@@ -52,3 +52,18 @@ function tkNotifMailToken(TicketNotificationMail $mail): string
 {
     return substr($mail->url, strpos($mail->url, '#token=') + 7);
 }
+
+/**
+ * The HTML of a notification email, rendered from its markdown view directly.
+ *
+ * Mailable::render() resolves the application's real mailer, and with Mail::fake()
+ * active that is still the configured transport (SMTP in a developer's .env), so a
+ * bad MAIL_* setting would fail a test that never sends anything. Rendering the
+ * view needs no transport.
+ */
+function tkNotifRender(TicketNotificationMail $mail): string
+{
+    $built = $mail->build();
+
+    return (string) app(\Illuminate\Mail\Markdown::class)->render($built->markdown, $built->viewData);
+}

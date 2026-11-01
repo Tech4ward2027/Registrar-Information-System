@@ -290,8 +290,9 @@ test('resend gives the identical answer for a match, a wrong address, an unknown
         ->assertStatus(202)->getContent());
 
     expect($responses->unique()->count())->toBe(1);
-    // Only the genuine match produced an email.
-    Mail::assertQueuedCount(1);
+    // Only the genuine match produced a link email. (Resolving the public ticket above also
+    // queued a TicketNotificationMail, which is not what this test is about.)
+    Mail::assertQueued(TicketPublicAccessLinkMail::class, 1);
 });
 
 test('resend is limited per address and per IP, counting every request so the limit reveals nothing', function () {

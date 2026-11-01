@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\SystemUser;
+use App\Models\Ticket;
 use App\Services\Tickets\TicketSlaMonitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -181,7 +182,8 @@ test('the resolution deadline is announced as such', function () {
     tkSlaNow('2026-11-03 10:00');
     $ticket = tkOpenTicket(tkNotifRequester(), 'CAT-01');
     tkService()->replyAsStaff($ticket, tkStaff(), 'On it.'); // first response met, claimed by that staff member
-    $ticket->forceFill(['claimed_by_user_id' => null, 'claimed_at' => null, 'claim_expires_at' => null])->save();
+    // Through the database: $ticket is a stale copy that still says "unclaimed", so saving it would change nothing.
+    Ticket::whereKey($ticket->getKey())->update(['claimed_by_user_id' => null, 'claimed_at' => null, 'claim_expires_at' => null]);
 
     tkStaffSweep('2026-11-04 10:01'); // resolution due Wed 10:00
 
