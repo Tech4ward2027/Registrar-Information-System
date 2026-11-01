@@ -5,8 +5,10 @@ namespace App\Console\Commands;
 use App\Console\Commands\Concerns\LogsJobRun;
 use App\Models\AuditLog;
 use App\Services\AuditLogger;
+use App\Services\Tickets\TicketChainVerifier;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /*
 |--------------------------------------------------------------------------
@@ -23,6 +25,11 @@ use Illuminate\Support\Facades\Log;
 |     (a row was inserted, deleted, or reordered out of sequence), or
 |   - its stored hash doesn't match what recomputing from its own fields
 |     produces (the row itself was altered after being written).
+|
+| Support Ticketing (Phase 7): the same run also verifies every ticket's own
+| hash-chained event log (ticket_events), through TicketChainVerifier. Each
+| ticket has its own chain, so a break is reported with the ticket id and the
+| event sequence number. Either kind of break makes the command exit non-zero.
 |
 | Intended for CI and a scheduled cron/monitoring check, not interactive
 | use only — exits non-zero on any break so it can gate a pipeline or fire
@@ -43,19 +50,19 @@ class VerifyAuditChain extends Command
      * TestBreakGlassAccess. The outer try/catch still exists to catch
      * genuine uncaught exceptions (e.g. a DB error mid-chunk).
      */
-    public function handle(AuditLogger $auditLogger): int
+    public function handle(AuditLogger $auditLogger, TicketChainVerifier $ticketVerifier): int
     {
         $this->startJobRun($this->getName());
 
         try {
-            return $this->verifyChain($auditLogger);
+            return $this->verifyChain($auditLogger, $ticketVerifier);
         } catch (\Throwable $e) {
             $this->failJobRun($e);
             throw $e;
         }
     }
 
-    private function verifyChain(AuditLogger $auditLogger): int
+    private function verifyChain(AuditLogger $auditLogger, TicketChainVerifier $ticketVerifier): int
     {
         $chunkSize = max(1, (int) $this->option('chunk'));
 
@@ -102,13 +109,24 @@ class VerifyAuditChain extends Command
                 }
             });
 
-        if (empty($breaks)) {
+        // Support Ticketing (Phase 7). Skipped only on an install that has not
+        // run the ticket migrations yet, so audit:verify never fails for that.
+        $ticketResult = Schema::hasTable('ticket_events')
+            ? $ticketVerifier->verifyAll($chunkSize)
+            : ['tickets' => 0, 'events' => 0, 'breaks' => []];
+
+        $ticketBreaks = $ticketResult['breaks'];
+
+        if (empty($breaks) && empty($ticketBreaks)) {
             $this->info("[audit:verify] OK — {$rowsChecked} row(s) verified, chain intact.");
-            $this->finishJobRun(self::SUCCESS, $rowsChecked);
+            $this->info("[audit:verify] OK — {$ticketResult['events']} ticket event(s) across {$ticketResult['tickets']} ticket(s) verified, chains intact.");
+            $this->finishJobRun(self::SUCCESS, $rowsChecked + $ticketResult['events']);
             return self::SUCCESS;
         }
 
-        $this->error('[audit:verify] FAILED — ' . count($breaks) . ' issue(s) found across ' . $rowsChecked . ' row(s) checked:');
+        $totalBreaks = count($breaks) + count($ticketBreaks);
+
+        $this->error('[audit:verify] FAILED — ' . $totalBreaks . ' issue(s) found across ' . $rowsChecked . ' audit row(s) and ' . $ticketResult['events'] . ' ticket event(s) checked:');
 
         $breakSummaries = [];
 
@@ -123,10 +141,24 @@ class VerifyAuditChain extends Command
             $breakSummaries[] = "id={$break['id']}: {$break['reason']}";
         }
 
+        foreach ($ticketBreaks as $break) {
+            $where = $break['seq'] === null ? "ticket_id={$break['ticket_id']}" : "ticket_id={$break['ticket_id']} seq={$break['seq']}";
+
+            $this->line("  - ticket_events {$where}: {$break['reason']}");
+
+            Log::critical('[audit:verify] ticket event chain integrity failure', [
+                'ticket_id' => $break['ticket_id'],
+                'seq'       => $break['seq'],
+                'reason'    => $break['reason'],
+            ]);
+
+            $breakSummaries[] = "ticket {$where}: {$break['reason']}";
+        }
+
         $this->finishJobRun(
             self::FAILURE,
-            count($breaks),
-            count($breaks) . ' break(s) found across ' . $rowsChecked . ' row(s) — ' . implode(' | ', $breakSummaries),
+            $totalBreaks,
+            $totalBreaks . ' break(s) found across ' . $rowsChecked . ' audit row(s) and ' . $ticketResult['events'] . ' ticket event(s) — ' . implode(' | ', $breakSummaries),
         );
 
         return self::FAILURE;

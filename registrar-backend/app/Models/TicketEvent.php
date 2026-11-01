@@ -43,6 +43,7 @@ class TicketEvent extends Model
     public const TYPE_SLA_AT_RISK          = 'sla_at_risk';
     public const TYPE_SLA_BREACHED         = 'sla_breached';
     public const TYPE_SPAM_FLAGGED         = 'spam_flagged';
+    public const TYPE_ANONYMIZED           = 'anonymized'; // Phase 7: retention removed the requester's personal data
 
     public const TYPES = [
         self::TYPE_CREATED,
@@ -59,6 +60,7 @@ class TicketEvent extends Model
         self::TYPE_SLA_AT_RISK,
         self::TYPE_SLA_BREACHED,
         self::TYPE_SPAM_FLAGGED,
+        self::TYPE_ANONYMIZED,
     ];
 
     /** prev_hash of the first event (seq 1) in every chain. */

@@ -355,3 +355,26 @@ Schedule::command('tickets:release-stale-claims')
     ->withoutOverlapping()
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+/*
+|--------------------------------------------------------------------------
+| Support Ticketing — auto-close and retention (Phase 7)
+|--------------------------------------------------------------------------
+| tickets:auto-close runs every 30 minutes (at :17 and :47, clear of the SLA
+| sweep at :07/:22/:37/:52 and the claim release at :12/:42), so a ticket
+| closes within half an hour of its window ending. tickets:anonymize-expired
+| runs daily at 03:45, after audit:verify (03:00) and requests:check-consistency
+| (03:30). Both are harmless while FEATURE_TICKETS is off: they only touch rows
+| the ticket feature created, and are idempotent.
+*/
+Schedule::command('tickets:auto-close')
+    ->cron('17,47 * * * *')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+Schedule::command('tickets:anonymize-expired')
+    ->dailyAt('03:45')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));

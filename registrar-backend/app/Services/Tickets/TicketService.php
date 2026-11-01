@@ -550,6 +550,92 @@ class TicketService
     }
 
     /**
+     * Phase 7. The system closes a Resolved ticket whose window has run out
+     * (config 'tickets.auto_close_days' calendar days after it was resolved).
+     *
+     * Safe to call twice, or against a requester confirming or sending the
+     * ticket back at the same moment: everything is re-checked under the row
+     * lock, and it returns true only when THIS call closed the ticket.
+     * Closed is final, so there is nothing to undo and nothing further to guard.
+     */
+    public function autoClose(Ticket $ticket, CarbonInterface $now): bool
+    {
+        $now = Carbon::instance($now)->setTimezone(config('app.timezone'));
+
+        return DB::transaction(function () use ($ticket, $now) {
+            $locked = $this->lock($ticket);
+
+            if ($locked->status !== TicketStatusEnum::Resolved
+                || $locked->auto_close_at === null
+                || $locked->auto_close_at->greaterThan($now)) {
+                return false;
+            }
+
+            $scheduledFor = $locked->auto_close_at;
+
+            $this->machine->transition($locked, TicketStatusEnum::Closed, [
+                'closed_at'        => $now,
+                'close_reason'     => Ticket::CLOSE_REASON_AUTO,
+                'auto_close_at'    => null,
+                'reminder_sent_at' => null,
+                'last_activity_at' => $now,
+            ]);
+
+            $this->events->record(
+                $locked, TicketEvent::TYPE_CLOSED, TicketSenderTypeEnum::System, null,
+                TicketStatusEnum::Resolved, TicketStatusEnum::Closed,
+                ['reason' => Ticket::CLOSE_REASON_AUTO, 'scheduled_for' => $scheduledFor->toIso8601String()],
+            );
+
+            $this->notifier->notify($locked, TicketNotificationKindEnum::Closed);
+
+            return true;
+        });
+    }
+
+    /**
+     * Phase 7. The "still not resolved? confirm or reply" reminder, sent once,
+     * after config 'tickets.reminder_after_days' (2) of the 3-day window.
+     *
+     * "Only if the requester has not replied" needs no extra check: a reply
+     * sends a Resolved ticket back to In Progress, so a ticket that is still
+     * Resolved has had none. A ticket whose window has already ended is left
+     * for autoClose() (a reminder to confirm something about to close, or
+     * already closed, would be noise). Returns true only when THIS call sent it.
+     */
+    public function sendResolutionReminder(Ticket $ticket, CarbonInterface $now): bool
+    {
+        $now = Carbon::instance($now)->setTimezone(config('app.timezone'));
+
+        return DB::transaction(function () use ($ticket, $now) {
+            $locked = $this->lock($ticket);
+
+            if ($locked->status !== TicketStatusEnum::Resolved
+                || $locked->reminder_sent_at !== null
+                || $locked->resolved_at === null
+                || $locked->auto_close_at === null
+                || $locked->auto_close_at->lessThanOrEqualTo($now)
+                || $locked->resolved_at->copy()->addDays((int) config('tickets.reminder_after_days'))->greaterThan($now)) {
+                return false;
+            }
+
+            $locked->forceFill(['reminder_sent_at' => $now])->save();
+
+            $this->events->record(
+                $locked, TicketEvent::TYPE_REMINDER_SENT, TicketSenderTypeEnum::System, null,
+                null, null,
+                ['auto_close_at' => $locked->auto_close_at->toIso8601String()],
+            );
+
+            $this->notifier->notify($locked, TicketNotificationKindEnum::ResolutionReminder, [
+                'auto_close_at' => $locked->auto_close_at->toIso8601String(),
+            ]);
+
+            return true;
+        });
+    }
+
+    /**
      * "This isn't resolved": the requester sends a Resolved ticket back to
      * In Progress. The only backward move, limited per ticket. An optional
      * reason is added to the thread.
