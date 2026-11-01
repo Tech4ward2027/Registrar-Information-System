@@ -325,6 +325,16 @@ class AuditLog extends Model
     // retention action is exactly as tamper-evident as a decision.
     public const ACTION_UNDERGRAD_REQUESTOR_PII_PURGED      = 'undergrad_requestor_pii_purged';
 
+    // Support Ticketing — Phase 8. Staff actions with module permission
+    // tickets/Manage. Metadata never carries a requester's personal data: a
+    // blocked email or IP is recorded as a short hash prefix only.
+    public const ACTION_TICKET_CATEGORY_CREATED = 'ticket_category_created';
+    public const ACTION_TICKET_CATEGORY_UPDATED = 'ticket_category_updated';
+    public const ACTION_TICKET_BLOCK_ADDED      = 'ticket_block_added';
+    public const ACTION_TICKET_BLOCK_REMOVED    = 'ticket_block_removed';
+    public const ACTION_TICKET_SPAM_FLAGGED     = 'ticket_spam_flagged';
+    public const ACTION_TICKET_LOG_EXPORTED     = 'ticket_log_exported';
+
     // -------------------------------------------------------
     // Relationship back to the acting user (nullable — may be deleted)
     // -------------------------------------------------------

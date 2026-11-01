@@ -172,6 +172,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Reports and log export (Phase 8)
+    |--------------------------------------------------------------------------
+    |
+    | [DEFAULT] The SLA / volume summary and the log export take a date range
+    | (Manila dates, both ends included). max_range_days caps it so one request
+    | cannot scan the whole table. The export refuses a range with more than
+    | export_max_rows events: narrow the range instead of streaming millions of
+    | rows through one request. export_chunk_size is memory only.
+    |
+    */
+    'reports' => [
+        'default_range_days' => (int) env('TICKETS_REPORT_DEFAULT_RANGE_DAYS', 30),
+        'max_range_days'     => (int) env('TICKETS_REPORT_MAX_RANGE_DAYS', 366),
+        'export_max_rows'    => (int) env('TICKETS_EXPORT_MAX_ROWS', 100000),
+        'export_chunk_size'  => (int) env('TICKETS_EXPORT_CHUNK_SIZE', 1000),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Rate limits
     |--------------------------------------------------------------------------
     |

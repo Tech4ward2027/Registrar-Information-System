@@ -40,8 +40,8 @@ class StaffTicketController extends Controller
         'requester.studentProfile', 'requester.alumniProfile', 'requester.undergradRequestorProfile',
     ];
 
-    /** Relations the detail view needs, on top of LIST. */
-    private const DETAIL = [
+    /** Relations the detail view needs, on top of LIST. Public: flagging spam answers with the same full ticket. */
+    public const DETAIL = [
         ...self::LIST,
         'resolvedBy.adminProfile', 'resolvedBy.studentProfile', 'resolvedBy.alumniProfile',
         'messages.sender.adminProfile', 'messages.sender.studentProfile', 'messages.sender.alumniProfile',

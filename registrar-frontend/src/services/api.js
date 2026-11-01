@@ -1404,4 +1404,70 @@ export const replyAsStaff = (id, body, awaitRequester = false) =>
 export const resolveTicket = (id, resolutionNote) =>
   api.post(`/admin/tickets/${id}/resolve`, { resolution_note: resolutionNote });
 
+// ── Support Ticketing — management (Phase 8) ───────────────────────────────
+// All of these need the tickets Manage permission (on top of View) and answer
+// 404 while FEATURE_TICKETS is off.
+
+// GET /admin/tickets/categories
+// Throttle: group default (60/min). Module: tickets,Manage.
+// Every category, inactive included: [{ id, code, name, description,
+// priority, is_active, sort_order, tickets_count }]. (Requesters use
+// GET /tickets/categories, active ones only.)
+export const getTicketCategoriesAdmin = () => api.get("/admin/tickets/categories");
+
+// POST /admin/tickets/categories
+// Throttle: group default (60/min). Module: tickets,Manage.
+// { code: "CAT-06" (fixed for life), name, description?, priority:
+//   "high"|"medium"|"low", is_active?, sort_order? }. 201 with the category.
+export const createTicketCategory = (payload) => api.post("/admin/tickets/categories", payload);
+
+// PATCH /admin/tickets/categories/{id}
+// Throttle: group default (60/min). Module: tickets,Manage.
+// Any of name, description, priority, is_active, sort_order. The code cannot
+// change. A new priority applies to tickets filed AFTER the change. The last
+// active category cannot be deactivated (422 on is_active).
+export const updateTicketCategory = (id, payload) => api.patch(`/admin/tickets/categories/${id}`, payload);
+
+// GET /admin/tickets/blocks
+// Throttle: group default (60/min). Module: tickets,Manage.
+// params: { type?: "email"|"ip", state?: "active"(default)|"expired"|"all",
+//           per_page?, cursor? }. Cursor-paginated, newest first.
+export const getTicketBlocks = (params = {}) => api.get("/admin/tickets/blocks", { params });
+
+// POST /admin/tickets/blocks
+// Throttle: group default (60/min). Module: tickets,Manage.
+// { type: "email"|"ip", value, reason?, expires_at? (ISO, future; omit = until
+//   lifted) }. 201 when new; 200 when the value was already listed (renewed).
+export const createTicketBlock = (payload) => api.post("/admin/tickets/blocks", payload);
+
+// DELETE /admin/tickets/blocks/{id}
+// Throttle: group default (60/min). Module: tickets,Manage.
+export const deleteTicketBlock = (id) => api.delete(`/admin/tickets/blocks/${id}`);
+
+// POST /admin/tickets/{id}/spam
+// Throttle: group default (60/min). Module: tickets,Manage (plus View).
+// Logs a spam flag on the ticket; the status does not change, so resolve it
+// as usual afterwards. { block_email?, block_ip?, reason?, block_expires_at? }.
+// Blocking is only possible for a public submitter whose details are still on
+// file (422 on `block` otherwise). Returns the full staff ticket.
+export const flagTicketSpam = (id, payload = {}) => api.post(`/admin/tickets/${id}/spam`, payload);
+
+// GET /admin/tickets/summary
+// Throttle: 30/min. Module: tickets,Manage.
+// params: { from?, to? } as YYYY-MM-DD Manila dates, both included; default
+// the last 30 days, at most 366 days. Returns { data: { range, volume:
+// { created, by_category, by_priority, by_status, per_day, returned, closed },
+// sla: { first_response, resolution } each { tracked, met, breached, pending,
+// at_risk_flagged, compliance_pct }, queue_now } }.
+export const getTicketSummary = (params = {}) => api.get("/admin/tickets/summary", { params });
+
+// GET /admin/tickets/export
+// Throttle: 6/min. Module: tickets,Manage.
+// params: { from?, to? } as above. Downloads the ticket event log as CSV
+// (resolves to a Blob; save it with the file name from Content-Disposition).
+// Every export is written to the audit log first. 422 on `to` when the range
+// holds more events than the server will export: pick a shorter range.
+export const exportTicketLog = (params = {}) =>
+  api.get("/admin/tickets/export", { params, responseType: "blob" });
+
 export default api;

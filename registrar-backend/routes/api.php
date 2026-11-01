@@ -52,6 +52,9 @@ use App\Http\Controllers\UndergradRequestorVerificationController;
 use App\Http\Controllers\TicketCategoryController;
 use App\Http\Controllers\TicketController;
 use App\Http\Controllers\StaffTicketController;
+use App\Http\Controllers\StaffTicketCategoryController;
+use App\Http\Controllers\StaffTicketBlockController;
+use App\Http\Controllers\StaffTicketReportController;
 use App\Http\Controllers\PublicTicketController;
 use App\Http\Controllers\PublicTicketTrackingController;
 
@@ -946,6 +949,24 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             ->middleware(['role:3,4', 'module:tickets,View'])
             ->where(['ticket' => '[0-9a-z]{26}'])
             ->group(function () {
+                // ── Management (Phase 8): tickets/Manage on top of View ───────
+                // Fixed words, so they can never be read as a {ticket} (always a
+                // 26-character ULID). Each Form Request re-checks TicketPolicy::manage.
+                Route::middleware('module:tickets,Manage')->group(function () {
+                    Route::get('categories',              [StaffTicketCategoryController::class, 'index']);
+                    Route::post('categories',             [StaffTicketCategoryController::class, 'store']);
+                    Route::patch('categories/{category}', [StaffTicketCategoryController::class, 'update'])->whereNumber('category');
+
+                    Route::get('blocks',            [StaffTicketBlockController::class, 'index']);
+                    Route::post('blocks',           [StaffTicketBlockController::class, 'store']);
+                    Route::delete('blocks/{block}', [StaffTicketBlockController::class, 'destroy'])->whereNumber('block');
+
+                    Route::get('summary', [StaffTicketReportController::class, 'summary'])->middleware('throttle:30,1,tickets-reports');
+                    Route::get('export',  [StaffTicketReportController::class, 'export'])->middleware('throttle:6,1,tickets-export');
+
+                    Route::post('{ticket}/spam', [StaffTicketBlockController::class, 'flagSpam']);
+                });
+
                 Route::get('/',         [StaffTicketController::class, 'index']);
                 Route::get('{ticket}',  [StaffTicketController::class, 'show']);
 
