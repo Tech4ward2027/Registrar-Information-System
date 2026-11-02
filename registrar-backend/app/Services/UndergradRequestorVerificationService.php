@@ -16,7 +16,7 @@ use App\Models\UndergradRequestorVerification;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
+use App\Services\Mail\MailDispatcher;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -54,6 +54,7 @@ class UndergradRequestorVerificationService implements UndergradRequestorVerific
         private AuditLogger                              $auditLogger,
         private NotificationServiceInterface             $notificationService,
         private UndergradEnrollmentLookupClientInterface $enrollmentLookup,
+        private MailDispatcher                           $mailer,
     ) {}
 
     // ─────────────────────────────────────────────────────────────
@@ -412,12 +413,15 @@ class UndergradRequestorVerificationService implements UndergradRequestorVerific
             ]),
         );
 
-        Mail::to($user->email)->send(
+        $this->mailer->sendApproved(
+            'undergrad_requestor_decision',
+            $user->email,
             new UndergradRequestorDecisionMail(
                 firstName:       $profile->first_name,
                 approved:        $approved,
                 rejectionReason: $verification->rejection_reason,
-            )
+            ),
+            (int) $user->user_id,
         );
     }
 

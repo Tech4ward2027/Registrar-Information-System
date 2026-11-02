@@ -33,6 +33,12 @@ class NotificationDispatchLog extends Model
     public const REASON_NO_SUBSCRIPTIONS  = 'no_subscriptions';
     public const REASON_QUEUE_ERROR       = 'queue_error';
     public const REASON_PROVIDER_REJECTED = 'provider_rejected';
+    public const REASON_MAIL_NOT_APPROVED = 'mail_not_approved';   // trigger is not on the policy allow-list
+    public const REASON_MAIL_DISABLED     = 'mail_disabled';       // NOTIFICATION_MAIL_ENABLED=false
+    public const REASON_NO_EMAIL_ADDRESS  = 'no_email_address';
+    public const REASON_QUOTA_EXCEEDED    = 'quota_exceeded';
+    public const REASON_ALREADY_SENT      = 'already_sent';
+    public const REASON_DUPLICATE         = 'duplicate_suppressed';
 
     public $timestamps = false;
 

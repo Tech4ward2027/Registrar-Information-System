@@ -10,6 +10,7 @@ use App\Models\NotificationType;
 use App\Models\SystemUser;
 use App\Jobs\SendBulkNotificationJob;
 use App\Jobs\SendWebPushJob;
+use App\Services\Mail\MailDispatcher;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use App\Contracts\NotificationServiceInterface;
@@ -42,7 +43,10 @@ use Illuminate\Support\Facades\Log;
 
 class NotificationService implements NotificationServiceInterface
 {
-    public function __construct(private NotificationDispatchLogger $dispatchLog) {}
+    public function __construct(
+        private NotificationDispatchLogger $dispatchLog,
+        private MailDispatcher $mail,
+    ) {}
 
     // -------------------------------------------------------
     // SEND TO A SPECIFIC USER
@@ -149,6 +153,11 @@ class NotificationService implements NotificationServiceInterface
             // Done after the transaction and isolated in its own try/catch so
             // a queue hiccup can never turn a saved notification into a null.
             $this->queueWebPush($notification, $type);
+
+            // Step 6: System Mailer. Only the policy's seven email triggers
+            // are ever queued; MailDispatcher owns the allow-list, throttling
+            // and logging, and never throws.
+            $this->mail->queueLifecycle($notification, $type);
 
             // Return the notification created inside the transaction.
             // The closure's own "return $notification" returns to DB::transaction(),

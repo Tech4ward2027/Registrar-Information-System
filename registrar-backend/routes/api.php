@@ -43,6 +43,7 @@ use App\Http\Controllers\SignatoryController;
 use App\Http\Controllers\BusinessHoursController;
 use App\Http\Controllers\CalendarExceptionController;
 use App\Http\Controllers\CalendarOverrideController;
+use App\Http\Controllers\MailStatusController;
 use App\Http\Controllers\SuperAdminAnalyticsController;
 use App\Http\Controllers\FailedCashierVerificationController;
 use App\Http\Controllers\SystemHealthController;
@@ -785,6 +786,10 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::get('access-request-throughput',  [SuperAdminAnalyticsController::class, 'accessRequestThroughput']);
             Route::get('cashier-verification-health', [SuperAdminAnalyticsController::class, 'cashierVerificationHealth']);
             Route::get('scheduled-jobs-health',       [SuperAdminAnalyticsController::class, 'scheduledJobsHealth']);
+
+            // System Mailer: quota, 7-day dispatch roll-up and recent failures
+            // (Notification Policy). Not flag-gated: the mailer is always live.
+            Route::get('mail-status',                 [MailStatusController::class, 'show']);
 
             // System Health (Phase 3): flag-gated. Reads rollups/alerts only.
             // Acknowledge has its own named bucket and is audited.

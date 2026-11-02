@@ -12,7 +12,7 @@ use App\Models\UndergradRequestorProfile;
 use App\Models\UndergradRequestorVerification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
+use App\Services\Mail\MailDispatcher;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -50,6 +50,7 @@ class UndergradRequestorRegistrationService implements UndergradRequestorRegistr
         private AuditLogger         $auditLogger,
         private SecurityEventLogger $securityEvents,
         private UndergradEnrollmentLookupClientInterface $enrollmentLookup,
+        private MailDispatcher      $mailer,
     ) {}
 
     /**
@@ -176,8 +177,11 @@ class UndergradRequestorRegistrationService implements UndergradRequestorRegistr
         // itself returns immediately (the actual SMTP conversation
         // happens on the queue worker), so this line is never the slow
         // part of the request either way.
-        Mail::to($profile->user->email)->send(
-            new UndergradRequestorEmailVerificationMail($profile, $this->buildVerificationUrl($profile->user->email, $plainToken))
+        $this->mailer->sendApproved(
+            'undergrad_email_verification',
+            $profile->user->email,
+            new UndergradRequestorEmailVerificationMail($profile, $this->buildVerificationUrl($profile->user->email, $plainToken)),
+            (int) $profile->user->user_id,
         );
 
         return $profile;

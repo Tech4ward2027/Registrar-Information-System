@@ -14,7 +14,7 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
+use App\Services\Mail\MailDispatcher;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -60,6 +60,7 @@ class PublicSubmissionService
         private readonly PublicTicketLimits $limits,
         private readonly PublicFormToken $formToken,
         private readonly CaptchaVerifier $captcha,
+        private readonly MailDispatcher $mailer,
     ) {}
 
     /**
@@ -127,7 +128,7 @@ class PublicSubmissionService
             'expires_at'  => now()->addMinutes($ttl),
         ]);
 
-        Mail::to($email)->send(new TicketPublicVerificationMail(
+        $this->mailer->sendApproved('ticket_public_verification', $email, new TicketPublicVerificationMail(
             name:       trim($input['name']),
             confirmUrl: $this->confirmUrl($plain),
             ttlMinutes: $ttl,
@@ -251,7 +252,7 @@ class PublicSubmissionService
     private function sendAccessLink(string $email, Ticket $ticket, string $plain): void
     {
         try {
-            Mail::to($email)->send(new TicketPublicAccessLinkMail(
+            $this->mailer->sendApproved('ticket_public_access_link', $email, new TicketPublicAccessLinkMail(
                 ticketNumber: $ticket->ticket_number,
                 trackUrl:     $this->accessTokens->trackUrl($plain),
                 graceDays:    (int) config('tickets.public.token_grace_days'),
