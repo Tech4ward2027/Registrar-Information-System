@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Events\NotificationSent;
 use App\Models\DocumentRequest;
 use App\Models\Notification;
+use App\Models\NotificationDispatchLog;
 use App\Models\NotificationType;
 use App\Models\SystemUser;
 use App\Jobs\SendBulkNotificationJob;
@@ -41,6 +42,8 @@ use Illuminate\Support\Facades\Log;
 
 class NotificationService implements NotificationServiceInterface
 {
+    public function __construct(private NotificationDispatchLogger $dispatchLog) {}
+
     // -------------------------------------------------------
     // SEND TO A SPECIFIC USER
     // -------------------------------------------------------
@@ -77,6 +80,12 @@ class NotificationService implements NotificationServiceInterface
 
             if (! $type) {
                 Log::warning("NotificationService: unknown trigger_event '{$triggerEvent}'");
+                $this->dispatchLog->record(NotificationDispatchLog::CHANNEL_IN_APP, NotificationDispatchLog::STATUS_FAILED, [
+                    'reason'        => NotificationDispatchLog::REASON_UNKNOWN_TRIGGER,
+                    'trigger_event' => $triggerEvent,
+                    'user_id'       => $recipient->user_id,
+                    'request_id'    => $requestId,
+                ]);
                 return null;
             }
 
@@ -125,6 +134,17 @@ class NotificationService implements NotificationServiceInterface
                 return $notification;
             });
 
+            // Step 4b: dispatch trail (Notification Policy §4). Outside the
+            // transaction and never throws — see NotificationDispatchLogger.
+            $this->dispatchLog->record(NotificationDispatchLog::CHANNEL_IN_APP, NotificationDispatchLog::STATUS_SENT, [
+                'trigger_event'   => $typeTriggerEvent,
+                'notification_id' => $notification->id,
+                'user_id'         => $recipient->user_id,
+                'request_id'      => $requestId,
+                'attempted'       => 1,
+                'delivered'       => 1,
+            ]);
+
             // Step 5: Background (Web Push) delivery for urgent types only.
             // Done after the transaction and isolated in its own try/catch so
             // a queue hiccup can never turn a saved notification into a null.
@@ -141,6 +161,14 @@ class NotificationService implements NotificationServiceInterface
             Log::error('NotificationService::send failed', [
                 'trigger_event' => $triggerEvent,
                 'recipient_id'  => $recipient->user_id,
+                'error'         => $e->getMessage(),
+            ]);
+            $this->dispatchLog->record(NotificationDispatchLog::CHANNEL_IN_APP, NotificationDispatchLog::STATUS_FAILED, [
+                'reason'        => NotificationDispatchLog::REASON_EXCEPTION,
+                'trigger_event' => $triggerEvent,
+                'user_id'       => $recipient->user_id,
+                'request_id'    => $requestId,
+                'attempted'     => 1,
                 'error'         => $e->getMessage(),
             ]);
             return null;
@@ -165,6 +193,14 @@ class NotificationService implements NotificationServiceInterface
         } catch (\Throwable $e) {
             Log::warning('NotificationService: could not queue web push', [
                 'notification_id' => $notification->id,
+                'error'           => $e->getMessage(),
+            ]);
+            $this->dispatchLog->record(NotificationDispatchLog::CHANNEL_PUSH, NotificationDispatchLog::STATUS_FAILED, [
+                'reason'          => NotificationDispatchLog::REASON_QUEUE_ERROR,
+                'trigger_event'   => $type->trigger_event,
+                'notification_id' => $notification->id,
+                'user_id'         => $notification->notifiable_id,
+                'request_id'      => $notification->request_id,
                 'error'           => $e->getMessage(),
             ]);
         }

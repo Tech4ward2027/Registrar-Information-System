@@ -3,7 +3,9 @@
 namespace App\Jobs;
 
 use App\Models\Notification;
+use App\Models\NotificationDispatchLog;
 use App\Models\SystemUser;
+use App\Services\NotificationDispatchLogger;
 use App\Services\WebPushService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -41,9 +43,11 @@ class SendWebPushJob implements ShouldQueue
         $this->afterCommit();
     }
 
-    public function handle(WebPushService $push): void
+    public function handle(WebPushService $push, NotificationDispatchLogger $dispatchLog): void
     {
         if (! $push->isConfigured()) {
+            // Push is switched off for this environment; nothing was attempted
+            // and there is no notification context worth a row per send.
             return;
         }
 
@@ -51,18 +55,55 @@ class SendWebPushJob implements ShouldQueue
         $notification = Notification::with('type')->find($this->notificationId);
 
         if (! $notification || ! $notification->type || $notification->read_at !== null) {
+            $dispatchLog->record(NotificationDispatchLog::CHANNEL_PUSH, NotificationDispatchLog::STATUS_SKIPPED, [
+                'reason'          => NotificationDispatchLog::REASON_NOTIFICATION_GONE,
+                'notification_id' => $this->notificationId,
+                'trigger_event'   => $notification?->type?->trigger_event,
+                'user_id'         => $notification?->notifiable_id,
+                'request_id'      => $notification?->request_id,
+            ]);
             return;
         }
+
+        $context = [
+            'notification_id' => $notification->id,
+            'trigger_event'   => $notification->type->trigger_event,
+            'user_id'         => (int) $notification->notifiable_id,
+            'request_id'      => $notification->request_id,
+        ];
 
         $user = SystemUser::where('user_id', $notification->notifiable_id)
             ->where('status', 'Activated')
             ->first();
 
         if (! $user) {
+            $dispatchLog->record(NotificationDispatchLog::CHANNEL_PUSH, NotificationDispatchLog::STATUS_SKIPPED, $context + [
+                'reason' => NotificationDispatchLog::REASON_RECIPIENT_INACTIVE,
+            ]);
             return;
         }
 
-        $push->sendToUser((int) $user->user_id, $this->buildPayload($notification, $user));
+        $result = $push->dispatchToUser((int) $user->user_id, $this->buildPayload($notification, $user));
+
+        $dispatchLog->recordPush($result, $context);
+    }
+
+    /**
+     * Retries are disabled ($tries = 1), so an uncaught throw (queue timeout,
+     * worker kill) is final. Record it so the attempt is not silently absent
+     * from the trail.
+     */
+    public function failed(\Throwable $e): void
+    {
+        app(NotificationDispatchLogger::class)->record(
+            NotificationDispatchLog::CHANNEL_PUSH,
+            NotificationDispatchLog::STATUS_FAILED,
+            [
+                'reason'          => NotificationDispatchLog::REASON_EXCEPTION,
+                'notification_id' => $this->notificationId,
+                'error'           => $e->getMessage(),
+            ],
+        );
     }
 
     /**

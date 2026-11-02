@@ -85,10 +85,17 @@ class LocalAuthController extends Controller
         // targets ONLY role_id = Admin (see its docblock) and would
         // silently never reach a Super Admin, so we target Admin +
         // Super Admin explicitly here via sendToAllExcept() instead —
-        // excluding only the roles (student/alumni) that can never be
-        // break-glass accounts and have no reason to see this alert.
+        // excluding every requestor role (student, alumni, undergrad
+        // requestor): none of them can be break-glass accounts or act on
+        // this alert, and it discloses an account email + source IP.
+        // Matches the exclusion list SecurityEventLogger uses for the
+        // failed-login-burst alert.
         $this->notificationService->sendToAllExcept(
-            excludedRoleIds: [SystemUser::ROLE_STUDENT, SystemUser::ROLE_ALUMNI],
+            excludedRoleIds: [
+                SystemUser::ROLE_STUDENT,
+                SystemUser::ROLE_ALUMNI,
+                SystemUser::ROLE_UNDERGRAD_REQUESTOR,
+            ],
             triggerEvent:    'local_auth_login_used',
             data: [
                 'user_id' => $user->user_id,

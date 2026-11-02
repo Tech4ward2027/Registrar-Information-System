@@ -215,6 +215,43 @@ Schedule::command('security-events:prune')
 
 /*
 |--------------------------------------------------------------------------
+| Scheduled Commands — Notification Dispatch Log Retention (Policy §4)
+|--------------------------------------------------------------------------
+|
+| Daily: prune notification_dispatch_logs rows older than
+| config('notification_dispatch.retention_days'). 08:50 keeps it clear of
+| every other 08:xx job's window above.
+|--------------------------------------------------------------------------
+*/
+
+Schedule::command('notifications:prune-dispatch-logs')
+    ->dailyAt('08:50')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+/*
+|--------------------------------------------------------------------------
+| Scheduled Commands — Expired Session Token Pruning (Notification Policy §3.3)
+|--------------------------------------------------------------------------
+|
+| Daily: delete Sanctum tokens that expired more than 24h ago. A token
+| (= a session) that has simply timed out is never "deleted" by anyone, so
+| without this sweep its push subscriptions (bound to it with ON DELETE
+| CASCADE) would linger. They are already ignored at send time
+| (PushSubscription::scopeWithActiveSession); this makes the database match.
+| 08:55 keeps it clear of every other 08:xx job's window above.
+|--------------------------------------------------------------------------
+*/
+
+Schedule::command('sanctum:prune-expired --hours=24')
+    ->dailyAt('08:55')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+/*
+|--------------------------------------------------------------------------
 | Scheduled Commands — Job-Health Monitoring Retention
 |--------------------------------------------------------------------------
 |

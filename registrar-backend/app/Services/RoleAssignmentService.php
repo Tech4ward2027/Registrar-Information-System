@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AuditLog;
+use App\Models\PushSubscription;
 use App\Models\RoleAssignment;
 use App\Models\SystemUser;
 use Illuminate\Http\Request;
@@ -565,12 +566,22 @@ class RoleAssignmentService
             $currentToken = $user->currentAccessToken();
             $tokenName    = $currentToken?->name ?? 'sanctum-idp';
 
-            $user->tokens()->delete();
-
+            // Issue the replacement BEFORE revoking the old token, and carry
+            // the user's push subscriptions over to it. Subscriptions are
+            // bound to their session token with ON DELETE CASCADE (see
+            // 2026_11_02_000001_bind_push_subscriptions_to_session_token),
+            // so deleting first would silently unsubscribe the user from
+            // background push on every role switch. A switch is not a
+            // logout; it must not end push.
             $newToken = $user->createToken($tokenName);
             $newToken->accessToken->forceFill([
                 'active_role_assignment_id' => $assignment->id,
             ])->save();
+
+            PushSubscription::where('user_id', $user->user_id)
+                ->update(['token_id' => $newToken->accessToken->getKey()]);
+
+            $user->tokens()->where('id', '!=', $newToken->accessToken->getKey())->delete();
 
             $this->auditLogger->log($request, $user, AuditLog::ACTION_ROLE_SWITCHED, [
                 'target_user_id'      => $user->user_id,

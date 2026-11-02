@@ -9,6 +9,7 @@ use App\Services\WebPushService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Laravel\Sanctum\PersonalAccessToken;
 
 /**
  * Web Push device registration. Every action is scoped to the authenticated
@@ -51,16 +52,27 @@ class PushSubscriptionController extends Controller
             return response()->json(['message' => 'Push notifications are not enabled.'], 503);
         }
 
+        // A subscription is bound to the session (Sanctum token) it is
+        // registered under, so it dies with that session. No persisted token
+        // means no session to bind to — refuse rather than create a
+        // subscription that could outlive logout.
+        $token = $user->currentAccessToken();
+        if (! $token instanceof PersonalAccessToken || ! $token->getKey()) {
+            return response()->json(['message' => 'An authenticated session is required.'], 401);
+        }
+
         $endpoint = $request->validated('endpoint');
         $max      = max(1, (int) config('webpush.max_subscriptions_per_user'));
+        $tokenId  = $token->getKey();
 
-        $subscription = DB::transaction(function () use ($request, $user, $endpoint, $max) {
+        $subscription = DB::transaction(function () use ($request, $user, $endpoint, $max, $tokenId) {
             // Keyed on the endpoint, so a shared browser that switches account
             // is re-assigned to the new user rather than left on the old one.
             $subscription = PushSubscription::updateOrCreate(
                 ['endpoint_hash' => PushSubscription::hashEndpoint($endpoint)],
                 [
                     'user_id'          => $user->user_id,
+                    'token_id'         => $tokenId,
                     'endpoint'         => $endpoint,
                     'public_key'       => $request->validated('keys.p256dh'),
                     'auth_token'       => $request->validated('keys.auth'),
