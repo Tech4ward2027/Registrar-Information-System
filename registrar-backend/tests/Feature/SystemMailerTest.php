@@ -23,6 +23,8 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     Mail::fake();
     Cache::flush();
+    // render() builds the real transport; never let a developer's MAIL_* settings reach it.
+    config(['mail.default' => 'array']);
     config([
         'notification_mail.enabled'           => true,
         'notification_mail.quota.daily_limit' => 500,
