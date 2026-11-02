@@ -25,6 +25,12 @@ use Illuminate\Support\Facades\Storage;
  *    separately; never mixed with real data.
  *
  * Reports n and a 95% Wilson interval for every proportion.
+ *
+ * Row-level diagnostics (CSV): for every row the file records what the rules
+ * ranked and, when the re-ranker was called, exactly which scrubbed label the
+ * model received, which candidate keys it was offered, what it chose and the
+ * reason it gave. All of it is catalogue text or scrubbed model output, so it
+ * contains no personal data.
  */
 class EvaluateLabelSuggestions extends Command
 {
@@ -34,6 +40,9 @@ class EvaluateLabelSuggestions extends Command
         {--output= : Relative path under the local storage disk (default eval/label-suggestions-<timestamp>.csv)}';
 
     protected $description = 'Evaluate the cashier label suggester (rules, and optionally rules + LLM) against the live catalogue';
+
+    /** Value written to llm_choice when the model declined, errored or returned an unusable answer. */
+    private const NO_USABLE_CHOICE = 'none_or_failed';
 
     public function handle(CashierLabelSuggester $suggester, LabelReranker $reranker): int
     {
@@ -63,11 +72,15 @@ class EvaluateLabelSuggestions extends Command
         }
 
         [$rows, $skipped] = $this->buildRows($catalogue);
-        $limit = max(0, (int) $this->option('limit'));
-        $llmSent = 0;
+        $limit            = max(0, (int) $this->option('limit'));
+        $llmSent          = 0;
+        $llmEligible      = 0;
 
         $stats = [];
-        $csv = [['source', 'label', 'truth_key', 'rules_top1', 'rules_top3', 'ambiguous', 'llm_top1']];
+        $csv   = [[
+            'source', 'label', 'truth_key', 'rules_top1', 'rules_top3', 'ambiguous', 'llm_top1',
+            'llm_sent', 'label_sent', 'candidate_keys', 'llm_choice', 'llm_reason',
+        ]];
 
         foreach ($rows as [$source, $label, $truth, $cat]) {
             $res        = $suggester->suggest($label, $cat);
@@ -77,10 +90,24 @@ class EvaluateLabelSuggestions extends Command
             $ambiguous  = $res['is_ambiguous'];
             $llmTop1    = $top1;
 
-            if ($withLlm && $ambiguous && $res['candidates'] !== [] && ($limit === 0 || $llmSent < $limit)) {
-                $llmSent++;
-                $pick    = $reranker->rerank($label, $res['candidates']);
-                $llmTop1 = $pick !== null ? $pick['choice'] === $truth : $top1;
+            $rowSent    = false;
+            $labelSent  = '';
+            $llmChoice  = '';
+            $llmReason  = '';
+
+            if ($withLlm && $ambiguous && $res['candidates'] !== []) {
+                $llmEligible++;
+
+                if ($limit === 0 || $llmSent < $limit) {
+                    $llmSent++;
+                    $rowSent   = true;
+                    $labelSent = $this->outboundLabel($reranker, $label, $res['candidates']);
+
+                    $pick      = $reranker->rerank($label, $res['candidates']);
+                    $llmChoice = $pick['choice'] ?? self::NO_USABLE_CHOICE;
+                    $llmReason = $pick['reason'] ?? '';
+                    $llmTop1   = $pick !== null ? $pick['choice'] === $truth : $top1;
+                }
             }
 
             // Buckets: the family ("leave-one-out" or "drift") and, for
@@ -106,10 +133,23 @@ class EvaluateLabelSuggestions extends Command
                 $stats[$bucket] = $s;
             }
 
-            $csv[] = [$source, $this->safe($label), $truth, (int) $top1, (int) $top3, (int) $ambiguous, (int) $llmTop1];
+            $csv[] = [
+                $source,
+                $this->safe($label),
+                $truth,
+                (int) $top1,
+                (int) $top3,
+                (int) $ambiguous,
+                (int) $llmTop1,
+                (int) $rowSent,
+                $this->safe($labelSent),
+                implode('|', $keys),
+                $llmChoice,
+                $this->safe($llmReason),
+            ];
         }
 
-        $this->report($stats, $withLlm, $llmSent, $skipped);
+        $this->report($stats, $withLlm, $llmSent, $llmEligible, $skipped);
 
         Storage::disk('local')->put($output, $this->toCsv($csv));
         $this->info('Row-level results: storage/app/private/' . $output);
@@ -184,7 +224,22 @@ class EvaluateLabelSuggestions extends Command
         return [$rows, $skipped];
     }
 
-    private function report(array $stats, bool $withLlm, int $llmSent, int $skipped): void
+    /**
+     * The scrubbed label exactly as it would be sent to the model, or '' when
+     * nothing survives the privacy filter (no request is made in that case).
+     * Pure: building the payload performs no I/O.
+     *
+     * @param  list<array<string,mixed>>  $candidates
+     */
+    private function outboundLabel(LabelReranker $reranker, string $label, array $candidates): string
+    {
+        $payload = $reranker->buildPayload($label, $candidates);
+        $content = (string) ($payload['messages'][0]['content'] ?? '');
+
+        return preg_match('~<label>(.*?)</label>~su', $content, $m) === 1 ? $m[1] : '';
+    }
+
+    private function report(array $stats, bool $withLlm, int $llmSent, int $llmEligible, int $skipped): void
     {
         ksort($stats);
         $this->newLine();
@@ -214,6 +269,12 @@ class EvaluateLabelSuggestions extends Command
         $this->line("Skipped (conflicting or no remaining strings): {$skipped}");
         if ($withLlm) {
             $this->line("Rows sent to the LLM: {$llmSent} (labels and catalogue names only)");
+            if ($llmSent < $llmEligible) {
+                $this->warn(sprintf(
+                    '%d eligible ambiguous row(s) were not sent because of --limit. They are scored as the rules result, so the lift above is understated.',
+                    $llmEligible - $llmSent
+                ));
+            }
             $this->line('Decision rule: keep the LLM only if the ambiguous-subset lift is >= 10 pp on real (leave-one-out) data, with no loss elsewhere.');
         }
     }
@@ -250,10 +311,13 @@ class EvaluateLabelSuggestions extends Command
         return $path;
     }
 
-    /** Neutralise spreadsheet formula injection in labels. */
+    /**
+     * Neutralise spreadsheet formula injection. Covers the OWASP trigger set:
+     * a leading = + - @ , tab or carriage return.
+     */
     private function safe(string $v): string
     {
-        return $v !== '' && str_contains('=+-@', $v[0]) ? "'" . $v : $v;
+        return $v !== '' && str_contains("=+-@\t\r", $v[0]) ? "'" . $v : $v;
     }
 
     private function toCsv(array $rows): string
