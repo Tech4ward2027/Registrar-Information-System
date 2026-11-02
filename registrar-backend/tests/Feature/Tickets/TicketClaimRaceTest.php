@@ -1,0 +1,136 @@
+<?php
+
+use PHPUnit\Framework\Assert;
+use Symfony\Component\Process\Process;
+
+/*
+ * The two-staff claim race, for real: several OS processes, each with its own
+ * database connection, all try to claim the same tickets at the same instant.
+ * For every ticket exactly one must win, everyone else must be refused with the
+ * winner's id, and the ticket must end with exactly one `claimed` event and an
+ * intact hash chain.
+ *
+ * Runs on a SQLite file, where the database serialises writers; the claim is a
+ * single conditional UPDATE that never reads first, so the same guarantee holds
+ * on MySQL, where the loser waits on the row lock and then matches nothing.
+ */
+test('when several staff claim the same tickets at once, exactly one wins each', function () {
+    $staffCount  = 4;
+    $ticketCount = 12;
+
+    $dir = sys_get_temp_dir() . '/ticket-claims-' . bin2hex(random_bytes(4));
+    mkdir($dir);
+    $dbFile = $dir . '/race.sqlite';
+    touch($dbFile);
+
+    $worker = base_path('tests/Support/ticket_claim_worker.php');
+    $env = [
+        'APP_ENV'        => 'testing',
+        'APP_KEY'        => config('app.key'),
+        'DB_CONNECTION'  => 'sqlite',
+        'DB_DATABASE'    => $dbFile,
+        'DB_URL'         => '',
+        'CACHE_STORE'    => 'array',
+        'SESSION_DRIVER' => 'array',
+    ];
+
+    $run = function (array $args, int $timeout = 300) use ($worker, $env): Process {
+        $p = new Process([PHP_BINARY, $worker, ...$args], base_path(), $env);
+        $p->setTimeout($timeout);
+
+        return $p;
+    };
+
+    $lastJson = function (string $output): array {
+        $lines = array_values(array_filter(explode("\n", trim($output))));
+
+        return json_decode(end($lines), true, 512, JSON_THROW_ON_ERROR);
+    };
+
+    $stray = []; // non-result lines the workers printed
+    $raw   = []; // staff id => everything that worker wrote to stdout
+
+    try {
+        $setup = $run(['setup', (string) $ticketCount, (string) $staffCount]);
+        $setup->mustRun();
+        $data = $lastJson($setup->getOutput());
+
+        $ids = implode(',', $data['tickets']);
+        $startAt = microtime(true) + 6; // generous: workers boot at different speeds
+
+        /** @var array<int,Process> $racers staff id => process */
+        $racers = [];
+        foreach ($data['staff'] as $staffId) {
+            $racers[$staffId] = $run(['run', (string) $staffId, (string) $startAt, $ids], 120);
+            $racers[$staffId]->start();
+        }
+
+        $results = []; // ticket id => list of [staff id, outcome]
+        foreach ($racers as $staffId => $p) {
+            $p->wait();
+            $raw[$staffId] = $p->getOutput();
+            Assert::assertSame(0, $p->getExitCode(), $p->getErrorOutput() . $p->getOutput());
+
+            foreach (array_filter(explode("\n", trim($p->getOutput()))) as $line) {
+                // Only tagged lines are results. Anything else a worker prints
+                // (a PHP notice, a framework warning) must never be parsed as
+                // a ticket id; it is kept so a failure can show it.
+                if (! str_starts_with($line, 'RESULT|')) {
+                    $stray[] = "staff {$staffId}: {$line}";
+
+                    continue;
+                }
+
+                [, $ticketId, $outcome, $claimer] = array_pad(explode('|', $line), 4, null);
+                $results[(int) $ticketId][] = ['staff' => $staffId, 'outcome' => $outcome, 'claimer' => $claimer];
+            }
+        }
+
+        $inspect = $run(['inspect', $ids]);
+        $inspect->mustRun();
+        $final = $lastJson($inspect->getOutput());
+    } finally {
+        foreach (['', '-wal', '-shm'] as $suffix) {
+            @unlink($dbFile . $suffix);
+        }
+        @rmdir($dir);
+    }
+
+    $noise = $stray === [] ? '' : "\nworkers also printed:\n" . implode("\n", array_slice($stray, 0, 10));
+
+    // A worker that crashes can still exit 0 (the framework's handler prints the
+    // error and returns), so its output is the only evidence. Any line that is
+    // not a RESULT line means something went wrong in a worker.
+    Assert::assertSame([], $stray, 'a worker printed output other than results (it probably crashed):' . $noise);
+
+    // Assert (not expect) so the message is actually shown on failure.
+    Assert::assertEqualsCanonicalizing($data['tickets'], array_keys($results), 'expected one result set per ticket' . $noise);
+
+    foreach ($data['tickets'] as $ticketId) {
+        $attempts = $results[$ticketId];
+        $winners  = array_values(array_filter($attempts, fn ($a) => $a['outcome'] === 'WON'));
+
+        if (count($attempts) !== $staffCount) {
+            $dump = '';
+            foreach ($raw as $sid => $out) {
+                $dump .= "\n--- stdout of staff {$sid} (" . strlen($out) . " bytes) ---\n" . substr($out, 0, 1500);
+            }
+            Assert::fail("ticket {$ticketId} got " . count($attempts) . " result(s), expected {$staffCount}." . $dump);
+        }
+
+        expect($winners)->toHaveCount(1);
+
+        $winner = $winners[0]['staff'];
+
+        foreach ($attempts as $a) {
+            if ($a['outcome'] === 'LOST') {
+                expect((int) $a['claimer'])->toBe($winner, 'a loser must be told who won');
+            }
+        }
+
+        expect($final[$ticketId]['claimed_by'])->toBe($winner)
+            ->and($final[$ticketId]['status'])->toBe('in_progress')
+            ->and($final[$ticketId]['events'])->toBe(['claimed'])
+            ->and($final[$ticketId]['chain_ok'])->toBeTrue();
+    }
+})->group('concurrency');

@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\DTOs\PushDispatchResult;
+use App\Models\NotificationDispatchLog;
 use App\Models\PushSubscription;
 use Illuminate\Support\Facades\Log;
 use Minishlink\WebPush\Subscription;
@@ -36,13 +38,33 @@ class WebPushService
      */
     public function sendToUser(int $userId, array $payload): int
     {
+        return $this->dispatchToUser($userId, $payload)->delivered;
+    }
+
+    /**
+     * Same delivery as sendToUser(), returning the full outcome so the caller
+     * can write an accurate dispatch-log row (Notification Policy §4).
+     *
+     * Only subscriptions with a live session are used (§3.3(3)): the FK
+     * cascade removes subscriptions when their token is deleted, and the
+     * withActiveSession() scope covers tokens that have expired by time but
+     * not yet been pruned.
+     *
+     * @param  array<string, mixed>  $payload  JSON-serialisable; keep well under 4 KB.
+     */
+    public function dispatchToUser(int $userId, array $payload): PushDispatchResult
+    {
         if (! $this->isConfigured()) {
-            return 0;
+            return PushDispatchResult::skipped(NotificationDispatchLog::REASON_NOT_CONFIGURED);
         }
 
-        $subscriptions = PushSubscription::where('user_id', $userId)->get();
+        $subscriptions = PushSubscription::where('user_id', $userId)->withActiveSession()->get();
         if ($subscriptions->isEmpty()) {
-            return 0;
+            $hasAny = PushSubscription::where('user_id', $userId)->exists();
+
+            return PushDispatchResult::skipped(
+                $hasAny ? NotificationDispatchLog::REASON_NO_ACTIVE_SESSION : NotificationDispatchLog::REASON_NO_SUBSCRIPTIONS
+            );
         }
 
         try {
@@ -65,7 +87,7 @@ class WebPushService
         } catch (\Throwable $e) {
             // Bad VAPID config or an unencodable payload — nothing can be sent.
             Log::error('WebPushService: could not initialise', ['error' => $e->getMessage()]);
-            return 0;
+            return PushDispatchResult::failed($e->getMessage());
         }
 
         $delivered = [];
@@ -114,6 +136,6 @@ class WebPushService
             PushSubscription::whereIn('id', $delivered)->update(['last_used_at' => now()]);
         }
 
-        return count($delivered);
+        return PushDispatchResult::attempted($subscriptions->count(), count($delivered));
     }
 }

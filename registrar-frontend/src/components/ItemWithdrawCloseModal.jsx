@@ -121,30 +121,30 @@ const ItemWithdrawCloseModal = ({ open, mode, reqId, reqRef, subItem, onClose, o
   const labelColor = isDark ? 'text-zinc-200' : 'text-gray-700';
 
   return createPortal(
-    <div className="fixed inset-0 z-99999 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-99999 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
       <div
-        className={`absolute inset-0 backdrop-blur-sm ${isDark ? 'bg-black/70' : 'bg-black/50'}`}
+        className={`fixed inset-0 backdrop-blur-sm ${isDark ? 'bg-black/70' : 'bg-black/50'}`}
         onClick={onClose}
       />
-      <div className={`relative rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col ${isDark ? 'bg-[#242526] border border-[#3e4042]' : 'bg-white'}`}>
+      <div className={`relative my-auto rounded-2xl shadow-2xl w-full max-w-md flex flex-col ${isDark ? 'bg-[#242526] border border-[#3e4042]' : 'bg-white'}`}>
 
         {/* Header */}
-        <div className={`px-5 py-4 flex justify-between items-center ${isDark ? 'bg-[#3a3b3c]' : 'bg-pup-maroon'}`}>
-          <h3 className="text-base font-bold text-white">
+        <div className={`px-4 sm:px-5 py-3.5 sm:py-4 rounded-t-2xl flex justify-between items-center ${isDark ? 'bg-[#3a3b3c]' : 'bg-pup-maroon'}`}>
+          <h3 className="text-sm sm:text-base font-bold text-white pr-2">
             {isWithdraw ? 'Withdraw Item' : 'Close Item — Unable to Process'}
           </h3>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close modal"
-            className="text-white hover:text-yellow-200 transition cursor-pointer"
+            className="text-white hover:text-yellow-200 transition cursor-pointer shrink-0"
           >
-            <XCircleIcon className="w-6 h-6" />
+            <XCircleIcon className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4">
           <div className={`p-3.5 rounded-xl border text-xs space-y-1 ${isDark ? 'bg-[#18191a] border-zinc-800 text-zinc-300' : 'bg-gray-50 border-gray-200 text-gray-700'}`}>
             <p className="font-bold text-sm text-pup-maroon dark:text-pup-yellow">
               {itemTitle}

@@ -22,7 +22,9 @@ test('a successful local (break-glass) login fires an admin-facing notification'
         $mock->shouldReceive('sendToAllExcept')
             ->once()
             ->withArgs(function ($excludedRoleIds, $triggerEvent, $data) use ($user) {
-                // Must exclude student/alumni, but must NOT exclude admin or
+                // Must exclude every requestor role (student, alumni, undergrad
+                // requestor — the alert discloses an email + source IP), but
+                // must NOT exclude admin or
                 // super admin — otherwise the Super Admin who owns this
                 // break-glass account would never see the alert (see
                 // LocalAuthController::login() for why sendToAdmins() alone
@@ -30,6 +32,7 @@ test('a successful local (break-glass) login fires an admin-facing notification'
                 return $triggerEvent === 'local_auth_login_used'
                     && in_array(SystemUser::ROLE_STUDENT, $excludedRoleIds, true)
                     && in_array(SystemUser::ROLE_ALUMNI, $excludedRoleIds, true)
+                    && in_array(SystemUser::ROLE_UNDERGRAD_REQUESTOR, $excludedRoleIds, true)
                     && !in_array(SystemUser::ROLE_ADMIN, $excludedRoleIds, true)
                     && !in_array(SystemUser::ROLE_SUPER_ADMIN, $excludedRoleIds, true)
                     && $data['user_id'] === $user->user_id

@@ -20,6 +20,7 @@ const InputGroup = ({
   voiceEnabled = true,
   language = "en-US",
   isDark: isDarkProp,
+  error,
 }) => {
   const { isDark: themeIsDark } = useTheme();
   const isDark = isDarkProp !== undefined ? isDarkProp : themeIsDark;
@@ -102,13 +103,15 @@ const InputGroup = ({
           min={min}
           max={max}
           className={`w-full px-3 py-3 rounded-lg text-sm font-medium shadow-sm transition-all duration-200 focus:outline-none ${
-            isListening
-              ? 'border-[#FFC72C] ring-2 ring-[#FFC72C]/25'
-              : 'focus:border-[#FFC72C] focus:ring-2 focus:ring-[#FFC72C]/25'
+            error
+              ? 'border-red-500 ring-1 ring-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+              : isListening
+                ? 'border-[#FFC72C] ring-2 ring-[#FFC72C]/25'
+                : 'focus:border-[#FFC72C] focus:ring-2 focus:ring-[#FFC72C]/25'
           } ${
             isDark
-              ? 'bg-[#1f1f1f] text-[#e4e6eb] border-[#3e4042] placeholder:text-[#8f949d]'
-              : 'bg-white text-gray-700 border-gray-200 placeholder:text-gray-400'
+              ? `${error ? 'bg-[#2a1b1b]' : 'bg-[#1f1f1f]'} text-[#e4e6eb] ${error ? 'border-red-500' : 'border-[#3e4042]'} placeholder:text-[#8f949d]`
+              : `${error ? 'bg-red-50/30' : 'bg-white'} text-gray-700 ${error ? 'border-red-400' : 'border-gray-200'} placeholder:text-gray-400`
           } ${voiceEnabled ? "pr-20" : ""}`}
         />
 
@@ -142,6 +145,11 @@ const InputGroup = ({
           )}
         </div>
       </div>
+      {error && (
+        <p role="alert" className="mt-1 text-xs font-medium text-red-500 dark:text-red-400 animate-in fade-in duration-150">
+          {error}
+        </p>
+      )}
     </div>
   );
 };

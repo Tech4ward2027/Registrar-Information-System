@@ -68,6 +68,7 @@ function uggUndergradRequest(?string $gender, array $overrides = []): array
         'suffix'                    => null,
         'last_name'                 => 'Santos',
         'student_number'            => '2018-00456',
+        'program'                   => 'Bachelor of Science in Information Technology',
         'gender'                    => $gender,
         'phone'                     => '09171234567',
         'present_address'           => '12 Confidential Street',
@@ -179,13 +180,14 @@ test('the registration response does not echo gender back to the public caller',
 
 test('the logbook returns an undergrad requestor\'s gender on the row and on the nested profile', function () {
     uggStaff();
-    [$request] = uggUndergradRequest('Female');
+    [$request, $profile] = uggUndergradRequest('Female');
 
     $row = collect($this->getJson('/api/v1/document-requests/logbook')->assertOk()->json('data'))
         ->firstWhere('request_id', $request->request_id);
 
     expect($row)->not->toBeNull()
         ->and($row['requester_type'])->toBe('Undergrad Requestor')
+        ->and($row['course'])->toBe($profile->program)
         ->and($row['gender'])->toBe('Female')
         ->and($row['undergrad_requestor_profile']['gender'])->toBe('Female');
 });

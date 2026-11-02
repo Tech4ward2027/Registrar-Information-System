@@ -58,6 +58,9 @@ return Application::configure(basePath: dirname(__DIR__))
             // Fine-grained policy enforcement on top of 'role' — see
             // EnsureModuleAccess docblock for how the two interact.
             'module' => \App\Http\Middleware\EnsureModuleAccess::class,
+            // Support Ticketing magic-link gate (public submitters) — see
+            // EnsureTicketAccessToken's docblock.
+            'ticket.token' => \App\Http\Middleware\EnsureTicketAccessToken::class,
             // Re-checks status on every request (not just at login) — see
             // EnsureAccountActive docblock. Applied to the shared protected
             // route group in routes/api.php, not globally here, since public
@@ -91,5 +94,13 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(function ($request, $e) {
             return true; // always return JSON, never HTML error pages
+        });
+
+        // Support Ticketing: a refusal by the ticket rules (lost claim race,
+        // wrong status, return limit) is a 409/403 with a stable `code`, not
+        // a 500. One mapping here keeps every ticket controller free of
+        // try/catch. See TicketExceptionRenderer for the codes.
+        $exceptions->render(function (\App\Exceptions\Tickets\TicketException $e, $request) {
+            return \App\Exceptions\Tickets\TicketExceptionRenderer::render($e);
         });
     })->create();

@@ -33,6 +33,13 @@ namespace App\Services;
  * ("Enrol" -> "Enrollment") or a small typo of one ("Transcrpit"), so the
  * AI still sees the messy labels it exists to resolve.
  *
+ * Ordinals
+ * --------
+ * Short ordinals ("1st", "2nd", "3rd", "21st") are kept. They are the only
+ * thing that separates "Diploma" from "Diploma - 2nd copy", they cannot
+ * identify a person, and they never carry the digit runs that student and
+ * reference numbers do (at most two digits are accepted).
+ *
  * Known limit: a requestor whose name is also an ordinary document word
  * (for example someone surnamed "Records") cannot be told apart from the
  * word itself. That residual risk is inherent to any non-NER approach.
@@ -51,11 +58,19 @@ final class LabelPrivacyFilter
         . '|\b\d{1,3}(?:,\d{3})+\b/iu';
 
     /**
+     * A whole word that is a one- or two-digit ordinal: 1st, 2nd, 3rd, 4th,
+     * 21st. ASCII digits only; anything longer or mixed (123rd, 2nd2, S2021)
+     * is not an ordinal and is handled as an identifier.
+     */
+    private const ORDINAL = '/^[0-9]{1,2}(?:st|nd|rd|th)$/i';
+
+    /**
      * Pattern-based removal for text that is already trusted vocabulary
      * (candidate names, and the first stage of scrub()). Removes control
      * characters, URLs, emails, amounts, angle brackets, and every word that
-     * contains a digit unless it is a short plain number (so "Form 137" and
-     * "(1 page)" survive; "2021-00123", "REF-45", "OR#998877" do not).
+     * contains a digit unless it is a short plain number or a short ordinal
+     * (so "Form 137", "(1 page)" and "2nd" survive; "2021-00123", "REF-45",
+     * "OR#998877" do not).
      */
     public static function redact(string $text): string
     {
@@ -150,8 +165,9 @@ final class LabelPrivacyFilter
 
             $hasDigit   = preg_match('/\d/u', $core) === 1;
             $shortPlain = preg_match('/^\d{1,' . $maxDigits . '}$/', $core) === 1;
+            $ordinal    = preg_match(self::ORDINAL, $core) === 1;
 
-            if ($hasDigit && !$shortPlain) {
+            if ($hasDigit && !$shortPlain && !$ordinal) {
                 continue; // student number, reference number, mixed identifier
             }
 
@@ -167,6 +183,12 @@ final class LabelPrivacyFilter
         $term = mb_strtolower($part);
 
         if (in_array($term, $vocabulary, true)) {
+            return true;
+        }
+
+        // Ordinals are never identifying and are not inferred from the
+        // vocabulary: "2nd" must survive even when no candidate name has it.
+        if (preg_match(self::ORDINAL, $term) === 1) {
             return true;
         }
 

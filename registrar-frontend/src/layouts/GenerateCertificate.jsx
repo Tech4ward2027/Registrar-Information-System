@@ -14,6 +14,8 @@ import {
 import { CertHeader, CertFooter, getTodayDate } from "../utils/helpers.jsx";
 import { CERT_CONFIG } from "../utils/Certification.jsx";
 import DropDown from "../components/DropDown.jsx";
+import ConfirmationModal from "../components/ConfirmationModal.jsx";
+import ErrorToast from "../components/ErrorToast.jsx";
 import {
   CERT_TEMPLATE_LAYOUT_CHANGED,
   DEFAULT_CERTIFICATE_LAYOUT,
@@ -76,39 +78,112 @@ const DEFAULT_FORM = {
 
 const TEMPLATE_TAG_PATTERN = /\{\{\s*([a-z][a-z0-9_]*)\s*(?:\|\s*([a-z]+)\s*)?\}\}/g;
 
-const buildTemplateData = (formData, academicRecord) => ({
-  full_name: formData.fullName || "",
-  student_number: academicRecord?.student_number || formData.studentNum || "",
-  course: academicRecord?.course || formData.course || "",
-  date_graduated: academicRecord?.graduation_date || formData.dateGraduated || "",
-  official_receipt_number: academicRecord?.or_number || formData.officialReceiptNum || "",
-  issue_date: formData.date || "",
-  signee_name: formData.signee || "",
-  education_level: formData.educationLevel || "",
-  major: formData.major || "",
-  gwa: formData.gwa || "",
-  units: formData.units || "",
-  latin_honors: formData.latinHonors || "",
-  semesters: formData.semesters || "",
-  semesters_num: formData.semestersNum || "",
-  last_semesters: formData.lastSemesters || "",
-  sy_admitted: formData.syAdmitted || "",
-  last_sy: formData.lastSy || "",
-  diploma_num: formData.diplomaNum || "",
-  ladderized_degree: formData.ladderizedDegree || "",
-  student_status: academicRecord?.status || formData.studentStatus || "",
-  eligibility_type: formData.eligibilityType || "",
-  cav_num: formData.cavNum || "",
-  cav_series: formData.cavSeries || "",
-  nstp_serial_num: formData.nstpSerialNum || "",
-  amount: formData.amount || "",
-  control_number: "[Generated on certificate issuance]",
-});
+const parseDate = (val) => {
+  if (!val || typeof val !== "string") return null;
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+const formatOrdinal = (day) => {
+  const s = ["th", "st", "nd", "rd"];
+  const v = day % 100;
+  return day + (s[(v - 20) % 10] || s[v] || s[0]);
+};
+
+const buildTemplateData = (formData, academicRecord) => {
+  const dateGraduated = academicRecord?.graduation_date || formData.dateGraduated || "";
+  const issueDate = formData.date || "";
+  const parsedIssue = parseDate(issueDate);
+  const parsedGrad = parseDate(dateGraduated);
+
+  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const issueDateFormal = parsedIssue ? `${months[parsedIssue.getMonth()]} ${parsedIssue.getDate()}, ${parsedIssue.getFullYear()}` : "";
+  const issueDateOrdinal = parsedIssue ? `${formatOrdinal(parsedIssue.getDate())} day of ${months[parsedIssue.getMonth()]} ${parsedIssue.getFullYear()}` : "";
+  
+  let dateGraduatedFormal = dateGraduated;
+  if (/^\d{4}$/.test(dateGraduated.trim())) {
+    dateGraduatedFormal = dateGraduated.trim();
+  } else if (parsedGrad) {
+    dateGraduatedFormal = `${months[parsedGrad.getMonth()]} ${parsedGrad.getDate()}, ${parsedGrad.getFullYear()}`;
+  }
+
+  let batchYear = "";
+  const matchBatch = dateGraduated.trim().match(/^(\d{4})/);
+  if (matchBatch) {
+    batchYear = matchBatch[1];
+  }
+
+  const currentYear = parsedIssue ? String(parsedIssue.getFullYear()) : String(new Date().getFullYear());
+
+  let salutationName = "";
+  const fullName = (formData.fullName || "").trim();
+  if (fullName) {
+    const parts = fullName.split(/\s+/);
+    const last = parts[parts.length - 1];
+    salutationName = parts.length === 1 ? parts[0] : `Mr./Ms. ${last}`;
+  }
+
+  const latinHonors = (formData.latinHonors || "").replace(/[()]/g, "").trim();
+  const honorName = latinHonors;
+
+  let gwaRange = "1.3501 to 1.6000";
+  const honorLower = latinHonors.toLowerCase();
+  if (honorLower.includes("summa")) {
+    gwaRange = "1.0000 to 1.1500";
+  } else if (honorLower.includes("magna")) {
+    gwaRange = "1.1501 to 1.3500";
+  } else if (honorLower.includes("cum laude")) {
+    gwaRange = "1.3501 to 1.6000";
+  } else if (formData.gwa && !isNaN(Number(formData.gwa))) {
+    const g = Number(formData.gwa);
+    if (g <= 1.15) gwaRange = "1.0000 to 1.1500";
+    else if (g <= 1.35) gwaRange = "1.1501 to 1.3500";
+    else gwaRange = "1.3501 to 1.6000";
+  }
+
+  return {
+    full_name: fullName,
+    student_number: academicRecord?.student_number || formData.studentNum || "",
+    course: academicRecord?.course || formData.course || "",
+    date_graduated: dateGraduated,
+    date_graduated_formal: dateGraduatedFormal,
+    batch_year: batchYear,
+    current_year: currentYear,
+    issue_date: issueDate,
+    issue_date_formal: issueDateFormal,
+    issue_date_ordinal: issueDateOrdinal,
+    salutation_name: salutationName,
+    honor_name: honorName,
+    gwa_range: gwaRange,
+    official_receipt_number: academicRecord?.or_number || formData.officialReceiptNum || "",
+    signee_name: formData.signee || "",
+    signee_position: formData.signeePosition || "",
+    education_level: formData.educationLevel || "",
+    major: formData.major || "",
+    gwa: formData.gwa || "",
+    units: formData.units || "",
+    latin_honors: formData.latinHonors || "",
+    semesters: formData.semesters || "",
+    semesters_num: formData.semestersNum || "",
+    last_semesters: formData.lastSemesters || "",
+    sy_admitted: formData.syAdmitted || "",
+    last_sy: formData.lastSy || "",
+    diploma_num: formData.diplomaNum || "",
+    ladderized_degree: formData.ladderizedDegree || "",
+    student_status: academicRecord?.status || formData.studentStatus || "",
+    eligibility_type: formData.eligibilityType || "",
+    cav_num: formData.cavNum || "",
+    cav_series: formData.cavSeries || "",
+    nstp_serial_num: formData.nstpSerialNum || "",
+    amount: formData.amount || "",
+    control_number: "[Generated on certificate issuance]",
+  };
+};
 
 const renderTemplatePreview = (content, data) => String(content || "").replace(
   TEMPLATE_TAG_PATTERN,
   (_, name, filter) => {
-    const value = data[name] || `[${name}]`;
+    const value = data[name] !== undefined && data[name] !== "" ? data[name] : `[${name}]`;
     if (filter === "upper") return value.toUpperCase();
     if (filter === "lower") return value.toLowerCase();
     if (filter === "title") return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -146,6 +221,39 @@ const buildFieldConfig = (courseOptions) => [
   ["amount",            "input",    "Amount (PHP)",            { placeholder: "e.g. 620.00" }],
   ["nstpSerialNum",     "input",    "NSTP Serial Number",      { placeholder: "e.g. C-13-113719-16" }],
 ];
+
+const TEMPLATE_TAG_TO_FORM_FIELD = {
+  // Manual fields
+  education_level: "educationLevel",
+  major: "major",
+  gwa: "gwa",
+  units: "units",
+  latin_honors: "latinHonors",
+  semesters: "semesters",
+  semesters_num: "semestersNum",
+  last_semesters: "lastSemesters",
+  sy_admitted: "syAdmitted",
+  last_sy: "lastSy",
+  diploma_num: "diplomaNum",
+  ladderized_degree: "ladderizedDegree",
+  student_status: "studentStatus",
+  eligibility_type: "eligibilityType",
+  cav_num: "cavNum",
+  cav_series: "cavSeries",
+  nstp_serial_num: "nstpSerialNum",
+  amount: "amount",
+  // Academic / backend fields that can also be edited or overridden in sidebar
+  full_name: "fullName",
+  student_number: "studentNum",
+  course: "course",
+  date_graduated: "dateGraduated",
+  date_graduated_formal: "dateGraduated",
+  batch_year: "dateGraduated",
+  official_receipt_number: "officialReceiptNum",
+  // Computed tags that depend on manual input
+  honor_name: "latinHonors",
+  gwa_range: "gwa",
+};
 
 const MANUAL_TEMPLATE_FIELDS = {
   education_level: "educationLevel",
@@ -287,6 +395,9 @@ const GenerateCertification = ({ initialData, onClose, onCertificatePrinted, onL
   const [docTypeOptions, setDocTypeOptions] = useState(Object.keys(CERT_CONFIG).map(Number));
   const [formData, setFormData] = useState({ ...DEFAULT_FORM, ...(initialData ?? {}) });
   const [savedData, setSavedData] = useState({ ...DEFAULT_FORM, ...(initialData ?? {}) });
+  const [formValidationErrors, setFormValidationErrors] = useState({});
+  const [showEmptyFieldsConfirm, setShowEmptyFieldsConfirm] = useState(false);
+  const [pendingApplyData, setPendingApplyData] = useState(null);
 
   const [paperSize, setPaperSize] = useState("Letter");
   const [orientation, setOrientation] = useState("Portrait");
@@ -518,6 +629,14 @@ useEffect(() => {
     const { name, value } = e.target;
     clearGeneratedCertificate();
     
+    // Clear validation error for this field if present
+    setFormValidationErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+
     // If this is the docType field, convert display name back to numeric ID
     if (name === "docType") {
       const selectedId = docTypeOptions.find((id) => certIdToName[id] === value);
@@ -528,6 +647,58 @@ useEffect(() => {
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
+  };
+
+  const getMissingMandatoryFields = () => {
+    const missing = {};
+
+    // 1. Check all shown fields from active cert config
+    const activeCertConfigFields = formCertConfig?.fields ?? [];
+    activeCertConfigFields.forEach((fieldName) => {
+      const val = formData[fieldName];
+      if (val === undefined || val === null || String(val).trim() === "") {
+        missing[fieldName] = "This field is required.";
+      }
+    });
+
+    // 2. Check required manual fields from database template (if applicable)
+    requiredManualFieldNames.forEach((fieldName) => {
+      const val = formData[fieldName];
+      if (val === undefined || val === null || String(val).trim() === "") {
+        missing[fieldName] = "This field is required.";
+      }
+    });
+
+    // 3. Date and Signee if shown/relevant
+    if (!formData.date || String(formData.date).trim() === "") {
+      missing.date = "Date issued is required.";
+    }
+    if (!formData.signee || String(formData.signee).trim() === "") {
+      missing.signee = "Signee is required.";
+    }
+
+    return missing;
+  };
+
+  const handleApplyChanges = () => {
+    const missing = getMissingMandatoryFields();
+    if (Object.keys(missing).length > 0) {
+      setFormValidationErrors(missing);
+      setPendingApplyData({ ...formData });
+      setShowEmptyFieldsConfirm(true);
+      return;
+    }
+
+    setFormValidationErrors({});
+    setSavedData({ ...formData });
+  };
+
+  const handleConfirmProceedWithEmpty = () => {
+    if (pendingApplyData) {
+      setSavedData({ ...pendingApplyData });
+      setPendingApplyData(null);
+    }
+    setShowEmptyFieldsConfirm(false);
   };
 
   const markLegacyCertificateGenerated = () => {
@@ -547,6 +718,13 @@ useEffect(() => {
   };
 
   const handleLegacyPrint = async () => {
+    const missing = getMissingMandatoryFields();
+    if (Object.keys(missing).length > 0) {
+      setFormValidationErrors(missing);
+      setGenerationError("Please complete all mandatory fields before printing the certificate.");
+      return;
+    }
+
     setPrintLoading(true);
 
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -637,6 +815,14 @@ useEffect(() => {
       .filter((name) => !String(manualFields[name] ?? "").trim());
 
     if (requiredManualFields.length > 0) {
+      const fieldErrors = {};
+      requiredManualFields.forEach((tag) => {
+        const fieldName = MANUAL_TEMPLATE_FIELDS[tag];
+        if (fieldName) {
+          fieldErrors[fieldName] = "This field is required.";
+        }
+      });
+      setFormValidationErrors((prev) => ({ ...prev, ...fieldErrors }));
       setGenerationError(`Please complete the required field${requiredManualFields.length === 1 ? "" : "s"}: ${requiredManualFields.join(", ")}.`);
       return;
     }
@@ -695,15 +881,33 @@ useEffect(() => {
   const formCertConfig = resolvedFormDocTypeId ? CERT_CONFIG[resolvedFormDocTypeId] : undefined;
   const previewCertConfig = resolvedPreviewDocTypeId ? CERT_CONFIG[resolvedPreviewDocTypeId] : undefined;
   const shouldShow = useCallback((fieldName) => formCertConfig?.fields.includes(fieldName), [formCertConfig]);
-  const requiredManualFieldNames = useMemo(
-    () => (databaseTemplate?.required_fields ?? [])
-      .map((tag) => MANUAL_TEMPLATE_FIELDS[tag])
-      .filter(Boolean),
-    [databaseTemplate]
-  );
+
+  // Dynamically extract all merge tags used in the active template content or marked as required
+  const templateActiveFieldNames = useMemo(() => {
+    if (!databaseTemplate) return [];
+    const fields = new Set();
+
+    // 1. Tags explicitly marked required
+    (databaseTemplate.required_fields ?? []).forEach((tag) => {
+      const field = TEMPLATE_TAG_TO_FORM_FIELD[tag];
+      if (field) fields.add(field);
+    });
+
+    // 2. Tags detected in template HTML content
+    const content = databaseTemplate.content || "";
+    const matches = content.matchAll(/\{\{\s*([a-z0-9_]+)(?:\|[a-z]+)?\s*\}\}/gi);
+    for (const match of matches) {
+      const tagName = match[1]?.toLowerCase();
+      const field = TEMPLATE_TAG_TO_FORM_FIELD[tagName];
+      if (field) fields.add(field);
+    }
+
+    return Array.from(fields);
+  }, [databaseTemplate]);
+
   const shouldShowField = useCallback(
-    (fieldName) => shouldShow(fieldName) || requiredManualFieldNames.includes(fieldName),
-    [requiredManualFieldNames, shouldShow]
+    (fieldName) => shouldShow(fieldName) || templateActiveFieldNames.includes(fieldName),
+    [templateActiveFieldNames, shouldShow]
   );
   
   // Get the certificate name for display
@@ -960,6 +1164,7 @@ useEffect(() => {
 
               {FIELD_CONFIG.map(([name, type, label, props]) => {
                 if (!shouldShowField(name)) return null;
+                const fieldError = formValidationErrors[name];
                 if (type === "dropdown") {
                   return (
                     <DropDown
@@ -970,6 +1175,7 @@ useEffect(() => {
                       onChange={handleChange}
                       options={props.options}
                       labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-700'}
+                      error={fieldError}
                     />
                   );
                 }
@@ -983,6 +1189,7 @@ useEffect(() => {
                     {...props}
                     voiceEnabled={props.type !== "date"}
                     labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-700'} 
+                    error={fieldError}
                   />
                 );
               })}
@@ -996,6 +1203,7 @@ useEffect(() => {
                 voiceEnabled={false}
                 labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-700'}
                 max={getTodayDate()}
+                error={formValidationErrors.date}
               />
 
               <DropDown
@@ -1005,11 +1213,12 @@ useEffect(() => {
                 onChange={handleChange}
                 options={signeeOptions}
                 labelColor={isDark ? 'text-[#b0b3b8]' : 'text-gray-700'}
+                error={formValidationErrors.signee}
               />
 
               <button
                 type="button"
-                onClick={() => setSavedData({ ...formData })}
+                onClick={handleApplyChanges}
                 className={`w-full mt-5 rounded-xl font-bold py-2.5 text-sm transition-all active:scale-95 ${
                   isDark
                     ? 'bg-[#2a2a2f] hover:bg-[#353539] text-[#e4e6eb] border border-[#3e4042]'
@@ -1021,6 +1230,20 @@ useEffect(() => {
             </form>
           </div>
         </div>
+
+        {/* Empty Mandatory Fields Confirmation Modal */}
+        <ConfirmationModal
+          isOpen={showEmptyFieldsConfirm}
+          type="confirm"
+          title="Incomplete Mandatory Fields"
+          message="Some required fields are empty. Do you still want to proceed and apply these changes to the certificate preview?"
+          confirmLabel="Proceed"
+          onClose={() => {
+            setShowEmptyFieldsConfirm(false);
+            setPendingApplyData(null);
+          }}
+          onConfirm={handleConfirmProceedWithEmpty}
+        />
 
         {/* Certificate Preview Card */}
         <div className={`relative order-2 flex flex-1 flex-col rounded-2xl border min-h-[500px] max-h-[82vh] overflow-hidden transition-colors print:bg-white print:text-black print:rounded-none print:border-0 print:min-h-0 print:max-h-none ${
@@ -1132,6 +1355,11 @@ useEffect(() => {
             </div>
           </div>
         </div>
+
+        {/* Generation / Validation Error Toast Alert */}
+        {generationError && (
+          <ErrorToast message={generationError} onClose={() => setGenerationError("")} />
+        )}
       </div>
     </div>
   );
