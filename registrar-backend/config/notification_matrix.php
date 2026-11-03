@@ -38,8 +38,19 @@ return [
     'placeholders' => [
         'request_id', 'document_name', 'document_noun', 'or_number', 'item_label',
         'withdrawal_reason', 'closure_reason', 'void_reason',
-        'announcement_title', 'announcement_details', 'email', 'ip',
+        'announcement_title', 'announcement_details', 'email', 'ip', 'details',
     ],
+
+    // Calendar-change notices are coalesced: edits inside this window are
+    // folded into ONE notice to every requestor (see CalendarChangeNotifier),
+    // so entering a year of holidays does not send a year of notifications.
+    'calendar_notice_debounce_minutes' => (int) env('CALENDAR_NOTICE_DEBOUNCE_MINUTES', 10),
+
+    // Super Admin performs the Technical/IT duties named in Policy v1.2.0 §2
+    // (mailer queues, push health, integrity alerts), so alerts addressed to
+    // "Technical IT Staff" in §3.4 go to Super Admin. Kept as one entry so a
+    // dedicated role later is a one-line change here, not a code change.
+    'technical_it_role_ids' => [4], // SystemUser::ROLE_SUPER_ADMIN
 
     'types' => [
         // Lifecycle milestones
@@ -103,7 +114,40 @@ return [
             'template' => 'Important Notice: :announcement_title - :announcement_details',
         ],
 
+        // General & account
+        'business_calendar_modified' => [
+            'email' => false, 'push' => true,
+            'template' => 'Notice: Registrar office hours/calendar updated: :details',
+            // Created by NotificationMatrixSync when missing (fixed id keeps
+            // fresh and existing databases identical).
+            'create' => ['id' => 36, 'title' => 'Business Calendar Modified', 'audience' => 'all'],
+        ],
+        // Policy rows "Account Verification Confirmed / Incomplete": the
+        // Undergrad Requestor approve/reject decision, the only flow where
+        // onboarding details are submitted and verified. Their email is a
+        // separate approved exception, so email stays off here.
+        'undergrad_requestor_approved' => [
+            'email' => false, 'push' => true,
+            'template' => 'Your account has been verified. You may now log in and request documents through RIS.',
+        ],
+        'undergrad_requestor_rejected' => [
+            'email' => false, 'push' => true,
+            'template' => "Unable to verify submitted onboarding details. Please visit the Registrar's Office to complete verification.",
+        ],
+
+        // Submission & tracking (admin-filed free request)
+        'free_request_filed' => [
+            'email' => false, 'push' => true,
+            'template' => 'A free request for :document_name has been filed on your behalf and is Pending Approval.',
+            'create' => ['id' => 37, 'title' => 'Free Request Filed', 'audience' => 'student_alumni'],
+        ],
+
         // Administrative
+        'mismatched_receipt_flagged' => [
+            'email' => false, 'push' => true,
+            'template' => 'Security Flag: Request #:request_id flagged for mismatched or altered Official Receipt.',
+            'create' => ['id' => 38, 'title' => 'Mismatched Receipt Flagged', 'audience' => 'super_admin'],
+        ],
         'deficiency_notice_escalated' => [
             'email' => false, 'push' => true,
             'template' => 'Deficiency Notice on Request #:request_id has reached 30 days without compliance. Review for closure.',
@@ -116,17 +160,5 @@ return [
             'email' => false, 'push' => true,
             'template' => 'New administrative access/module permission request is pending your approval.',
         ],
-    ],
-
-    /*
-    | Matrix rows whose notification does not exist yet. Phase 5 builds them
-    | and moves each into 'types' above.
-    */
-    'pending' => [
-        'business_calendar_modified',
-        'account_verification_confirmed',
-        'account_verification_incomplete',
-        'free_request_filed',
-        'mismatched_receipt_flagged',
     ],
 ];

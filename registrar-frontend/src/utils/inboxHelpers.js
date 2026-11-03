@@ -60,7 +60,7 @@ export const getNotificationProgress = (n) => {
   if (type === 'pending_signature' || title.includes('signature')) return 60;
   if (type === 'request_processing' || title.includes('processing')) return 60;
   if (type === 'payment_verified' || title.includes('payment')) return 25;
-  if (type === 'request_submitted' || title.includes('submitted')) return 25;
+  if (type === 'request_submitted' || type === 'free_request_filed' || title.includes('submitted')) return 25;
 
   if (n._raw?.status_id !== undefined) {
     const map = { 1: 25, 2: 25, 3: 60, 4: 60, 5: 75, 6: 100, 7: 0 };

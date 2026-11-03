@@ -57,11 +57,20 @@ test('templates only use placeholders the system knows how to fill', function ()
     }
 });
 
-test('pending Phase 5 triggers are not silently missing from the plan', function () {
-    expect(config('notification_matrix.pending'))->toHaveCount(5);
-    foreach (config('notification_matrix.pending') as $trigger) {
-        expect(config("notification_matrix.types.{$trigger}"))->toBeNull();
-    }
+test('all 20 policy rows are covered: 15 original triggers plus the five Phase 5 rows', function () {
+    // Matrix rows -> triggers. The two Account Verification rows are the
+    // Undergrad Requestor approve/reject decision types.
+    $expected = [
+        'ready_to_claim', 'reminder_claim', 'reminder_final_warning', 'awaiting_submission',
+        'deficiency_notice_issued', 'request_withdrawn', 'request_closed_unable_to_process',
+        'announcement_published', 'business_calendar_modified',
+        'undergrad_requestor_approved', 'undergrad_requestor_rejected',
+        'request_submitted', 'request_processing', 'free_request_filed',
+        'deficiency_notice_cleared', 'deficiency_notice_voided', 'deficiency_notice_escalated',
+        'local_auth_login_used', 'mismatched_receipt_flagged', 'access_request_submitted',
+    ];
+
+    expect(array_keys(config('notification_matrix.types')))->toEqualCanonicalizing($expected);
 });
 
 test('applying the matrix twice changes nothing', function () {

@@ -179,6 +179,10 @@ class AuditLog extends Model
     public const ACTION_ACCESS_REQUEST_REJECTED  = 'access_request_rejected';
     public const ACTION_ACCESS_REQUEST_EXPIRED   = 'access_request_expired';
 
+    // Staff flagged an existing request's Official Receipt as mismatched or
+    // altered (see ReceiptFlagService). Notifies Super Admin; changes no status.
+    public const ACTION_RECEIPT_FLAGGED = 'receipt_flagged';
+
     // Cashier OR verification attempts (see NameMatcher, DocumentRequestController::store)
     // Logged for every attempt regardless of outcome — not just failures —
     // via the existing tamper-evident audit_log table rather than a new

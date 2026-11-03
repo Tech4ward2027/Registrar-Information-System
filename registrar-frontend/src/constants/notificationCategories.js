@@ -9,6 +9,7 @@
 export const CATEGORY_MAP = {
   // Student / Alumni
   request_submitted:          { category: 'Submitted',   color: 'bg-blue-400' },
+  free_request_filed:         { category: 'Submitted',   color: 'bg-blue-400' },
   payment_verified:            { category: 'Payment',     color: 'bg-green-400' },
   payment_invalid:             { category: 'Payment',     color: 'bg-rose-600' },
   status_updated:              { category: 'Update',      color: 'bg-blue-400' },

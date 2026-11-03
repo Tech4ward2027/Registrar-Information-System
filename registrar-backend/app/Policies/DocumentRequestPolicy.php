@@ -168,6 +168,15 @@ class DocumentRequestPolicy
         return $user->isStaff() && $user->hasModuleAccess('dashboard', 'Process');
     }
 
+    // Flag a request's Official Receipt as mismatched or altered (Policy
+    // §3.4). Staff who can process requests are the ones holding the paper
+    // receipt, so the same coarse 'Process' tier applies. Flagging changes
+    // no status and only alerts Super Admin.
+    public function flagReceipt(SystemUser $user, DocumentRequest $request): bool
+    {
+        return $user->isStaff() && $user->hasModuleAccess('dashboard', 'Process');
+    }
+
     // -------------------------------------------------------
     // Close a request as "Closed — Unable to Process" (Data Retention &
     // Disposal Policy §3.4). Same coarse tier as withdraw()/

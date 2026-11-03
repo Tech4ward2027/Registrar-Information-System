@@ -48,6 +48,8 @@ class CalendarOverrideService
             'day_of_week' => $override->day_of_week,
         ]);
 
+        CalendarChangeNotifier::override($override, 'added');
+
         return $override;
     }
 
@@ -68,7 +70,10 @@ class CalendarOverrideService
             'label'       => $override->label,
         ]);
 
-        return $override->refresh();
+        $override->refresh();
+        CalendarChangeNotifier::override($override, 'updated');
+
+        return $override;
     }
 
     public function delete(BusinessCalendarOverride $override, SystemUser $actor, Request $request): void
@@ -82,6 +87,8 @@ class CalendarOverrideService
 
             $override->delete();
         });
+
+        CalendarChangeNotifier::override($override, 'removed');
     }
 
     /**

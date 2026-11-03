@@ -15,6 +15,7 @@ use App\Http\Controllers\ItemClaimController;
 use App\Http\Controllers\ItemTerminationController;
 use App\Http\Controllers\RequestItemListController;
 use App\Http\Controllers\DeficiencyNoticeController;
+use App\Http\Controllers\ReceiptFlagController;
 use App\Http\Controllers\RequestDocumentController;
 use App\Http\Controllers\RequestHistoryController;
 use App\Http\Controllers\AuthController;
@@ -363,6 +364,11 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         // IssueDeficiencyNoticeRequest::authorize().
         Route::post('{documentRequest}/deficiency-notices', [DeficiencyNoticeController::class, 'issue'])
             ->middleware(['role:3', 'module:dashboard,Process']);
+        // Policy §3.4 "Mismatched Receipt Flagged": staff raise it on an
+        // existing request; Super Admin is alerted. Authorization is
+        // DocumentRequestPolicy::flagReceipt(), checked in the form request.
+        Route::post('{documentRequest}/flag-receipt', [ReceiptFlagController::class, 'store'])
+            ->middleware(['role:3', 'module:dashboard,Process', 'throttle:20,1']);
         // Item-level status — see RequestItemStatusService and
         // DocumentRequestController::updateDocumentItemStatus()/
         // updateCertificateItemStatus(). Same coarse role/module gate as
