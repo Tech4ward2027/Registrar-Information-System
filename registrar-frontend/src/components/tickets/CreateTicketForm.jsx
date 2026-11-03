@@ -1,146 +1,155 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import {
   XMarkIcon,
-  ArrowUpTrayIcon,
   ShieldCheckIcon,
   ExclamationTriangleIcon,
+  ArrowPathIcon,
 } from '@heroicons/react/24/outline';
-import { TICKET_CATEGORIES, TICKET_PRIORITIES } from '../../constants/ticketConstants';
-import { useTickets } from '../../context/TicketContext';
+import { getTicketCategories, createTicket } from '../../services/api';
 import { useTheme } from '../../context/ThemeContext';
 import { useToast } from '../../context/NotificationToastContext';
+import {
+  formatPriorityLabel,
+  getPriorityBadgeClass,
+  parseTicketApiError,
+} from '../../utils/ticketHelpers';
+import { useRetryAfterCooldown } from '../../hooks/useTicketLiveUpdates';
 import InputGroup from '../InputGroup.jsx';
 import DropdownGroup from '../DropDown.jsx';
 import VoiceTextareaInput from '../VoiceTextareaInput.jsx';
 
+const SUBJECT_MAX = 150;
+const DESCRIPTION_MIN = 20;
+const DESCRIPTION_MAX = 5000;
+
 const CreateTicketForm = ({ onCancel, onSuccess }) => {
   const { isDark } = useTheme();
-  const { createTicket } = useTickets();
   const { addToast } = useToast();
+  const cooldown = useRetryAfterCooldown();
+
+  const [categories, setCategories] = useState([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
 
   const [subject, setSubject] = useState('');
-  const [category, setCategory] = useState('');
-  const [priority, setPriority] = useState('Normal');
+  const [categoryCode, setCategoryCode] = useState('');
   const [description, setDescription] = useState('');
-  const [files, setFiles] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({});
 
   const cardClasses = isDark ? 'bg-[#18191a] text-[#e4e6eb]' : 'bg-white text-gray-900';
   const rowBorder = isDark ? 'border-[#3e4042]' : 'border-gray-200';
   const subtleText = isDark ? 'text-[#b0b3b8]' : 'text-gray-500';
 
-  const categoryOptions = TICKET_CATEGORIES.map((c) => ({
-    value: c.value,
-    label: c.label,
-  }));
-
-  const priorityOptions = TICKET_PRIORITIES.map((p) => ({
-    value: p.value,
-    label: p.label,
-  }));
-
-  const handleFiles = (incomingFiles) => {
-    const validFiles = Array.from(incomingFiles);
-    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
-    const maxSizeBytes = 10 * 1024 * 1024; // 10MB
-
-    for (let f of validFiles) {
-      if (!allowedTypes.includes(f.type) && !f.name.match(/\.(pdf|jpe?g|png)$/i)) {
-        setFieldErrors((prev) => ({
-          ...prev,
-          attachments: `Invalid file format: ${f.name}. Only PDF, JPG, and PNG are allowed.`,
-        }));
-        return;
+  useEffect(() => {
+    let active = true;
+    const loadCategories = async () => {
+      setLoadingCategories(true);
+      try {
+        const res = await getTicketCategories();
+        const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+        if (!active) return;
+        setCategories(rows);
+        if (rows.length > 0) {
+          setCategoryCode((prev) => prev || rows[0].code);
+        }
+      } catch (err) {
+        if (!active) return;
+        const parsed = await parseTicketApiError(err, 'Unable to load ticket categories.');
+        setFieldErrors({ general: parsed.message });
+      } finally {
+        if (active) setLoadingCategories(false);
       }
-      if (f.size > maxSizeBytes) {
-        setFieldErrors((prev) => ({
-          ...prev,
-          attachments: `File too large: ${f.name} exceeds the 10MB limit.`,
-        }));
-        return;
-      }
-    }
+    };
+    loadCategories();
+    return () => {
+      active = false;
+    };
+  }, []);
 
-    if (files.length + validFiles.length > 5) {
-      setFieldErrors((prev) => ({
-        ...prev,
-        attachments: 'You can upload a maximum of 5 files per ticket.',
-      }));
-      return;
-    }
+  const categoryEntries = useMemo(
+    () =>
+      categories.map((cat) => ({
+        code: cat.code,
+        label: `${cat.code} — ${cat.name}`,
+        priority: cat.priority,
+        description: cat.description,
+      })),
+    [categories]
+  );
 
-    setFieldErrors((prev) => ({ ...prev, attachments: null }));
-    setFiles((prev) => [...prev, ...validFiles]);
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFiles(e.dataTransfer.files);
-    }
-  };
-
-  const handleDrag = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
-  };
-
-  const handleRemoveFile = (index) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-  };
+  const selectedCategory = useMemo(
+    () => categoryEntries.find((c) => c.code === categoryCode) || null,
+    [categoryEntries, categoryCode]
+  );
 
   const validate = () => {
     const errs = {};
-    if (!subject.trim()) {
+    const trimmedSubject = subject.trim();
+    const trimmedDesc = description.trim();
+
+    if (!trimmedSubject) {
       errs.subject = 'Subject is required.';
+    } else if (trimmedSubject.length > SUBJECT_MAX) {
+      errs.subject = `Subject cannot exceed ${SUBJECT_MAX} characters.`;
     }
-    if (!category) {
-      errs.category = 'Please select a category.';
+
+    if (!categoryCode) {
+      errs.category_code = 'Please select a category.';
     }
-    if (!description.trim() || description.trim().length < 10) {
-      errs.description = 'Please provide a detailed description (at least 10 characters).';
+
+    if (!trimmedDesc || trimmedDesc.length < DESCRIPTION_MIN) {
+      errs.description = `Please provide a detailed description (at least ${DESCRIPTION_MIN} characters).`;
+    } else if (trimmedDesc.length > DESCRIPTION_MAX) {
+      errs.description = `Description cannot exceed ${DESCRIPTION_MAX} characters.`;
     }
+
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting || cooldown.isCoolingDown) return;
     if (!validate()) return;
 
     setIsSubmitting(true);
+    setFieldErrors({});
     try {
-      const created = createTicket({
-        subject,
-        category,
-        priority,
-        description,
-        attachments: files,
+      const res = await createTicket({
+        category_code: categoryCode,
+        subject: subject.trim(),
+        description: description.trim(),
       });
+      const created = res.data?.data;
 
       addToast?.({
         type: 'success',
         title: 'Ticket Created Successfully',
-        message: `Your ticket ${created.ticket_number} has been logged in the shared queue.`,
+        message: created?.ticket_number
+          ? `Your ticket ${created.ticket_number} has been logged in the Registrar support queue.`
+          : 'Your support ticket has been submitted.',
       });
 
       onSuccess?.(created);
     } catch (err) {
-      console.error(err);
-      setFieldErrors((prev) => ({
-        ...prev,
-        general: 'An unexpected error occurred while creating your ticket.',
-      }));
+      const parsed = await parseTicketApiError(
+        err,
+        'An unexpected error occurred while creating your ticket.'
+      );
+      if (parsed.status === 429) {
+        cooldown.startCooldown(parsed.retryAfterSeconds);
+      }
+
+      const nextErrors = { general: parsed.message };
+      if (parsed.fieldErrors?.subject?.[0]) nextErrors.subject = parsed.fieldErrors.subject[0];
+      if (parsed.fieldErrors?.category_code?.[0]) {
+        nextErrors.category_code = parsed.fieldErrors.category_code[0];
+      }
+      if (parsed.fieldErrors?.description?.[0]) {
+        nextErrors.description = parsed.fieldErrors.description[0];
+      }
+      setFieldErrors(nextErrors);
     } finally {
       setIsSubmitting(false);
     }
@@ -163,7 +172,7 @@ const CreateTicketForm = ({ onCancel, onSuccess }) => {
               Create a Ticket
             </h3>
             <p className="text-[11px] sm:text-xs text-white/90 mt-0.5 truncate font-normal">
-              Submit your concern or issue. We'll get back to you as soon as possible.
+              Submit your concern or issue. We&apos;ll get back to you during operating hours (Tue–Fri, 8:00 AM–8:00 PM).
             </p>
           </div>
           {onCancel && (
@@ -191,199 +200,164 @@ const CreateTicketForm = ({ onCancel, onSuccess }) => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Subject Field using reusable InputGroup */}
-          <div>
-            <InputGroup
-              label="Subject"
-              name="subject"
-              value={subject}
-              onChange={(e) => {
-                setSubject(e.target.value);
-                setFieldErrors((prev) => ({ ...prev, subject: null }));
-              }}
-              placeholder="e.g. Cannot access document"
-              required
-              labelColor="text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300"
-            />
-            {fieldErrors.subject && <p className="text-xs text-red-500 mt-1">{fieldErrors.subject}</p>}
-          </div>
-
-          {/* Category & Priority Row using reusable DropdownGroup */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-            <div>
-              <DropdownGroup
-                label="Category"
-                name="category"
-                value={category}
-                onChange={(e) => {
-                  setCategory(e.target.value);
-                  setFieldErrors((prev) => ({ ...prev, category: null }));
-                }}
-                options={categoryOptions}
-                required
-                labelColor="text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300"
-              />
-              {fieldErrors.category && <p className="text-xs text-red-500 mt-1">{fieldErrors.category}</p>}
-            </div>
-
-            <div>
-              <DropdownGroup
-                label="Priority"
-                name="priority"
-                value={priority}
-                onChange={(e) => setPriority(e.target.value)}
-                options={priorityOptions}
-                labelColor="text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300"
-              />
-            </div>
-          </div>
-
-          {/* Description using reusable VoiceTextareaInput */}
-          <div>
-            <VoiceTextareaInput
-              id="ticket-description"
-              name="description"
-              label="Description"
-              labelColor="text-[11px] sm:text-xs font-semibold uppercase tracking-wide mb-1 block"
-              value={description}
-              onChange={(val) => {
-                setDescription(val);
-                setFieldErrors((prev) => ({ ...prev, description: null }));
-              }}
-              placeholder="Provide as much detail as possible..."
-              rows={4}
-              required
-              error={fieldErrors.description}
-            />
-          </div>
-
-          {/* Attachments Dropzone */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-[11px] sm:text-xs font-semibold uppercase tracking-wide block">
-                Attachments <span className={`font-normal lowercase ${subtleText}`}>(optional)</span>
-              </label>
-              <span className={`text-[10px] sm:text-xs ${subtleText}`}>Max 5 files, 10MB each (PDF, JPG, PNG)</span>
-            </div>
-
-            <div
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-xl p-5 sm:p-6 text-center transition flex flex-col items-center justify-center relative cursor-pointer ${
-                dragActive
-                  ? isDark
-                    ? 'border-yellow-400 bg-yellow-400/10'
-                    : 'border-[#800000] bg-[#800000]/5'
-                  : isDark
-                  ? 'border-[#3e4042] bg-[#1a1b1e]/40 hover:bg-[#1a1b1e] hover:border-yellow-400/50'
-                  : 'border-gray-200 bg-gray-50/50 hover:bg-gray-50 hover:border-[#800000]/40'
+        {loadingCategories ? (
+          <div className="py-12 text-center space-y-2">
+            <ArrowPathIcon
+              className={`w-7 h-7 mx-auto animate-spin ${
+                isDark ? 'text-yellow-400' : 'text-pup-dark-maroon'
               }`}
-            >
-              <input
-                type="file"
-                id="ticket-file-input"
-                multiple
-                accept=".pdf,.jpg,.jpeg,.png"
-                onChange={(e) => handleFiles(e.target.files)}
-                className="hidden"
+            />
+            <p className={`text-xs ${subtleText}`}>Loading ticket categories…</p>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            {/* Subject Field using reusable InputGroup */}
+            <div>
+              <InputGroup
+                label="Subject"
+                name="subject"
+                value={subject}
+                maxLength={SUBJECT_MAX}
+                onChange={(e) => {
+                  setSubject(e.target.value);
+                  setFieldErrors((prev) => ({ ...prev, subject: null, general: null }));
+                }}
+                placeholder="e.g. Official Receipt verification concern"
+                required
+                error={fieldErrors.subject}
+                labelColor="text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300"
               />
+            </div>
 
-              <ArrowUpTrayIcon className={`w-8 h-8 mb-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
+            {/* Category & Backend-Assigned Priority Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+              <div>
+                <DropdownGroup
+                  label="Category"
+                  name="category"
+                  value={selectedCategory?.label || ''}
+                  onChange={(e) => {
+                    const matched = categoryEntries.find((c) => c.label === e.target.value);
+                    if (matched) {
+                      setCategoryCode(matched.code);
+                      setFieldErrors((prev) => ({ ...prev, category_code: null, general: null }));
+                    }
+                  }}
+                  options={categoryEntries.map((c) => c.label)}
+                  required
+                  error={fieldErrors.category_code}
+                  labelColor="text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300"
+                />
+                {fieldErrors.category_code && (
+                  <p className="text-xs text-red-500 mt-1">{fieldErrors.category_code}</p>
+                )}
+                {selectedCategory?.description && (
+                  <p className={`text-[11px] mt-1.5 ${subtleText}`}>{selectedCategory.description}</p>
+                )}
+              </div>
 
-              <p className="text-xs font-semibold mb-1">
-                <label
-                  htmlFor="ticket-file-input"
-                  className={`underline cursor-pointer hover:opacity-80 ${
-                    isDark ? 'text-yellow-400' : 'text-pup-maroon font-bold'
+              <div>
+                <span className="block text-[11px] sm:text-xs font-semibold uppercase tracking-wide mb-1.5 text-gray-700 dark:text-[#e4e6eb]">
+                  Assigned Priority
+                </span>
+                <div
+                  className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-lg border text-sm ${
+                    isDark
+                      ? 'bg-[#1f1f1f] border-[#3e4042] text-[#e4e6eb]'
+                      : 'bg-gray-50 border-gray-200 text-gray-700'
                   }`}
                 >
-                  Click to upload
-                </label>{' '}
-                or drag and drop files here
-              </p>
-              <p className={`text-[11px] ${subtleText}`}>PNG, JPG, PDF</p>
+                  <span className={`text-xs ${subtleText}`}>Determined by category</span>
+                  {selectedCategory?.priority ? (
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${getPriorityBadgeClass(
+                        selectedCategory.priority,
+                        isDark
+                      )}`}
+                    >
+                      {formatPriorityLabel(selectedCategory.priority)}
+                    </span>
+                  ) : (
+                    <span className={`text-xs ${subtleText}`}>—</span>
+                  )}
+                </div>
+              </div>
             </div>
 
-            {fieldErrors.attachments && <p className="text-xs text-red-500 mt-1">{fieldErrors.attachments}</p>}
+            {/* Description using reusable VoiceTextareaInput */}
+            <div>
+              <VoiceTextareaInput
+                id="ticket-description"
+                name="description"
+                label="Description"
+                labelColor="text-[11px] sm:text-xs font-semibold uppercase tracking-wide mb-1 block"
+                value={description}
+                maxLength={DESCRIPTION_MAX}
+                onChange={(val) => {
+                  setDescription(val);
+                  setFieldErrors((prev) => ({ ...prev, description: null, general: null }));
+                }}
+                placeholder="Provide as much detail as possible (reference numbers, document type, dates, or error message)..."
+                rows={5}
+                required
+                helperText={`Minimum ${DESCRIPTION_MIN} characters, up to 2 links allowed.`}
+                error={fieldErrors.description}
+              />
+            </div>
 
-            {/* Uploaded Files Preview */}
-            {files.length > 0 && (
-              <div className="mt-3 space-y-2">
-                {files.map((file, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex items-center justify-between p-2.5 rounded-xl border text-xs font-medium ${
-                      isDark ? 'bg-[#1a1b1e]/60 border-[#3e4042]' : 'bg-gray-50 border-gray-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <span>📎</span>
-                      <span className="truncate">{file.name}</span>
-                      <span className={`text-[10px] ${subtleText}`}>({(file.size / 1024).toFixed(0)} KB)</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveFile(idx)}
-                      className="p-1 hover:text-red-500 rounded-lg transition cursor-pointer"
-                      aria-label="Remove file"
-                    >
-                      <XMarkIcon className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Privacy Reminder */}
-          <div
-            className={`p-3.5 rounded-xl border flex items-start gap-2.5 text-xs leading-relaxed ${
-              isDark ? 'bg-[#1f1f1f] border-[#3e4042] text-[#b0b3b8]' : 'bg-amber-50/70 border-amber-200 text-amber-900'
-            }`}
-          >
-            <ShieldCheckIcon className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500 shrink-0 mt-0.5" />
-            <span>
-              <strong>Data Privacy Notice (RA 10173):</strong> Upload relevant documents only. Never upload passwords,
-              credentials, or unnecessary confidential information.
-            </span>
-          </div>
-
-          {/* Footer matching Cashier OR Overrides modals */}
-          <div
-            className={`pt-4 border-t-2 flex items-center justify-end gap-3 ${
-              isDark ? 'border-[#3e4042]' : 'border-gray-200'
-            }`}
-          >
-            {onCancel && (
-              <button
-                type="button"
-                onClick={onCancel}
-                className={`px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-xs font-bold transition-all cursor-pointer border ${
-                  isDark
-                    ? 'border-[#3e4042] hover:bg-[#3a3b3c] text-[#e4e6eb]'
-                    : 'border-gray-300 hover:bg-gray-100 text-gray-700'
-                }`}
-              >
-                Cancel
-              </button>
-            )}
-
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className={`px-6 py-2.5 rounded-full text-xs font-bold transition-all shadow cursor-pointer uppercase tracking-wider ${
+            {/* Privacy Reminder */}
+            <div
+              className={`p-3.5 rounded-xl border flex items-start gap-2.5 text-xs leading-relaxed ${
                 isDark
-                  ? 'bg-yellow-400 text-gray-900 hover:bg-yellow-300'
-                  : 'bg-pup-dark-maroon text-white hover:bg-[#3a0303]'
-              } disabled:opacity-50`}
+                  ? 'bg-[#1f1f1f] border-[#3e4042] text-[#b0b3b8]'
+                  : 'bg-amber-50/70 border-amber-200 text-amber-900'
+              }`}
             >
-              {isSubmitting ? 'Submitting...' : 'Submit Ticket'}
-            </button>
-          </div>
-        </form>
+              <ShieldCheckIcon className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500 shrink-0 mt-0.5" />
+              <span>
+                <strong>Data Privacy Notice (RA 10173):</strong> Share relevant request details or receipt numbers only.
+                Never include passwords, OTP codes, or unnecessary confidential information.
+              </span>
+            </div>
+
+            {/* Footer matching Cashier OR Overrides modals */}
+            <div
+              className={`pt-4 border-t-2 flex items-center justify-end gap-3 ${
+                isDark ? 'border-[#3e4042]' : 'border-gray-200'
+              }`}
+            >
+              {onCancel && (
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  className={`px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-xs font-bold transition-all cursor-pointer border ${
+                    isDark
+                      ? 'border-[#3e4042] hover:bg-[#3a3b3c] text-[#e4e6eb]'
+                      : 'border-gray-300 hover:bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  Cancel
+                </button>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSubmitting || cooldown.isCoolingDown || categories.length === 0}
+                className={`px-6 py-2.5 rounded-full text-xs font-bold transition-all shadow cursor-pointer uppercase tracking-wider ${
+                  isDark
+                    ? 'bg-yellow-400 text-gray-900 hover:bg-yellow-300'
+                    : 'bg-pup-dark-maroon text-white hover:bg-[#3a0303]'
+                } disabled:opacity-50`}
+              >
+                {cooldown.isCoolingDown
+                  ? `Wait ${cooldown.secondsLeft}s`
+                  : isSubmitting
+                    ? 'Submitting...'
+                    : 'Submit Ticket'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

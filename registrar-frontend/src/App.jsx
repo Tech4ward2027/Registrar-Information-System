@@ -1,5 +1,5 @@
 import React, { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 
 // Auth
 import { ROLES, useAuth } from './context/AuthProvider';
@@ -8,6 +8,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import ModuleRoute from './components/ModuleRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import { MODULE_KEYS, hasModuleAccess } from './utils/policy';
+import { getRoleTicketRoot } from './utils/ticketHelpers';
 import { FolderLoadingOverlay } from './components/LoadingSkeleton.jsx';
 
 // Providers & Global UI (Synchronous)
@@ -19,7 +20,6 @@ import { ReferenceDataProvider } from './context/ReferenceDataContext.jsx';
 import FloatingActionMenu from './components/FloatingActionMenu.jsx';
 import PushNotificationBridge from './components/PushNotificationBridge.jsx';
 import { ScrollToTop } from './hooks/useScrollToTop';
-import { TicketProvider } from './context/TicketContext.jsx';
 
 // Synchronous Role Shells & Main (for instant layout, header, sidebar & route evaluation)
 import StudentPage from './pages/StudentPage.jsx';
@@ -42,6 +42,9 @@ const StudentDashboard = lazy(() => import('./layouts/StudentDashboard.jsx'));
 const UndergradRequestorRegisterPage = lazy(() => import('./pages/UndergradRequestorRegisterPage.jsx'));
 const UndergradRequestorVerifyEmailPage = lazy(() => import('./pages/UndergradRequestorVerifyEmailPage.jsx'));
 const UndergradRequestorVerificationPage = lazy(() => import('./pages/UndergradRequestorVerificationPage.jsx'));
+const PublicSupportPage = lazy(() => import('./pages/PublicSupportPage.jsx'));
+const PublicTicketConfirmPage = lazy(() => import('./pages/PublicTicketConfirmPage.jsx'));
+const PublicTicketTrackPage = lazy(() => import('./pages/PublicTicketTrackPage.jsx'));
 
 // Lazy-loaded Layouts
 const DocumentLists = lazy(() => import('./layouts/DocumentLists.jsx'));
@@ -73,6 +76,7 @@ const StaffIndexRedirect = () => {
     { to: "inbox", module: MODULE_KEYS.INBOX },
     { to: "analytics", module: MODULE_KEYS.ANALYTICS },
     { to: "logbook", module: MODULE_KEYS.LOGBOOK },
+    { to: "tickets", module: MODULE_KEYS.TICKETS },
     { to: "profile", module: MODULE_KEYS.PROFILE },
   ];
 
@@ -85,6 +89,23 @@ const StaffIndexRedirect = () => {
   return <Navigate to="/forbidden" state={{ reason: "policy" }} replace />;
 };
 
+const TicketEmailRedirect = () => {
+  const { user, loading } = useAuth();
+  const { ticketId } = useParams();
+
+  if (loading) return null;
+  if (!hasModuleAccess(user, MODULE_KEYS.TICKETS)) {
+    return <Navigate to="/forbidden" state={{ reason: "policy" }} replace />;
+  }
+
+  const root = getRoleTicketRoot(user?.role_name);
+  if (!root) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Navigate to={ticketId ? `${root}/${ticketId}` : root} replace />;
+};
+
 const App = () => {
   const { isDark } = useTheme();
   const location = useLocation();
@@ -93,15 +114,14 @@ const App = () => {
       <AlertToastProvider>
         <ReferenceDataProvider>
           <NotificationsProvider>
-            <TicketProvider>
-              <PushNotificationBridge />
-              <div className="flex flex-col min-h-screen">
-                <ScrollToTop />
-                {/* BUG FIX (QA #6) — resetKey={location.pathname} means that if
-                    one page's render throws, clicking "Back to Login" (or any
-                    navigation) actually clears the fallback instead of staying
-                    stuck until a hard reload. See ErrorBoundary.jsx docblock. */}
-                <ErrorBoundary resetKey={location.pathname}>
+            <PushNotificationBridge />
+            <div className="flex flex-col min-h-screen">
+              <ScrollToTop />
+              {/* BUG FIX (QA #6) — resetKey={location.pathname} means that if
+                  one page's render throws, clicking "Back to Login" (or any
+                  navigation) actually clears the fallback instead of staying
+                  stuck until a hard reload. See ErrorBoundary.jsx docblock. */}
+              <ErrorBoundary resetKey={location.pathname}>
                 <Suspense fallback={<FolderLoadingOverlay isDark={isDark} message="Loading..." />}>
                   <Routes>
                     <Route path="/" element={<MainPage />} />
@@ -111,7 +131,46 @@ const App = () => {
                     <Route path="/undergrad-requestor/register" element={<UndergradRequestorRegisterPage />} />
                     <Route path="/undergrad-requestor/verify-email" element={<UndergradRequestorVerifyEmailPage />} />
 
-                    {/* UNDERGRAD (role: undergrad_requestoR) */}
+                    {/* Public Support Ticketing (no account) */}
+                    <Route path="/support" element={<PublicSupportPage />} />
+                    <Route path="/support/confirm" element={<PublicTicketConfirmPage />} />
+                    <Route path="/support/ticket" element={<PublicTicketTrackPage />} />
+
+                    {/* Signed-in email deep-link redirect (/tickets/:ticketId -> /:role/tickets/:ticketId) */}
+                    <Route
+                      path="/tickets"
+                      element={
+                        <ProtectedRoute
+                          allowedRoles={[
+                            ROLES.UNDERGRAD_REQUESTOR,
+                            ROLES.STUDENT,
+                            ROLES.ALUMNI,
+                            ROLES.ADMIN,
+                            ROLES.SUPER_ADMIN,
+                          ]}
+                        >
+                          <TicketEmailRedirect />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/tickets/:ticketId"
+                      element={
+                        <ProtectedRoute
+                          allowedRoles={[
+                            ROLES.UNDERGRAD_REQUESTOR,
+                            ROLES.STUDENT,
+                            ROLES.ALUMNI,
+                            ROLES.ADMIN,
+                            ROLES.SUPER_ADMIN,
+                          ]}
+                        >
+                          <TicketEmailRedirect />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    {/* UNDERGRAD (role: undergrad_requestor) */}
                     <Route
                       path="/undergrad"
                       element={
@@ -125,7 +184,22 @@ const App = () => {
                       <Route path="request" element={<RequestForm />} />
                       <Route path="lists" element={<DocumentLists />} />
                       <Route path="faqs" element={<FAQPage />} />
-                      <Route path="tickets" element={<TicketingSystem />} />
+                      <Route
+                        path="tickets"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingSystem />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="tickets/:ticketId"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingSystem />
+                          </ModuleRoute>
+                        }
+                      />
                       <Route path="profile" element={<ProfilePage userType="undergrad" />} />
                       <Route path="contact" element={<RegistrarContact />} />
                       <Route path="inbox" element={<InboxCenter />} />
@@ -145,7 +219,22 @@ const App = () => {
                       <Route path="request" element={<RequestForm />} />
                       <Route path="lists" element={<DocumentLists />} />
                       <Route path="faqs" element={<FAQPage />} />
-                      <Route path="tickets" element={<TicketingSystem />} />
+                      <Route
+                        path="tickets"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingSystem />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="tickets/:ticketId"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingSystem />
+                          </ModuleRoute>
+                        }
+                      />
                       <Route path="profile" element={<ProfilePage userType="student" />} />
                       <Route path="contact" element={<RegistrarContact />} />
                       <Route path="inbox" element={<InboxCenter />} />
@@ -165,7 +254,22 @@ const App = () => {
                       <Route path="request" element={<AlumniRequest />} />
                       <Route path="lists" element={<AlumniDocumentList />} />
                       <Route path="faqs" element={<FAQPage />} />
-                      <Route path="tickets" element={<TicketingSystem />} />
+                      <Route
+                        path="tickets"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingSystem />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="tickets/:ticketId"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingSystem />
+                          </ModuleRoute>
+                        }
+                      />
                       <Route path="profile" element={<ProfilePage userType="alumni" />} />
                       <Route path="contact" element={<RegistrarContact />} />
                       <Route path="inbox" element={<InboxCenter />} />
@@ -218,6 +322,22 @@ const App = () => {
                       <Route path="undergrad-requestors" element={
                         <ModuleRoute module={MODULE_KEYS.UNDERGRAD_VERIFICATION}><UndergradRequestorVerificationPage /></ModuleRoute>
                       } />
+                      <Route
+                        path="tickets"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingManagement />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="tickets/:ticketId"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingManagement />
+                          </ModuleRoute>
+                        }
+                      />
                     </Route>
 
                     {/* SUPER ADMIN (role: super_admin) */}
@@ -240,7 +360,22 @@ const App = () => {
                       <Route path="business-calendar" element={<BusinessCalendarManagement />} />
                       <Route path="cashier-overrides" element={<CashierOrOverrideManagement />} />
                       <Route path="cashier-reconciliation" element={<CashierReconciliation />} />
-                      <Route path="tickets" element={<TicketingManagement />} />
+                      <Route
+                        path="tickets"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingManagement />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="tickets/:ticketId"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingManagement />
+                          </ModuleRoute>
+                        }
+                      />
                       <Route path="inbox" element={<InboxCenter />} />
                       <Route path="profile" element={<ProfilePage userType="superAdmin" />} />
                     </Route>
@@ -248,13 +383,12 @@ const App = () => {
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </Suspense>
-                </ErrorBoundary>
+              </ErrorBoundary>
 
-                {/* Global toast stack — rendered outside Routes so it persists across navigation */}
-                <NotificationToast />
-                <FloatingActionMenu />
-              </div>
-            </TicketProvider>
+              {/* Global toast stack — rendered outside Routes so it persists across navigation */}
+              <NotificationToast />
+              <FloatingActionMenu />
+            </div>
           </NotificationsProvider>
         </ReferenceDataProvider>
       </AlertToastProvider>

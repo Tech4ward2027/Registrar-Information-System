@@ -19,7 +19,7 @@ export const CATEGORY_MAP = {
   ready_to_claim:              { category: 'Ready',       color: 'bg-green-400' },
   request_completed:           { category: 'Completed',   color: 'bg-gray-400' },
   request_forfeited:           { category: 'Forfeited',   color: 'bg-rose-600' },
-  request_withdrawn:            { category: 'Withdrawn',   color: 'bg-red-600' },
+  request_withdrawn:           { category: 'Withdrawn',   color: 'bg-red-600' },
   deficiency_notice_issued:    { category: 'Deficiency Notice', color: 'bg-amber-500' },
   deficiency_notice_cleared:   { category: 'Deficiency Cleared', color: 'bg-green-500' },
   deficiency_notice_voided:    { category: 'Deficiency Voided', color: 'bg-red-600' },
@@ -37,4 +37,16 @@ export const CATEGORY_MAP = {
   admin_payment_verification:  { category: 'Payment',     color: 'bg-pup-yellow' },
   admin_incomplete_request:    { category: 'Incomplete',  color: 'bg-rose-600' },
   admin_deadline_warning:      { category: 'Deadline',    color: 'bg-pup-yellow' },
+
+  // Support Ticketing (Phase 6/7)
+  ticket_staff_reply:          { category: 'Support Reply', color: 'bg-blue-400' },
+  ticket_question:             { category: 'Reply Needed',  color: 'bg-amber-400' },
+  ticket_resolved:             { category: 'Resolved',      color: 'bg-green-400' },
+  ticket_resolution_reminder:  { category: 'Reminder',      color: 'bg-pup-yellow' },
+  ticket_closed:               { category: 'Ticket Closed', color: 'bg-gray-400' },
+  ticket_requester_reply:      { category: 'Ticket Reply',  color: 'bg-blue-400' },
+  ticket_returned:             { category: 'Ticket Reopened', color: 'bg-amber-500' },
+  ticket_sla_at_risk:          { category: 'SLA At Risk',   color: 'bg-pup-yellow' },
+  ticket_sla_breached:         { category: 'SLA Breached',  color: 'bg-rose-600' },
+  ticket_claim_expired:        { category: 'Claim Expired', color: 'bg-amber-400' },
 };

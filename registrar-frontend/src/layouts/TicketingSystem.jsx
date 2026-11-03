@@ -1,13 +1,14 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   ChevronRightIcon as ChevronRightOutlineIcon,
   CheckCircleIcon,
   ArrowUturnLeftIcon,
 } from '@heroicons/react/24/outline';
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/solid';
-import { useTickets } from '../context/TicketContext';
 import { useAuth } from '../context/AuthProvider';
 import { useTheme } from '../context/ThemeContext';
+import { getMyTickets } from '../services/api';
+import { isTicketsFeatureEnabled, parseTicketApiError } from '../utils/ticketHelpers';
 import VoiceSearchInput from '../components/VoiceSearchInput.jsx';
 import CreateTicketForm from '../components/tickets/CreateTicketForm';
 import TicketDetailModal from '../components/tickets/TicketDetailModal';
@@ -15,34 +16,52 @@ import TicketDetailModal from '../components/tickets/TicketDetailModal';
 const TicketingSystem = () => {
   const { isDark } = useTheme();
   const { user } = useAuth();
-  const { tickets } = useTickets();
 
   const [activeView, setActiveView] = useState('list'); // 'list' | 'create'
   const [activeTab, setActiveTab] = useState('All'); // 'All' | 'Open' | 'Needs your reply' | 'Resolved'
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedTicket, setSelectedTicket] = useState(null);
-
-  const isStaff = user?.role_name === 'admin' || user?.role_name === 'super_admin';
+  const [tickets, setTickets] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   // System theme tokens matching Cashier OR Overrides & StudentPage
   const cardClasses = isDark ? 'bg-[#18191a] text-[#e4e6eb]' : 'bg-white text-gray-900';
   const rowBorder = isDark ? 'border-[#3e4042]' : 'border-gray-200';
   const subtleText = isDark ? 'text-[#b0b3b8]' : 'text-gray-500';
-  const activeTabClasses = isDark ? 'bg-yellow-400 text-gray-900' : 'bg-pup-dark-maroon text-white';
-
-  // Filter scoped tickets: Students only see their own tickets
-  const scopedTickets = useMemo(() => {
-    if (isStaff) {
-      return tickets;
+  const loadTickets = useCallback(async () => {
+    if (!isTicketsFeatureEnabled(user)) return;
+    setIsLoading(true);
+    setLoadError('');
+    try {
+      const res = await getMyTickets({ per_page: 50 });
+      const statusLabels = {
+        open: 'Open',
+        in_progress: 'In Progress',
+        pending_client: 'Waiting for Student',
+        resolved: 'Resolved',
+        closed: 'Closed',
+      };
+      const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+      setTickets(rows.map((ticket) => ({
+        ...ticket,
+        status: statusLabels[ticket.status] || ticket.status_label || ticket.status,
+        category: ticket.category?.name || ticket.category?.code || ticket.category || '—',
+      })));
+    } catch (err) {
+      const parsed = await parseTicketApiError(err, 'Unable to load your tickets.');
+      setLoadError(parsed.message);
+    } finally {
+      setIsLoading(false);
     }
-    return tickets.filter(
-      (t) =>
-        t.creator?.id === user?.user_id ||
-        t.creator?.email === user?.email ||
-        !t.creator?.id
-    );
-  }, [tickets, user, isStaff]);
+  }, [user]);
+
+  useEffect(() => {
+    loadTickets();
+  }, [loadTickets]);
+
+  const scopedTickets = tickets;
 
   // Tab counts
   const counts = useMemo(() => {
@@ -86,6 +105,10 @@ const TicketingSystem = () => {
   const indexOfFirstItem = (safePage - 1) * PER_PAGE;
   const indexOfLastItem = indexOfFirstItem + PER_PAGE;
   const paginatedTickets = filteredTickets.slice(indexOfFirstItem, indexOfLastItem);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const handleNextPage = () => safePage < totalPages && setCurrentPage((prev) => prev + 1);
   const handlePrevPage = () => safePage > 1 && setCurrentPage((prev) => prev - 1);
@@ -142,6 +165,7 @@ const TicketingSystem = () => {
             onSuccess={(created) => {
               setActiveView('list');
               setSelectedTicket(created);
+              loadTickets();
             }}
           />
         </div>
@@ -234,7 +258,18 @@ const TicketingSystem = () => {
 
           {/* 4. Streamlined Clickable Row List (Without high priority column, fully mobile-responsive) */}
           <div className={`rounded-xl border ${rowBorder} divide-y ${isDark ? 'divide-[#3e4042]' : 'divide-gray-100'} overflow-hidden`}>
-            {paginatedTickets.length === 0 ? (
+            {isLoading ? (
+              <div className="py-14 text-center">
+                <p className="font-semibold text-sm">Loading tickets…</p>
+              </div>
+            ) : loadError ? (
+              <div className="py-14 text-center">
+                <p className="font-semibold text-sm text-red-700">{loadError}</p>
+                <button type="button" onClick={loadTickets} className="mt-3 text-xs font-semibold underline">
+                  Try again
+                </button>
+              </div>
+            ) : paginatedTickets.length === 0 ? (
               <div className="py-14 text-center">
                 <p className="font-semibold text-sm">No tickets found</p>
                 <p className={`text-xs mt-1 ${subtleText}`}>
