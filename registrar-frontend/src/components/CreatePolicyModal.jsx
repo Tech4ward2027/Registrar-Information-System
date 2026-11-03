@@ -77,10 +77,12 @@ const CreatePolicyModal = ({
   logbookActions,
   freeRequestsActions,
   undergradVerificationActions,
+  ticketActions,
   toggleDashboardAction,
   toggleLogbookAction,
   toggleFreeRequestsAction,
   toggleUndergradVerificationAction,
+  toggleTicketAction,
   onClose,
   onSubmit,
   singleTokenModuleOptions,
@@ -318,6 +320,30 @@ const CreatePolicyModal = ({
                 actions={MODULE_ACTIONS.undergrad_verification || ["View", "Approve", "Reject"]}
                 selectedActions={undergradVerificationActions || []}
                 onToggle={toggleUndergradVerificationAction}
+                isDark={isDark}
+              />
+            </div>
+
+            {/* Support Tickets — segmented button permissions */}
+            <div
+              className={`p-4 rounded-xl border flex flex-col ${
+                isDark
+                  ? "bg-[#1f1f1f] border-[#3e4042]"
+                  : "bg-gray-50 border-gray-200"
+              }`}
+            >
+              <div className="flex justify-between items-center mb-1">
+                <span className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
+                  Support Tickets
+                </span>
+              </div>
+              <p className={`text-xs mb-3 ${isDark ? "text-[#9a9a9a]" : "text-gray-500"}`}>
+                Configure access to the ticket queue and ticket actions.
+              </p>
+              <ActionSegmentGroup
+                actions={MODULE_ACTIONS.tickets}
+                selectedActions={ticketActions || []}
+                onToggle={toggleTicketAction}
                 isDark={isDark}
               />
             </div>

@@ -77,9 +77,17 @@ export const MODULE_ACTIONS = {
 };
 
 /**
+ * True only when the backend environment has FEATURE_TICKETS enabled.
+ */
+export function isTicketsFeatureEnabled(user) {
+  return user?.features?.tickets === true;
+}
+
+/**
  * Can this user access the given module at all?
  *
  * - No user yet (still loading / logged out): false.
+ * - tickets module when FEATURE_TICKETS is off: false for every role.
  * - super_admin: always true.
  * - Any role other than admin (student, alumni): true — the policy
  *   system only ever restricts admin accounts, so nothing here should
@@ -92,6 +100,9 @@ export const MODULE_ACTIONS = {
  */
 export function hasModuleAccess(user, moduleKey) {
   if (!user) return false;
+  if (moduleKey === MODULE_KEYS.TICKETS && !isTicketsFeatureEnabled(user)) {
+    return false;
+  }
   if (user.role_name === "super_admin") return true;
   if (user.role_name !== "admin") return true;
 
@@ -132,6 +143,9 @@ export function hasModuleAccess(user, moduleKey) {
  */
 export function hasModuleAction(user, moduleKey, action) {
   if (!user) return false;
+  if (moduleKey === MODULE_KEYS.TICKETS && !isTicketsFeatureEnabled(user)) {
+    return false;
+  }
   if (user.role_name === "super_admin") return true;
   if (user.role_name !== "admin") return false;
 

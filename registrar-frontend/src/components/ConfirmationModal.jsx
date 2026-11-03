@@ -2,10 +2,23 @@ import React from 'react';
 import { ExclamationTriangleIcon, ArrowRightStartOnRectangleIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 import { useTheme } from "../context/ThemeContext";
 
-const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, type = 'default', confirmText, confirmLabel, buttonLabel }) => {
+const ConfirmationModal = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  title,
+  message,
+  type = 'default',
+  confirmText,
+  confirmLabel,
+  buttonLabel,
+  isDark: isDarkProp,
+}) => {
+  const { isDark: themeIsDark } = useTheme();
+  const isDark = typeof isDarkProp === 'boolean' ? isDarkProp : themeIsDark;
+
   if (!isOpen) return null;
 
-  const { isDark } = useTheme();
   const isDanger   = type === 'danger';
   const isConfirm  = type === 'confirm';
 

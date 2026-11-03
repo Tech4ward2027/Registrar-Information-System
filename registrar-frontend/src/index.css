@@ -611,10 +611,37 @@ body {
   transform: translateY(0);
 }
 
+.lp-hero-support-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  max-width: 520px;
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.lp-hero-support-link {
+  color: #e2c779;
+  font-size: 0.92rem;
+  font-weight: 500;
+  text-decoration: none;
+  letter-spacing: 0.01em;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.lp-hero-support-link:hover {
+  color: #F8BF1E;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
 .lp-hero-contact-links {
   display: flex;
-  gap: 14px;
-  margin-top: 20px;
+  gap: 12px;
+  margin-top: 0;
 }
 
 .lp-hero-contact-link {
@@ -713,6 +740,14 @@ body {
   }
 
   .lp-hero-btns {
+    justify-content: center !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+
+  .lp-hero-support-bar {
+    flex-direction: column;
+    gap: 14px;
     justify-content: center !important;
     margin-left: auto !important;
     margin-right: auto !important;

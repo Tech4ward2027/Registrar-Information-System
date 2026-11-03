@@ -13,7 +13,7 @@ import {
   ArrowTopRightOnSquareIcon,
   InformationCircleIcon,
 } from '@heroicons/react/24/outline';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import VoiceSearchInput from '../components/VoiceSearchInput.jsx';
 import { useNotificationsContext as useNotifications } from '../context/NotificationsContext';
 import { useTheme } from '../context/ThemeContext';
@@ -257,6 +257,7 @@ const getLifecycleAlert = (mail) => {
 
 const InboxCenter = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const incomingNotificationId = location.state?.selectedNotificationId;
   const { isDark } = useTheme();
 
@@ -598,6 +599,23 @@ const InboxCenter = () => {
                             />
                           </div>
                         </div>
+                      )}
+
+                      {selectedMail._raw?.ticket_public_id && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const roleRoot = location.pathname.split('/')[1] || 'student';
+                            navigate(`/${roleRoot}/tickets/${selectedMail._raw.ticket_public_id}`);
+                          }}
+                          className="w-full bg-[#800000] hover:bg-[#6D0000] text-white font-bold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 text-sm cursor-pointer mt-2"
+                        >
+                          <span>
+                            Open Support Ticket
+                            {selectedMail._raw.ticket_number ? ` (${selectedMail._raw.ticket_number})` : ''}
+                          </span>
+                          <ArrowTopRightOnSquareIcon className="w-4 h-4" />
+                        </button>
                       )}
 
                       {/* ── Get Directions Button (Only for claiming document) ── */}
