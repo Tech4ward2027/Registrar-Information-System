@@ -97,6 +97,9 @@ class NotificationService implements NotificationServiceInterface
             // Replace :placeholders in the template with actual values
             // e.g. "Payment verified for request #:request_id"
             //   → "Payment verified for request #42"
+            // Fill [document_name] / [or_number] / [announcement_details] when
+            // the template needs them and the caller did not supply them.
+            $data    = NotificationPlaceholders::enrich($type->message_template, $data, $requestId);
             $message = $this->buildMessage($type->message_template, $data);
 
             // Capture scalar values from the type NOW, before the transaction,

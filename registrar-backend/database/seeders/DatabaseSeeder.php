@@ -64,6 +64,11 @@ class DatabaseSeeder extends Seeder
         // too; this keeps `db:seed` and fresh dev databases complete.
         $this->call(TicketNotificationTypeSeeder::class);
 
+        // Policy §3.4 matrix: email/push flags and standard wording for every
+        // matrix trigger, so a freshly seeded database matches what the
+        // 2026_11_02_000005 migration gives an existing one.
+        \App\Services\NotificationMatrixSync::apply();
+
         // LocalAuthPasswordSeeder was removed — it contained real plaintext
         // passwords committed to source control. Do not recreate it with
         // real credentials. For local dev accounts, use LocalDevSeeder,
