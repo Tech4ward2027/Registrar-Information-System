@@ -5,7 +5,6 @@ import {
   XMarkIcon,
   DocumentDuplicateIcon,
   CheckIcon,
-  SparklesIcon,
   ExclamationCircleIcon,
 } from '@heroicons/react/24/outline';
 import useVoiceRecognition from '../utils/useVoiceRecognition.js';
@@ -29,8 +28,10 @@ const VoiceTextareaInput = ({
   helperText,
   error,
   className = '',
+  isDark: isDarkProp,
 }) => {
-  const { isDark } = useTheme();
+  const { isDark: themeIsDark } = useTheme();
+  const isDark = typeof isDarkProp === 'boolean' ? isDarkProp : themeIsDark;
   const lastProcessedRef = useRef('');
   const [copied, setCopied] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState(null);
@@ -350,6 +351,7 @@ VoiceTextareaInput.propTypes = {
   helperText: PropTypes.string,
   error: PropTypes.string,
   className: PropTypes.string,
+  isDark: PropTypes.bool,
 };
 
 VoiceTextareaInput.defaultProps = {

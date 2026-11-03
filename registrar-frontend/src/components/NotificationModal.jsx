@@ -155,8 +155,14 @@ const NotificationModal = ({ isOpen, onClose }) => {
     if (!notif.read_at) await markAsRead(notif.id);
 
     const roleRoot = location.pathname.split('/')[1];
-    const validRoleRoots = ['student', 'alumni', 'staff', 'super-admin'];
+    const validRoleRoots = ['student', 'alumni', 'undergrad', 'staff', 'super-admin'];
     const targetRoleRoot = validRoleRoots.includes(roleRoot) ? roleRoot : 'student';
+
+    if (notif.ticket_public_id) {
+      navigate(`/${targetRoleRoot}/tickets/${notif.ticket_public_id}`);
+      onClose();
+      return;
+    }
 
     navigate(`/${targetRoleRoot}/inbox`, {
       state: { selectedNotificationId: notif.id, notification: notif },
