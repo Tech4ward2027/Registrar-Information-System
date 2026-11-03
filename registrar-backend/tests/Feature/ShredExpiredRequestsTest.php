@@ -6,6 +6,8 @@ use App\Models\RequestHistory;
 use App\Models\SystemUser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use App\Models\Notification;
+use App\Models\NotificationType;
 
 uses(RefreshDatabase::class);
 
@@ -41,8 +43,36 @@ function serCreateReadyToClaimRequest(int $daysAgo): DocumentRequest
     return $request;
 }
 
-test('forfeits a request that has been ReadyToClaim for 90+ days', function () {
+/**
+ * Policy v1.2.0: forfeiture requires a final notice created on an earlier
+ * calendar day. Simulates the Day 89 run having already happened.
+ */
+function serWithPriorNotice(DocumentRequest $request): DocumentRequest
+{
+    $type = NotificationType::where('trigger_event', 'reminder_final_warning')->firstOrFail();
+
+    $notice = Notification::create([
+        'notification_type_id' => $type->notification_type_id,
+        'notifiable_type'      => SystemUser::class,
+        'notifiable_id'        => $request->user_id,
+        'data'                 => ['message' => 'Final Notice'],
+        'request_id'           => $request->request_id,
+    ]);
+    $notice->forceFill(['created_at' => now()->subDays(2)->max(now()->subDays(1)->startOfDay())])->save();
+
+    return $request;
+}
+
+test('does not forfeit a 90+ day request until its final notice has gone out on an earlier day', function () {
     $stale = serCreateReadyToClaimRequest(daysAgo: 95);
+
+    $this->artisan('notifications:shred-expired-requests')->assertExitCode(0);
+
+    expect($stale->fresh()->status_id)->toBe(RequestStatusEnum::ReadyToClaim->value);
+});
+
+test('forfeits a request that has been ReadyToClaim for 90+ days', function () {
+    $stale = serWithPriorNotice(serCreateReadyToClaimRequest(daysAgo: 95));
     $fresh = serCreateReadyToClaimRequest(daysAgo: 10);
 
     $this->artisan('notifications:shred-expired-requests')->assertExitCode(0);
@@ -65,7 +95,7 @@ test('flushes the analytics cache when a request is forfeited (QA bugs #4 / #9)'
     // an auto-forfeiture. Simulated the same way
     // SuperAdminAnalyticsControllerTest does: seed a key under the
     // shared tag, run the command, assert the key is gone.
-    serCreateReadyToClaimRequest(daysAgo: 95);
+    serWithPriorNotice(serCreateReadyToClaimRequest(daysAgo: 95));
     Cache::tags(['analytics'])->put('probe', 'stale', now()->addMinutes(10));
 
     $this->artisan('notifications:shred-expired-requests')->assertExitCode(0);

@@ -7,10 +7,9 @@ use App\Mail\RequestLifecycleMail;
 use App\Models\Notification;
 use App\Models\NotificationDispatchLog;
 use App\Models\NotificationType;
-use App\Models\RequestCertificate;
-use App\Models\RequestDocument;
 use App\Models\SystemUser;
 use App\Services\NotificationDispatchLogger;
+use App\Services\RequestDocumentNames;
 use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -32,8 +31,6 @@ use Throwable;
  */
 class MailDispatcher
 {
-    private const MAX_NAMES = 5;
-
     public function __construct(
         private readonly NotificationDispatchLogger $log,
         private readonly MailQuotaService $quota,
@@ -277,31 +274,7 @@ class MailDispatcher
     /** @return array{0:string,1:bool} comma-separated names, and whether there is more than one */
     private function documentNames(?int $requestId): array
     {
-        if ($requestId === null) {
-            return ['your request', false];
-        }
-
-        $names = RequestDocument::where('request_id', $requestId)->with('documentType')->get()
-            ->map(fn ($d) => $d->documentType?->document_name)
-            ->merge(
-                RequestCertificate::where('request_id', $requestId)->with('certificationType')->get()
-                    ->map(fn ($c) => $c->certificationType?->certificate_name)
-            )
-            ->filter()
-            ->unique()
-            ->values();
-
-        if ($names->isEmpty()) {
-            return ['your request', false];
-        }
-
-        $total = $names->count();
-        $shown = $names->take(self::MAX_NAMES)->implode(', ');
-        if ($total > self::MAX_NAMES) {
-            $shown .= ' and ' . ($total - self::MAX_NAMES) . ' more';
-        }
-
-        return [$shown, $total > 1];
+        return RequestDocumentNames::forRequest($requestId);
     }
 
     /**

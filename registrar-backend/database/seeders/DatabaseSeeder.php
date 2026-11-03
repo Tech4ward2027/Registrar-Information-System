@@ -475,6 +475,7 @@ class DatabaseSeeder extends Seeder
                 'message_template'     => 'Your request has been forfeited due to unclaimed documents or incomplete requirements.',
                 'audience'             => NotificationAudienceEnum::StudentAlumni->value,
                 'is_active'            => 1,
+                'send_push'            => 1,
             ],
             [
                 'notification_type_id' => 10,
@@ -519,10 +520,12 @@ class DatabaseSeeder extends Seeder
             [
                 'notification_type_id' => 15,
                 'trigger_event'        => 'reminder_final_warning',
-                'title'                => 'Documents Shredded — Request Forfeited',
-                'message_template'     => 'Your unclaimed documents for request #:request_id have been shredded after 90 days per Registrar policy. Please submit a new request if you still need these documents.',
+                'title'                => 'Final Notice: Forfeiture Tomorrow',
+                'message_template'     => 'Final Notice: Your :document_noun :document_name will be forfeited and shredded tomorrow per the 90-day unclaimed policy.',
                 'audience'             => NotificationAudienceEnum::StudentAlumni->value,
                 'is_active'            => 1,
+                'send_push'            => 1,
+                'send_email'           => 1,
             ],
             [
                 'notification_type_id' => 16,
