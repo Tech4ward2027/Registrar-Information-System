@@ -13,7 +13,8 @@ uses(RefreshDatabase::class);
 // Threshold behavior
 // ═════════════════════════════════════════════════════════════════════════════
 
-test('escalates an open notice issued 30+ days ago', function () {
+test('escalates an open notice issued 30+ days ago, to Super Admin only', function () {
+    $super  = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
     $admin  = SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated']);
     $docReq = DocumentRequest::factory()->create();
     $notice = RequestRemark::factory()->create([
@@ -26,12 +27,13 @@ test('escalates an open notice issued 30+ days ago', function () {
     $notice->refresh();
     expect($notice->escalated_at)->not->toBeNull();
 
-    $notification = Notification::where('notifiable_id', $admin->user_id)
+    $forUser = fn (SystemUser $u) => Notification::where('notifiable_id', $u->user_id)
         ->where('notifiable_type', SystemUser::class)
         ->where('request_id', $docReq->request_id)
-        ->first();
+        ->count();
 
-    expect($notification)->not->toBeNull();
+    expect($forUser($super))->toBe(1)
+        ->and($forUser($admin))->toBe(0);
 });
 
 test('does not escalate a notice younger than 30 days', function () {
@@ -95,7 +97,7 @@ test('does not escalate a voided notice even if old enough', function () {
 // ═════════════════════════════════════════════════════════════════════════════
 
 test('does not re-escalate or re-notify a notice that was already escalated', function () {
-    SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated']);
+    SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
     $docReq = DocumentRequest::factory()->create();
     $originalEscalation = now()->subDays(5);
     $notice = RequestRemark::factory()->create([
@@ -114,7 +116,7 @@ test('does not re-escalate or re-notify a notice that was already escalated', fu
 });
 
 test('running the command twice in a row only escalates each qualifying notice once', function () {
-    SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated']);
+    SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
     $docReq = DocumentRequest::factory()->create();
     RequestRemark::factory()->create([
         'request_id' => $docReq->request_id,
@@ -136,7 +138,7 @@ test('running the command twice in a row only escalates each qualifying notice o
 // ═════════════════════════════════════════════════════════════════════════════
 
 test('escalates multiple independent stale notices in one run', function () {
-    SystemUser::factory()->create(['role_id' => SystemUser::ROLE_ADMIN, 'status' => 'Activated']);
+    SystemUser::factory()->create(['role_id' => SystemUser::ROLE_SUPER_ADMIN, 'status' => 'Activated']);
 
     $docReqOne   = DocumentRequest::factory()->create();
     $docReqTwo   = DocumentRequest::factory()->create();

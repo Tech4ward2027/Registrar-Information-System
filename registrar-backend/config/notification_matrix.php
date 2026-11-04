@@ -52,6 +52,15 @@ return [
     // dedicated role later is a one-line change here, not a code change.
     'technical_it_role_ids' => [4], // SystemUser::ROLE_SUPER_ADMIN
 
+    // Who receives each security/oversight alert. An allow-list by design:
+    // a role created later is never included unless it is named here.
+    // Policy v1.2.0 decision: Super Admin (the system administrator).
+    // Add 3 (Admin) to a list to widen it; no code change needed.
+    'alert_audience_role_ids' => [
+        'local_auth_login_used'       => [4], // break-glass login
+        'deficiency_notice_escalated' => [4], // 30-day deficiency escalation
+    ],
+
     'types' => [
         // Lifecycle milestones
         'ready_to_claim' => [

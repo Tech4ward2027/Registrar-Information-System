@@ -3,7 +3,10 @@
 namespace App\Services\Representative;
 
 use App\Models\AuditLog;
+use App\Jobs\SendLifecycleMailJob;
 use App\Models\DocumentRequest;
+use App\Models\Notification;
+use App\Models\NotificationDispatchLog;
 use App\Models\RequestorStatusFlag;
 use App\Models\RequestRepresentative;
 use App\Models\SystemUser;
@@ -14,6 +17,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -134,7 +138,60 @@ class RequestRepresentativeService
 
         $this->audit($request, $actor, AuditLog::ACTION_REPRESENTATIVE_VERIFIED, $representative);
 
+        $this->releaseFiledClosureNotices($representative, $actor, $request);
+
         return $representative;
+    }
+
+    /**
+     * Policy §3.6 follow-up: if the request was closed before this
+     * representative was verified, the closure email was filed "sent-on-file"
+     * with nobody to receive it. Release exactly those notices, once, through
+     * the normal mail path (so the router, quota, throttling, retries and the
+     * dispatch log all apply). A notice that already produced a 'sent' row is
+     * never resent, and the job itself re-checks that at send time.
+     *
+     * Verification must never fail because of this: it is best-effort and
+     * every error is logged.
+     */
+    private function releaseFiledClosureNotices(RequestRepresentative $representative, SystemUser $actor, Request $request): void
+    {
+        if (! config('notification_mail.representative.resend_on_verify', true)) {
+            return;
+        }
+
+        try {
+            $ids = Notification::withTrashed()
+                ->where('request_id', $representative->request_id)
+                ->whereHas('type', fn ($q) => $q->where('trigger_event', 'request_closed_unable_to_process'))
+                ->pluck('id');
+
+            foreach ($ids as $notificationId) {
+                $filed = NotificationDispatchLog::where('channel', NotificationDispatchLog::CHANNEL_MAIL)
+                    ->where('reason', NotificationDispatchLog::REASON_SENT_ON_FILE)
+                    ->where('notification_id', $notificationId)
+                    ->exists();
+
+                $delivered = NotificationDispatchLog::where('channel', NotificationDispatchLog::CHANNEL_MAIL)
+                    ->where('status', NotificationDispatchLog::STATUS_SENT)
+                    ->where('notification_id', $notificationId)
+                    ->exists();
+
+                if (! $filed || $delivered) {
+                    continue;
+                }
+
+                SendLifecycleMailJob::dispatch((string) $notificationId);
+
+                $this->audit($request, $actor, AuditLog::ACTION_CLOSURE_NOTICE_RESENT, $representative);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('RequestRepresentativeService: could not release the filed closure notice', [
+                'representative_id' => $representative->id,
+                'request_id'        => $representative->request_id,
+                'error'             => $e->getMessage(),
+            ]);
+        }
     }
 
     public function revoke(RequestRepresentative $representative, SystemUser $actor, string $reason, Request $request): RequestRepresentative

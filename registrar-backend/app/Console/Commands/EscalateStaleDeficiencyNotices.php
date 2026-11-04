@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Console\Commands\Concerns\LogsJobRun;
 use App\Contracts\NotificationServiceInterface;
 use App\Models\RequestRemark;
+use App\Models\SystemUser;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -52,8 +53,8 @@ use Illuminate\Support\Facades\Log;
 |   current status.
 |
 | Audience
-|   Sent to admins (sendToAdmins — 'admin' audience notification type),
-|   NOT to the requestor. The requestor already has the original
+|   Sent to the roles in config('notification_matrix.alert_audience_role_ids')
+|   (Super Admin, per Policy v1.2.0), NOT to the requestor. The requestor already has the original
 |   deficiency_notice_issued notification; a 30-day escalation is an
 |   internal Registrar Admin workflow signal, not new information the
 |   requestor needs.
@@ -106,7 +107,8 @@ class EscalateStaleDeficiencyNotices extends Command
 
                 $locked->update(['escalated_at' => now()]);
 
-                $notificationService->sendToAdmins(
+                $notificationService->sendToRoles(
+                    roleIds:      (array) config('notification_matrix.alert_audience_role_ids.deficiency_notice_escalated', [SystemUser::ROLE_SUPER_ADMIN]),
                     triggerEvent: 'deficiency_notice_escalated',
                     data:         [
                         'request_id' => $locked->request_id,

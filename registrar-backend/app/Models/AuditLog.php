@@ -195,6 +195,9 @@ class AuditLog extends Model
     // The closure email had nobody to go to: the requestor's own address is
     // suppressed and no verified representative exists. In-app is the record.
     public const ACTION_CLOSURE_NOTICE_SENT_ON_FILE    = 'closure_notice_sent_on_file';
+    // A representative was verified after the closure notice was filed
+    // "sent-on-file", so that notice was released to the representative.
+    public const ACTION_CLOSURE_NOTICE_RESENT          = 'closure_notice_resent_to_representative';
 
     // Cashier OR verification attempts (see NameMatcher, DocumentRequestController::store)
     // Logged for every attempt regardless of outcome — not just failures —

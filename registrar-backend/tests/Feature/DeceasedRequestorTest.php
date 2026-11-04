@@ -541,3 +541,99 @@ test('lifting a flag is Super Admin only, restores normal routing and revokes th
     app(NotificationService::class)->send($owner, 'ready_to_claim', ['request_id' => $request->request_id], $request->request_id);
     Mail::assertSent(RequestLifecycleMail::class, fn ($m) => $m->hasTo($owner->email));
 });
+// ── Resend on verification (closure filed "sent-on-file" earlier) ───────
+
+test('verifying a representative after closure releases the filed notice to them, once', function () {
+    $admin = repAdmin();
+    $owner = repOwner();
+    $request = repRequest($owner, $admin, ClosureReasonEnum::RequestorDeceased->value);
+    repFlag($owner);
+    $rep = repRow($request, 'pending', 'rep@example.org', ['created_by' => $admin->user_id]);
+
+    // Closed before anyone was verified: nothing is emailed, it is filed.
+    repSendClosure($owner, $request);
+    Mail::assertNothingSent();
+    expect(AuditLog::where('action', AuditLog::ACTION_CLOSURE_NOTICE_SENT_ON_FILE)->count())->toBe(1);
+
+    Sanctum::actingAs(repSuperAdmin());
+    $this->postJson("/api/v1/representatives/{$rep->id}/verify")->assertOk();
+
+    Mail::assertSent(RequestLifecycleMail::class, 1);
+    Mail::assertSent(RequestLifecycleMail::class, fn ($m) => $m->hasTo('rep@example.org') && str_contains(repText($m), 'Juan Dela Cruz'));
+    expect(AuditLog::where('action', AuditLog::ACTION_CLOSURE_NOTICE_RESENT)->count())->toBe(1)
+        ->and(AuditLog::where('action', AuditLog::ACTION_CLOSURE_NOTICE_SENT_ON_FILE)->count())->toBe(1);
+
+    // The requestor's own address never receives it.
+    Mail::assertNotSent(RequestLifecycleMail::class, fn ($m) => $m->hasTo($owner->email));
+
+    // A second verify is refused (already verified) and sends nothing more.
+    $this->postJson("/api/v1/representatives/{$rep->id}/verify")->assertStatus(409);
+    Mail::assertSent(RequestLifecycleMail::class, 1);
+});
+
+test('a notice that already went out is never resent when a representative is verified', function () {
+    $admin = repAdmin();
+    $owner = repOwner();
+    $request = repRequest($owner, $admin, ClosureReasonEnum::RequestorDeceased->value);
+    repFlag($owner);
+    $first = repRow($request, 'verified', 'first@example.org', ['verified_by' => 9999, 'verified_at' => now()]);
+
+    repSendClosure($owner, $request);
+    Mail::assertSent(RequestLifecycleMail::class, 1);
+
+    // Replace the representative: revoke the first, add and verify a second.
+    $first->update(['status' => 'revoked', 'active_request_id' => null]);
+    $second = repRow($request, 'pending', 'second@example.org', ['created_by' => $admin->user_id]);
+    Sanctum::actingAs(repSuperAdmin());
+    $this->postJson("/api/v1/representatives/{$second->id}/verify")->assertOk();
+
+    Mail::assertSent(RequestLifecycleMail::class, 1);
+    expect(AuditLog::where('action', AuditLog::ACTION_CLOSURE_NOTICE_RESENT)->count())->toBe(0);
+});
+
+test('verification with no closure on file releases nothing and still succeeds', function () {
+    $admin = repAdmin();
+    $owner = repOwner();
+    $request = repRequest($owner, $admin, ClosureReasonEnum::RequestorDeceased->value);
+    repFlag($owner);
+    $rep = repRow($request, 'pending', 'rep@example.org', ['created_by' => $admin->user_id]);
+
+    Sanctum::actingAs(repSuperAdmin());
+    $this->postJson("/api/v1/representatives/{$rep->id}/verify")->assertOk();
+
+    Mail::assertNothingSent();
+    expect(AuditLog::where('action', AuditLog::ACTION_CLOSURE_NOTICE_RESENT)->count())->toBe(0);
+});
+
+test('the resend can be switched off and the notice then stays on file', function () {
+    config(['notification_mail.representative.resend_on_verify' => false]);
+
+    $admin = repAdmin();
+    $owner = repOwner();
+    $request = repRequest($owner, $admin, ClosureReasonEnum::RequestorDeceased->value);
+    repFlag($owner);
+    $rep = repRow($request, 'pending', 'rep@example.org', ['created_by' => $admin->user_id]);
+    repSendClosure($owner, $request);
+
+    Sanctum::actingAs(repSuperAdmin());
+    $this->postJson("/api/v1/representatives/{$rep->id}/verify")->assertOk();
+
+    Mail::assertNothingSent();
+});
+
+test('a failing resend never fails the verification', function () {
+    $admin = repAdmin();
+    $owner = repOwner();
+    $request = repRequest($owner, $admin, ClosureReasonEnum::RequestorDeceased->value);
+    repFlag($owner);
+    $rep = repRow($request, 'pending', 'rep@example.org', ['created_by' => $admin->user_id]);
+    repSendClosure($owner, $request);
+
+    // Make the mail transport throw when the released notice is sent.
+    Mail::shouldReceive('to')->andThrow(new RuntimeException('smtp down'));
+
+    Sanctum::actingAs(repSuperAdmin());
+    $this->postJson("/api/v1/representatives/{$rep->id}/verify")->assertOk();
+
+    expect($rep->fresh()->status)->toBe('verified');
+});

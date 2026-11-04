@@ -251,6 +251,32 @@ class NotificationService implements NotificationServiceInterface
     // read_at state. The WebSocket push is just the real-time
     // alert on top of that persistent record.
     // -------------------------------------------------------
+    public function sendToRoles(
+        array  $roleIds,
+        string $triggerEvent,
+        array  $data      = [],
+        ?int   $requestId = null,
+    ): void {
+        $roleIds = array_values(array_unique(array_map('intval', $roleIds)));
+
+        // Fail closed: an empty allow-list must never fall through to
+        // SendBulkNotificationJob's "empty = everyone" behaviour.
+        if ($roleIds === []) {
+            Log::warning('NotificationService: sendToRoles called with no roles; nothing sent', [
+                'trigger_event' => $triggerEvent,
+            ]);
+
+            return;
+        }
+
+        dispatch(new SendBulkNotificationJob(
+            triggerEvent: $triggerEvent,
+            data:         $data,
+            onlyRoleIds:  $roleIds,
+            requestId:    $requestId,
+        ));
+    }
+
     public function sendToAllExcept(
         array  $excludedRoleIds,
         string $triggerEvent,

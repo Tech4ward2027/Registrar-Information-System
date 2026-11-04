@@ -72,6 +72,9 @@ return [
         'proof_disk'                => env('REPRESENTATIVE_PROOF_DISK', 'local'),
         'max_proof_kb'              => (int) env('REPRESENTATIVE_PROOF_MAX_KB', 5120),
         'require_distinct_verifier' => (bool) env('REPRESENTATIVE_REQUIRE_DISTINCT_VERIFIER', true),
+        // When a representative is verified after the request was already
+        // closed "sent-on-file", release that closure notice to them once.
+        'resend_on_verify'          => (bool) env('REPRESENTATIVE_RESEND_ON_VERIFY', true),
     ],
 
 ];
