@@ -61,7 +61,8 @@ class JobRunLog extends Model
      * matching a real command's rows.
      */
     public const JOBS = [
-        'notifications:shred-expired-requests'   => 'Hourly',
+        'notifications:send-forfeiture-notices'  => 'Daily 07:30 Manila',
+        'notifications:shred-expired-requests'   => 'Daily 08:00 Manila',
         'notifications:send-unclaimed-reminders' => 'Daily 08:05',
         'announcements:auto-disable-expired'     => 'Daily 08:10',
         'provisioning:expire-stale'              => 'Daily 08:15',
@@ -120,7 +121,8 @@ class JobRunLog extends Model
      * job_name as opting out of this check, not as an error.
      */
     public const EXPECTED_INTERVAL_MINUTES = [
-        'notifications:shred-expired-requests'   => 120,
+        'notifications:send-forfeiture-notices'  => 1560,
+        'notifications:shred-expired-requests'   => 1560,
         'role-assignments:expire'                => 120,
         'notifications:send-unclaimed-reminders' => 1560,
         'announcements:auto-disable-expired'     => 1560,

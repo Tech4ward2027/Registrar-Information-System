@@ -1471,3 +1471,52 @@ export const exportTicketLog = (params = {}) =>
   api.get("/admin/tickets/export", { params, responseType: "blob" });
 
 export default api;
+
+// -------------------------------------------------------
+// NOTIFICATION POLICY §3.6 — DECEASED / INCAPACITATED REQUESTOR
+// -------------------------------------------------------
+// Staff (Admin with dashboard "Process", or Super Admin):
+//   getRequestRepresentative(ref)         -> { data: representative|null, requestor_flag: {status, flagged_at}|null }
+//   addRequestRepresentative(ref, body)   -> 201 representative (body is FormData: full_name, email,
+//                                            relationship + three proof files; see representativeHelpers.js)
+//   flagRequestor(userId, status, note)   -> mark a requestor deceased / incapacitated
+// Super Admin only:
+//   liftRequestorFlag, listRepresentatives, verifyRepresentative,
+//   revokeRepresentative, downloadRepresentativeProof
+// `ref` is the request's public_id (see utils/requestRef.js).
+export const getRequestRepresentative = (requestRef) =>
+  api.get(`/document-requests/${requestRef}/representative`);
+
+export const addRequestRepresentative = (requestRef, formData) =>
+  api.post(`/document-requests/${requestRef}/representative`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+export const flagRequestor = (userId, status, note) =>
+  api.post(`/requestors/${userId}/status-flag`, { status, note: note || undefined });
+
+export const liftRequestorFlag = (userId, reason) =>
+  api.delete(`/requestors/${userId}/status-flag`, { data: { reason } });
+
+export const listRepresentatives = (status = "pending", page = 1) =>
+  api.get("/representatives", { params: { status, page } });
+
+export const verifyRepresentative = (id) => api.post(`/representatives/${id}/verify`);
+
+export const revokeRepresentative = (id, reason) =>
+  api.post(`/representatives/${id}/revoke`, { reason });
+
+// The proof is decrypted server-side and streamed back as an attachment;
+// every view is audited. Never cache it or put it in a URL the browser keeps.
+export const downloadRepresentativeProof = (id, kind) =>
+  api.get(`/representatives/${id}/proofs/${kind}`, { responseType: "blob" });
+
+// -------------------------------------------------------
+// NOTIFICATION POLICY §3.4 — MISMATCHED / ALTERED RECEIPT
+// -------------------------------------------------------
+// Staff raise it on an existing request; Super Admin is alerted with the
+// request number only. Does not change the request's status.
+// Returns { flagged: true, notified: boolean } — notified is false when an
+// alert for this request already went out in the last 24 hours.
+export const flagReceipt = (requestRef, reason) =>
+  api.post(`/document-requests/${requestRef}/flag-receipt`, { reason });

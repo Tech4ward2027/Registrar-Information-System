@@ -5,6 +5,8 @@ use App\Models\AccessType;
 use App\Models\CertificationType;
 use App\Models\DocumentRequest;
 use App\Models\DocumentType;
+use App\Models\Notification;
+use App\Models\NotificationType;
 use App\Models\RequestCertificate;
 use App\Models\RequestDocument;
 use App\Models\RequestHistory;
@@ -375,6 +377,16 @@ test('the shredder forfeits still-Ready items and groups, keeps Completed ones, 
         'processed_by_email' => 'system-test',
         'minutes_processed'  => 60,
     ]);
+
+    // Policy v1.2.0: forfeiture needs a final notice from an earlier day.
+    $notice = Notification::create([
+        'notification_type_id' => NotificationType::where('trigger_event', 'reminder_final_warning')->value('notification_type_id'),
+        'notifiable_type'      => SystemUser::class,
+        'notifiable_id'        => $owner->user_id,
+        'data'                 => ['message' => 'Final Notice'],
+        'request_id'           => $request->request_id,
+    ]);
+    $notice->forceFill(['created_at' => now()->subDays(2)])->save();
 
     $group       = RequestReleaseGroup::create(['request_id' => $request->request_id, 'status_id' => CSC_READY]);
     $readyDoc    = cscDocument($request, CSC_READY, $group->request_release_group_id);

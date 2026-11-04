@@ -134,6 +134,7 @@ const toMailItem = (n) => {
     dotColor = 'bg-yellow-500';
   } else if (
     type === 'request_submitted' ||
+    type === 'free_request_filed' ||
     type === 'announcement_sent' ||
     type === 'announcement_published' ||
     title.toLowerCase().includes('announcement') ||

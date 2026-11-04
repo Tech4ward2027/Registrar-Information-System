@@ -64,6 +64,11 @@ class DatabaseSeeder extends Seeder
         // too; this keeps `db:seed` and fresh dev databases complete.
         $this->call(TicketNotificationTypeSeeder::class);
 
+        // Policy §3.4 matrix: email/push flags and standard wording for every
+        // matrix trigger, so a freshly seeded database matches what the
+        // 2026_11_02_000005 migration gives an existing one.
+        \App\Services\NotificationMatrixSync::apply();
+
         // LocalAuthPasswordSeeder was removed — it contained real plaintext
         // passwords committed to source control. Do not recreate it with
         // real credentials. For local dev accounts, use LocalDevSeeder,
@@ -475,6 +480,7 @@ class DatabaseSeeder extends Seeder
                 'message_template'     => 'Your request has been forfeited due to unclaimed documents or incomplete requirements.',
                 'audience'             => NotificationAudienceEnum::StudentAlumni->value,
                 'is_active'            => 1,
+                'send_push'            => 1,
             ],
             [
                 'notification_type_id' => 10,
@@ -519,10 +525,12 @@ class DatabaseSeeder extends Seeder
             [
                 'notification_type_id' => 15,
                 'trigger_event'        => 'reminder_final_warning',
-                'title'                => 'Documents Shredded — Request Forfeited',
-                'message_template'     => 'Your unclaimed documents for request #:request_id have been shredded after 90 days per Registrar policy. Please submit a new request if you still need these documents.',
+                'title'                => 'Final Notice: Forfeiture Tomorrow',
+                'message_template'     => 'Final Notice: Your :document_noun :document_name will be forfeited and shredded tomorrow per the 90-day unclaimed policy.',
                 'audience'             => NotificationAudienceEnum::StudentAlumni->value,
                 'is_active'            => 1,
+                'send_push'            => 1,
+                'send_email'           => 1,
             ],
             [
                 'notification_type_id' => 16,

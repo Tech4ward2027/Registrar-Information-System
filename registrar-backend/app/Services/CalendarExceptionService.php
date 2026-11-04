@@ -49,6 +49,8 @@ class CalendarExceptionService
             'end_date'     => $exception->end_date->toDateString(),
         ]);
 
+        CalendarChangeNotifier::holiday($exception, 'added');
+
         return $exception;
     }
 
@@ -102,7 +104,9 @@ class CalendarExceptionService
             'label'        => $exception->label,
         ]);
 
-        return $exception->refresh();
+        CalendarChangeNotifier::holiday($exception->refresh(), 'updated');
+
+        return $exception;
     }
 
     public function delete(BusinessCalendarHoliday $exception, SystemUser $actor, Request $request): void
@@ -117,6 +121,8 @@ class CalendarExceptionService
 
             $exception->delete();
         });
+
+        CalendarChangeNotifier::holiday($exception, 'removed');
     }
 
     /**

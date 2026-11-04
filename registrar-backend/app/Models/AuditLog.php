@@ -179,6 +179,26 @@ class AuditLog extends Model
     public const ACTION_ACCESS_REQUEST_REJECTED  = 'access_request_rejected';
     public const ACTION_ACCESS_REQUEST_EXPIRED   = 'access_request_expired';
 
+    // Staff flagged an existing request's Official Receipt as mismatched or
+    // altered (see ReceiptFlagService). Notifies Super Admin; changes no status.
+    public const ACTION_RECEIPT_FLAGGED = 'receipt_flagged';
+
+    // Deceased / permanently incapacitated requestor (Notification Policy §3.6).
+    // Metadata never carries the representative's name or email: those stay
+    // encrypted on request_representatives. target_user_id is the requestor.
+    public const ACTION_REQUESTOR_FLAGGED              = 'requestor_flagged';
+    public const ACTION_REQUESTOR_FLAG_LIFTED          = 'requestor_flag_lifted';
+    public const ACTION_REPRESENTATIVE_ADDED           = 'representative_added';
+    public const ACTION_REPRESENTATIVE_VERIFIED        = 'representative_verified';
+    public const ACTION_REPRESENTATIVE_REVOKED         = 'representative_revoked';
+    public const ACTION_REPRESENTATIVE_PROOF_VIEWED    = 'representative_proof_viewed';
+    // The closure email had nobody to go to: the requestor's own address is
+    // suppressed and no verified representative exists. In-app is the record.
+    public const ACTION_CLOSURE_NOTICE_SENT_ON_FILE    = 'closure_notice_sent_on_file';
+    // A representative was verified after the closure notice was filed
+    // "sent-on-file", so that notice was released to the representative.
+    public const ACTION_CLOSURE_NOTICE_RESENT          = 'closure_notice_resent_to_representative';
+
     // Cashier OR verification attempts (see NameMatcher, DocumentRequestController::store)
     // Logged for every attempt regardless of outcome — not just failures —
     // via the existing tamper-evident audit_log table rather than a new

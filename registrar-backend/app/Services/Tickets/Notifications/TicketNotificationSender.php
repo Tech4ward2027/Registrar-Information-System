@@ -11,7 +11,7 @@ use App\Services\Tickets\PublicSubmission\TicketAccessTokenService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Mail;
+use App\Services\Mail\MailDispatcher;
 
 /**
  * Support Ticketing — Phase 6. Works out WHO gets a ticket notification and
@@ -43,6 +43,7 @@ class TicketNotificationSender
     public function __construct(
         private readonly NotificationServiceInterface $notifications,
         private readonly TicketAccessTokenService $accessTokens,
+        private readonly MailDispatcher $mailer,
     ) {
     }
 
@@ -176,7 +177,7 @@ class TicketNotificationSender
 
     private function queueMail(string $to, Kind $kind, Ticket $ticket, string $url, bool $isPublic, array $data): void
     {
-        Mail::to($to)->queue(new TicketNotificationMail(
+        $this->mailer->sendApproved('ticket_notification', $to, new TicketNotificationMail(
             kind:         $kind->value,
             ticketNumber: $ticket->ticket_number,
             url:          $url,

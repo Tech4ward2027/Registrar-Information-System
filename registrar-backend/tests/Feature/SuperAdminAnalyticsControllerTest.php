@@ -442,11 +442,11 @@ test('a successful run whose gap has exceeded its expected interval is reported 
     saMakeUser(SystemUser::ROLE_SUPER_ADMIN);
 
     // Hourly job (120-minute threshold), last successful run 3 hours ago.
-    saWriteJobRun('notifications:shred-expired-requests', JobRunLog::STATUS_SUCCESS, now()->subHours(3));
+    saWriteJobRun('role-assignments:expire', JobRunLog::STATUS_SUCCESS, now()->subHours(3));
 
     $response = $this->getJson('/api/v1/system-analytics/scheduled-jobs-health')->assertOk();
 
-    $job = collect($response->json('jobs'))->firstWhere('job_name', 'notifications:shred-expired-requests');
+    $job = collect($response->json('jobs'))->firstWhere('job_name', 'role-assignments:expire');
     expect($job['status'])->toBe('overdue');
     expect($response->json('needs_attention'))->toBeGreaterThanOrEqual(1);
 });

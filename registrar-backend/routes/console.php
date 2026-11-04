@@ -31,20 +31,22 @@ Artisan::command('inspire', function () {
 | into ReadyToClaim), a silently-diverging definition of the same
 | business rule this command already gets right.
 |
-| That client-side stand-in only existed because this job ran once a
-| day, so staff would otherwise see a stale ReadyToClaim request for up
-| to ~24h after it should have been forfeited. Rather than patch the
-| symptom (add a lock, fix the date math client-side, keep two
-| implementations in sync forever), the fix is to make the one correct,
-| already-transactional, already-audited, already-cache-invalidated
-| implementation (this command) run often enough that no client-side
-| stand-in is needed at all — exactly the precedent already set below
-| by role-assignments:expire for the identical "daily cadence leaves
-| stale status visible too long" problem.
+| The client-side stand-in has been removed and must stay removed: the
+| server-side command is the only place a request is forfeited.
 |
-| Order still matters relative to the other 08:xx jobs:
-|   08:00  (kept, redundant with hourly() below, harmless)
-|   08:05  SendUnclaimedReminders  — send 7-day warnings for the rest.
+| Policy v1.2.0 (§3.5) moved forfeiture to a fixed calendar day (Day 90,
+| Manila time) announced by a Day 89 notice, so the forfeiture sweep is
+| daily at 08:00 Manila rather than hourly. A request that reaches Day 90
+| at midnight therefore shows as Ready to Claim until the 08:00 run; that
+| is intended, because an hourly sweep forfeited each request at a
+| different hour and could cut the notice period short.
+|
+| Order:
+|   07:30 Manila  SendForfeitureNotices  - Day 89 final notice.
+|   08:00 Manila  ShredExpiredRequests   - Day 90 forfeiture (only requests
+|                                          whose notice went out on an
+|                                          earlier calendar day).
+|   08:05 (app clock)  SendUnclaimedReminders - 7-day reminder, unchanged.
 |
 | withoutOverlapping() — prevents a slow DB run from spawning a duplicate.
 | runInBackground()    — keeps the scheduler process non-blocking.
@@ -52,8 +54,24 @@ Artisan::command('inspire', function () {
 |--------------------------------------------------------------------------
 */
 
+// Unclaimed-document policy v1.2.0 (§3.5): Day 89 final notice, Day 90
+// forfeiture. Day boundaries are Manila calendar days, so both jobs are
+// pinned to the display timezone instead of the scheduler's UTC clock.
+// The notice runs first, 30 minutes before forfeiture, so it is created
+// on an earlier run than the forfeiture it announces. The forfeiture job
+// also refuses to act on a request whose notice went out today.
+// (This replaces the hourly forfeiture sweep, whose per-request hour
+// drifted and could forfeit with less than a day's notice.)
+Schedule::command('notifications:send-forfeiture-notices')
+    ->dailyAt('07:30')
+    ->timezone(config('app.display_timezone', 'Asia/Manila'))
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
 Schedule::command('notifications:shred-expired-requests')
-    ->hourly()
+    ->dailyAt('08:00')
+    ->timezone(config('app.display_timezone', 'Asia/Manila'))
     ->withoutOverlapping()
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/scheduler.log'));

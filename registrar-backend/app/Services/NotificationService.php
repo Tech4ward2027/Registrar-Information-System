@@ -10,6 +10,7 @@ use App\Models\NotificationType;
 use App\Models\SystemUser;
 use App\Jobs\SendBulkNotificationJob;
 use App\Jobs\SendWebPushJob;
+use App\Services\Mail\MailDispatcher;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use App\Contracts\NotificationServiceInterface;
@@ -42,7 +43,10 @@ use Illuminate\Support\Facades\Log;
 
 class NotificationService implements NotificationServiceInterface
 {
-    public function __construct(private NotificationDispatchLogger $dispatchLog) {}
+    public function __construct(
+        private NotificationDispatchLogger $dispatchLog,
+        private MailDispatcher $mail,
+    ) {}
 
     // -------------------------------------------------------
     // SEND TO A SPECIFIC USER
@@ -93,6 +97,9 @@ class NotificationService implements NotificationServiceInterface
             // Replace :placeholders in the template with actual values
             // e.g. "Payment verified for request #:request_id"
             //   → "Payment verified for request #42"
+            // Fill [document_name] / [or_number] / [announcement_details] when
+            // the template needs them and the caller did not supply them.
+            $data    = NotificationPlaceholders::enrich($type->message_template, $data, $requestId);
             $message = $this->buildMessage($type->message_template, $data);
 
             // Capture scalar values from the type NOW, before the transaction,
@@ -149,6 +156,11 @@ class NotificationService implements NotificationServiceInterface
             // Done after the transaction and isolated in its own try/catch so
             // a queue hiccup can never turn a saved notification into a null.
             $this->queueWebPush($notification, $type);
+
+            // Step 6: System Mailer. Only the policy's seven email triggers
+            // are ever queued; MailDispatcher owns the allow-list, throttling
+            // and logging, and never throws.
+            $this->mail->queueLifecycle($notification, $type);
 
             // Return the notification created inside the transaction.
             // The closure's own "return $notification" returns to DB::transaction(),
@@ -239,6 +251,32 @@ class NotificationService implements NotificationServiceInterface
     // read_at state. The WebSocket push is just the real-time
     // alert on top of that persistent record.
     // -------------------------------------------------------
+    public function sendToRoles(
+        array  $roleIds,
+        string $triggerEvent,
+        array  $data      = [],
+        ?int   $requestId = null,
+    ): void {
+        $roleIds = array_values(array_unique(array_map('intval', $roleIds)));
+
+        // Fail closed: an empty allow-list must never fall through to
+        // SendBulkNotificationJob's "empty = everyone" behaviour.
+        if ($roleIds === []) {
+            Log::warning('NotificationService: sendToRoles called with no roles; nothing sent', [
+                'trigger_event' => $triggerEvent,
+            ]);
+
+            return;
+        }
+
+        dispatch(new SendBulkNotificationJob(
+            triggerEvent: $triggerEvent,
+            data:         $data,
+            onlyRoleIds:  $roleIds,
+            requestId:    $requestId,
+        ));
+    }
+
     public function sendToAllExcept(
         array  $excludedRoleIds,
         string $triggerEvent,
