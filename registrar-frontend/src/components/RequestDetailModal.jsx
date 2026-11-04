@@ -8,6 +8,8 @@ import { useTheme } from '../context/ThemeContext';
 import { useReferenceData } from '../context/ReferenceDataContext';
 import { hasModuleAction } from '../utils/policy';
 import ClaimTicket from './ClaimTicket';
+import RequestorStatusPanel from './RequestorStatusPanel';
+import FlagReceiptModal from './FlagReceiptModal';
 import DropDown from './DropDown';
 import InputGroup from './InputGroup';
 import ErrorToast from './ErrorToast';
@@ -87,6 +89,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
   const [deficiencyDetail, setDeficiencyDetail] = useState('');
   const [voidReason, setVoidReason] = useState('');
   const [showWithdrawForm, setShowWithdrawForm] = useState(false);
+  const [showFlagReceipt, setShowFlagReceipt] = useState(false);
   const [closureReason, setClosureReason] = useState('requestor_deceased');
   const [closureDetail, setClosureDetail] = useState('');
   const [closureProofReference, setClosureProofReference] = useState('');
@@ -118,6 +121,7 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
     setActionError(null);
     setActionSuccess(null);
     setShowWithdrawForm(false);
+    setShowFlagReceipt(false);
     setWithdrawalReason('wrong_item_paid');
     setWithdrawalDetail('');
     setSupersededByRequestId('');
@@ -630,6 +634,19 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
             </Section>
           )}
 
+          {/* Requestor status & representative — Policy §3.6. Staff only; collapsed so a
+              normal request view makes no extra API call until it is opened. */}
+          {canProcess && (
+            <Section title="Requestor Status & Representative" isDark={isDark} defaultOpen={false}>
+              <RequestorStatusPanel
+                request={activeRequest}
+                requestRef={requestRef}
+                user={user}
+                onNotify={({ type, message }) => (type === 'error' ? setActionError(message) : setActionSuccess(message))}
+              />
+            </Section>
+          )}
+
           {/* Payment Details */}
           <Section title="Payment Details" isDark={isDark}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -646,11 +663,31 @@ const RequestDetailsModal = ({ request, onClose, user, onGenerateCert, onRequest
               </p>
 
             </div>
+            {canProcess && !activeRequest.is_archived && (
+              <button
+                type="button"
+                onClick={() => setShowFlagReceipt(true)}
+                className={`mt-3 px-3.5 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                  isDark
+                    ? 'border-red-400/50 text-red-300 hover:bg-red-500 hover:text-white'
+                    : 'border-red-600/60 text-red-700 hover:bg-red-600 hover:text-white'
+                }`}
+              >
+                Flag mismatched / altered receipt
+              </button>
+            )}
           </Section>
 
         </div>
       </div>
     </div>
+    <FlagReceiptModal
+      open={showFlagReceipt}
+      requestRef={requestRef}
+      requestId={activeRequest?.request_id}
+      onClose={() => setShowFlagReceipt(false)}
+      onDone={(message) => setActionSuccess(message)}
+    />
     </>
   , document.body);
 };
@@ -720,8 +757,8 @@ const TicketDownloadButton = ({ ticket, isDark }) => {
   );
 };
 
-const Section = ({ title, children, isDark }) => {
-  const [open, setOpen] = useState(true);
+const Section = ({ title, children, isDark, defaultOpen = true }) => {
+  const [open, setOpen] = useState(defaultOpen);
 
   return (
     <div className={`border rounded-lg ${isDark ? 'border-[#3e4042]' : 'border-gray-200'}`}>

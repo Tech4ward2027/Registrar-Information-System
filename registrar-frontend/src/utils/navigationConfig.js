@@ -211,6 +211,7 @@ export const ROLE_CONFIG = {
             ],
           },
           { name: 'Cashier overrides', to: 'cashier-overrides', icon: ShieldCheckIcon },
+          { name: 'Representative verification', to: 'representatives', icon: ClipboardDocumentCheckIcon },
         ],
       },
       {

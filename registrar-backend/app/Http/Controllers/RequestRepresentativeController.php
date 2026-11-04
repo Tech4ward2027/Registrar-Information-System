@@ -7,6 +7,7 @@ use App\Http\Requests\Representative\StoreRepresentativeRequest;
 use App\Http\Resources\RequestRepresentativeResource;
 use App\Models\DocumentRequest;
 use App\Models\RequestRepresentative;
+use App\Models\RequestorStatusFlag;
 use App\Services\Representative\RequestRepresentativeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,8 +27,19 @@ class RequestRepresentativeController extends Controller
             ->orderByDesc('id')
             ->first();
 
+        // The staff panel needs to know whether the requestor is flagged, and
+        // there is no other read endpoint for it. Status and date only: the
+        // note and who flagged stay in the audit trail.
+        $flag = RequestorStatusFlag::active()
+            ->where('user_id', $documentRequest->user_id)
+            ->first();
+
         return response()->json([
-            'data' => $representative ? new RequestRepresentativeResource($representative) : null,
+            'data'           => $representative ? new RequestRepresentativeResource($representative) : null,
+            'requestor_flag' => $flag ? [
+                'status'     => $flag->status,
+                'flagged_at' => $flag->created_at,
+            ] : null,
         ]);
     }
 

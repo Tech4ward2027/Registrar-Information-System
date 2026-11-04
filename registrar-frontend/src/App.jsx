@@ -60,6 +60,7 @@ const ReportManagement = lazy(() => import('./layouts/ReportManagement.jsx'));
 const SystemSettings = lazy(() => import('./layouts/SystemSettings.jsx'));
 const BusinessCalendarManagement = lazy(() => import('./layouts/BusinessCalendarManagement.jsx'));
 const CashierOrOverrideManagement = lazy(() => import('./layouts/CashierOrOverrideManagement.jsx'));
+const RepresentativeVerificationQueue = lazy(() => import('./layouts/RepresentativeVerificationQueue.jsx'));
 const SuperAdminAnalyticsDashboard = lazy(() => import('./layouts/SuperAdminAnalyticsDashboard.jsx'));
 const FreeRequestPage = lazy(() => import('./layouts/FreeRequestPage.jsx'));
 const CashierReconciliation = lazy(() => import('./pages/CashierReconciliation.jsx'));
@@ -359,6 +360,7 @@ const App = () => {
                       <Route path="settings" element={<SystemSettings />} />
                       <Route path="business-calendar" element={<BusinessCalendarManagement />} />
                       <Route path="cashier-overrides" element={<CashierOrOverrideManagement />} />
+                      <Route path="representatives" element={<RepresentativeVerificationQueue />} />
                       <Route path="cashier-reconciliation" element={<CashierReconciliation />} />
                       <Route
                         path="tickets"
