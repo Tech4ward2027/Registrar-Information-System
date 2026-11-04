@@ -46,6 +46,18 @@ class DocumentRequestService implements DocumentRequestServiceInterface
      *
      * @throws \Illuminate\Http\Exceptions\HttpResponseException
      */
+    /**
+     * The "request landed" notification for a channel. A request an admin
+     * filed on the requestor's behalf as a free request says so (Policy
+     * §3.4, Free Request Filed) instead of the self-service "validated
+     * (OR #)" message, which would be wrong for a request with no OR. Both
+     * carry the same claim-ticket data.
+     */
+    public static function submissionTrigger(RequestChannelEnum $channel): string
+    {
+        return $channel === RequestChannelEnum::AdminFiledFree ? 'free_request_filed' : 'request_submitted';
+    }
+
     public function createRequest(SystemUser $user, array $validated, RequestChannelEnum $channel = RequestChannelEnum::SelfService): DocumentRequest
     {
         $initialStatus = $this->requestRequiresSourceSubmission($validated)
@@ -184,7 +196,7 @@ class DocumentRequestService implements DocumentRequestServiceInterface
         // later.
         $this->notificationService->send(
             recipient:    $user,
-            triggerEvent: 'request_submitted',
+            triggerEvent: self::submissionTrigger($channel),
             data:         [
                 'request_id'   => $documentRequest->request_id,
                 'requirements' => $requirements,   // checklist shown in inbox

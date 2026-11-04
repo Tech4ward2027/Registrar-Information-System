@@ -61,7 +61,8 @@ class JobRunLog extends Model
      * matching a real command's rows.
      */
     public const JOBS = [
-        'notifications:shred-expired-requests'   => 'Hourly',
+        'notifications:send-forfeiture-notices'  => 'Daily 07:30 Manila',
+        'notifications:shred-expired-requests'   => 'Daily 08:00 Manila',
         'notifications:send-unclaimed-reminders' => 'Daily 08:05',
         'announcements:auto-disable-expired'     => 'Daily 08:10',
         'provisioning:expire-stale'              => 'Daily 08:15',
@@ -69,11 +70,17 @@ class JobRunLog extends Model
         'audit:verify'                           => 'Daily 03:00',
         'break-glass:test'                       => 'Weekly',
         'security-events:prune'                  => 'Daily 08:25',
+        'notifications:prune-dispatch-logs'      => 'Daily 08:50',
         'job-run-logs:prune'                     => 'Daily 08:30',
         'requests:check-consistency'             => 'Daily 03:30',
         'health:rollup'                          => 'Hourly :10',
         'health:detect'                          => 'Hourly :25',
         'health:prune'                           => 'Daily 08:40',
+        'tickets:prune-public-submissions'       => 'Daily 08:45',
+        'tickets:sla-sweep'                      => 'Every 15 min',
+        'tickets:release-stale-claims'           => 'Every 30 min',
+        'tickets:auto-close'                     => 'Every 30 min',
+        'tickets:anonymize-expired'              => 'Daily 03:45',
     ];
 
     /**
@@ -114,18 +121,25 @@ class JobRunLog extends Model
      * job_name as opting out of this check, not as an error.
      */
     public const EXPECTED_INTERVAL_MINUTES = [
-        'notifications:shred-expired-requests'   => 120,
+        'notifications:send-forfeiture-notices'  => 1560,
+        'notifications:shred-expired-requests'   => 1560,
         'role-assignments:expire'                => 120,
         'notifications:send-unclaimed-reminders' => 1560,
         'announcements:auto-disable-expired'     => 1560,
         'provisioning:expire-stale'              => 1560,
         'audit:verify'                           => 1560,
         'security-events:prune'                  => 1560,
+        'notifications:prune-dispatch-logs'      => 1560,
         'job-run-logs:prune'                     => 1560,
         'requests:check-consistency'             => 1560,
         'break-glass:test'                       => 11520,
         'health:rollup'                          => 120,
         'health:detect'                          => 120,
         'health:prune'                           => 1560,
+        'tickets:prune-public-submissions'       => 1560,
+        'tickets:sla-sweep'                      => 30,
+        'tickets:release-stale-claims'           => 60,
+        'tickets:auto-close'                     => 60,
+        'tickets:anonymize-expired'              => 1560,
     ];
 }

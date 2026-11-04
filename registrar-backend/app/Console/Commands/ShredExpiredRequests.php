@@ -10,8 +10,8 @@ use App\Console\Commands\Concerns\LogsJobRun;
 use App\Contracts\NotificationServiceInterface;
 use App\Services\Concerns\FlushesAnalyticsCache;
 use App\Services\RequestStatusCascade;
+use App\Services\UnclaimedPolicy;
 use Illuminate\Console\Command;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -19,14 +19,22 @@ use Illuminate\Support\Facades\Log;
 |--------------------------------------------------------------------------
 | ShredExpiredRequests
 |--------------------------------------------------------------------------
-| Runs daily via the Laravel scheduler (see routes/console.php).
-| Scheduled BEFORE SendUnclaimedReminders so a request expiring on day 90
-| is forfeited rather than receiving a 7-day reminder on the same day.
+| Runs once a day (Manila time) via the Laravel scheduler, after
+| SendForfeitureNotices (see routes/console.php).
 |
-| Policy
-|   If a document request has been in "ReadyToClaim" status for 90 or
-|   more days, it is automatically transitioned to Forfeited and the
-|   student is notified that their documents have been shredded.
+| Policy (§3.5, v1.2.0)
+|   Day 89: SendForfeitureNotices sends the final notice.
+|   Day 90: this command moves the request to Forfeited, forfeits its
+|   still-unclaimed items, and writes the in-app disposition entry.
+|   Days are calendar days in Manila time from the day the request most
+|   recently became Ready to Claim (see UnclaimedPolicy).
+|
+| Notice gate
+|   A request is forfeited only if its final notice was created on an
+|   EARLIER calendar day than today. A request that reaches Day 90 without
+|   one (missed run, or already overdue at deploy) is skipped here; the
+|   notice command sends it, and forfeiture follows the next day. The
+|   requestor therefore always gets at least one day's notice.
 |
 | Item-level consistency (added alongside the 2026_08_29 Phase 2/3 work)
 |   document_request.status_id is a DERIVED "earliest-stage-wins"
@@ -68,7 +76,7 @@ class ShredExpiredRequests extends Command
     use LogsJobRun;
 
     protected $signature   = 'notifications:shred-expired-requests';
-    protected $description = 'Auto-forfeit ReadyToClaim requests unclaimed for 90+ days and notify the student';
+    protected $description = 'Forfeit ReadyToClaim requests on Day 90 (after the Day 89 notice) and log the disposition';
 
     public function __construct(private RequestStatusCascade $statusCascade)
     {
@@ -99,40 +107,25 @@ class ShredExpiredRequests extends Command
 
     private function shredExpiredRequests(NotificationServiceInterface $notificationService): int
     {
-        $cutoff = Carbon::now()->subDays(90);
+        $requests = UnclaimedPolicy::readyRequestsBefore(
+            UnclaimedPolicy::cutoff(UnclaimedPolicy::FORFEIT_DAY)
+        )->with('user')->get();
 
-        // Use the MOST RECENT ReadyToClaim history row, not the oldest.
-        // If a request was ever cycled back through Processing and then
-        // set ReadyToClaim again, the 90-day clock should restart from the
-        // latest transition — not from the original one.
-        //
-        // NOTE: this is deliberately a raw whereExists() rather than
-        // whereHas('history', ...). whereHas()'s automatic "select 1"
-        // existence-subquery optimization does not apply once the
-        // closure adds its own groupBy()/havingRaw(), so Eloquent falls
-        // back to selecting request_history's full column list. Combined
-        // with GROUP BY request_id, that trips MySQL's ONLY_FULL_GROUP_BY
-        // mode (every unaggregated column in the SELECT list must be in
-        // the GROUP BY). Building the subquery explicitly with
-        // select(DB::raw(1)) sidesteps that entirely and doesn't depend
-        // on Eloquent's relation-existence internals staying the same
-        // across versions.
-        $requests = DocumentRequest::query()
-            ->where('status_id', RequestStatusEnum::ReadyToClaim->value)
-            ->whereExists(function ($query) use ($cutoff) {
-                $query->select(DB::raw(1))
-                    ->from('request_history')
-                    ->whereColumn('request_history.request_id', 'document_request.request_id')
-                    ->where('request_history.new_status_id', RequestStatusEnum::ReadyToClaim->value)
-                    ->groupBy('request_history.request_id')
-                    ->havingRaw('MAX(request_history.changed_at) <= ?', [$cutoff]);
-            })
-            ->with('user')
-            ->get();
+        $startOfToday   = UnclaimedPolicy::startOfToday();
+        $awaitingNotice = 0;
 
         $shredded = 0;
 
         foreach ($requests as $request) {
+            if (! SendForfeitureNotices::noticeExistsSince(
+                $request->request_id,
+                UnclaimedPolicy::readyAt($request),
+                $startOfToday,
+            )) {
+                $awaitingNotice++;
+                continue;
+            }
+
             DB::transaction(function () use ($request, $notificationService, &$shredded) {
                 // Re-fetch and lock the parent + its still-ReadyToClaim
                 // items/groups inside the transaction, same convention
@@ -182,9 +175,9 @@ class ShredExpiredRequests extends Command
                 /** @var SystemUser $owner */
                 $owner = $request->user;
                 if ($owner instanceof SystemUser) {
-                    // Use 'request_forfeited' — documents have already been
-                    // shredded at this point, so the message must be past-tense.
-                    // 'reminder_final_warning' (future-tense) was incorrect here.
+                    // Disposition entry (past tense). The forward-looking
+                    // warning is reminder_final_warning, sent on Day 89 by
+                    // SendForfeitureNotices.
                     $notificationService->send(
                         recipient:    $owner,
                         triggerEvent: 'request_forfeited',
@@ -204,7 +197,7 @@ class ShredExpiredRequests extends Command
             });
         }
 
-        $this->info("[ShredExpiredRequests] {$shredded} request(s) forfeited.");
+        $this->info("[ShredExpiredRequests] {$shredded} request(s) forfeited, {$awaitingNotice} waiting for their final notice.");
 
         // QA bugs #4/#9 ("Forfeited Count Mismatch" / "Forfeited Missing
         // from Admin Analytics") — this command writes status_id

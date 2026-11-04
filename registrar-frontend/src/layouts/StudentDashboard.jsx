@@ -77,6 +77,7 @@ const StudentDashboard = () => {
 // (announcements, generic alerts, etc.) — mirrors StaffDashboard behaviour.
 const STUDENT_REFETCH_TRIGGERS = new Set([
   'request_submitted',      // confirmation: own submission landed
+  'free_request_filed',     // confirmation: staff filed a free request for them
   'awaiting_submission',    // told to bring in the source document
   'request_processing',     // admin started processing
   'pending_signature',      // registrar done, awaiting external signature

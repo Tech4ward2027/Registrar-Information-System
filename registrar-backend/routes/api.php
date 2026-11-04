@@ -15,6 +15,9 @@ use App\Http\Controllers\ItemClaimController;
 use App\Http\Controllers\ItemTerminationController;
 use App\Http\Controllers\RequestItemListController;
 use App\Http\Controllers\DeficiencyNoticeController;
+use App\Http\Controllers\ReceiptFlagController;
+use App\Http\Controllers\RequestRepresentativeController;
+use App\Http\Controllers\RequestorStatusFlagController;
 use App\Http\Controllers\RequestDocumentController;
 use App\Http\Controllers\RequestHistoryController;
 use App\Http\Controllers\AuthController;
@@ -43,12 +46,21 @@ use App\Http\Controllers\SignatoryController;
 use App\Http\Controllers\BusinessHoursController;
 use App\Http\Controllers\CalendarExceptionController;
 use App\Http\Controllers\CalendarOverrideController;
+use App\Http\Controllers\MailStatusController;
 use App\Http\Controllers\SuperAdminAnalyticsController;
 use App\Http\Controllers\FailedCashierVerificationController;
 use App\Http\Controllers\SystemHealthController;
 use App\Http\Controllers\SecurityEventController;
 use App\Http\Controllers\UndergradRequestorController;
 use App\Http\Controllers\UndergradRequestorVerificationController;
+use App\Http\Controllers\TicketCategoryController;
+use App\Http\Controllers\TicketController;
+use App\Http\Controllers\StaffTicketController;
+use App\Http\Controllers\StaffTicketCategoryController;
+use App\Http\Controllers\StaffTicketBlockController;
+use App\Http\Controllers\StaffTicketReportController;
+use App\Http\Controllers\PublicTicketController;
+use App\Http\Controllers\PublicTicketTrackingController;
 
 /*
 |--------------------------------------------------------------------------
@@ -132,6 +144,34 @@ Route::get('/undergrad-requestors/registration-notice', [UndergradRequestorContr
 // (ogos_course_id, code, name), so nothing here requires gating behind a
 // session. ProgramController is already imported above for the
 // authenticated /programs route.
+// ── Support Ticketing: PUBLIC submission (no account) ────────────────────────
+// Unauthenticated, behind the same 'feature:tickets' flag as the rest of the
+// module (404 while off). Layers, outermost first: the flag, the per-IP
+// limiters below (registered in TicketServiceProvider, values in
+// config/tickets.php), then PublicSubmissionService's own checks (honeypot,
+// minimum fill time, CAPTCHA, blocklist, per-address and per-day ceilings).
+//
+//   form          categories + a form token + CAPTCHA setup, in one call
+//   start         validate, run the checks, email a confirmation link (202)
+//   confirm-email the emailed token creates the ticket (201)
+//   resend-link   always the same 202 message, whatever matched
+//   track/*       follow and reply through the magic link: the token travels
+//                 in the X-Ticket-Token header (never in a URL), and the
+//                 'ticket.token' middleware turns it into the ticket.
+Route::middleware('feature:tickets')->prefix('public/tickets')->group(function () {
+    Route::get('form',          [PublicTicketController::class, 'form'])->middleware('throttle:tickets-public-form');
+    Route::post('start',        [PublicTicketController::class, 'start'])->middleware('throttle:tickets-public-start');
+    Route::post('confirm-email', [PublicTicketController::class, 'confirmEmail'])->middleware('throttle:tickets-public-confirm');
+    Route::post('resend-link',  [PublicTicketController::class, 'resendLink'])->middleware('throttle:tickets-public-resend');
+
+    Route::prefix('track')->middleware(['throttle:tickets-public-track', 'ticket.token'])->group(function () {
+        Route::get('/',          [PublicTicketTrackingController::class, 'show']);
+        Route::post('replies',   [PublicTicketTrackingController::class, 'reply'])->middleware('throttle:tickets-public-reply');
+        Route::post('confirm',   [PublicTicketTrackingController::class, 'confirm']);
+        Route::post('return',    [PublicTicketTrackingController::class, 'returnToProgress']);
+    });
+});
+
 Route::get('/undergrad-requestors/programs', [ProgramController::class, 'index'])
     ->middleware('throttle:undergrad-requestor-programs');
 
@@ -326,6 +366,20 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         // IssueDeficiencyNoticeRequest::authorize().
         Route::post('{documentRequest}/deficiency-notices', [DeficiencyNoticeController::class, 'issue'])
             ->middleware(['role:3', 'module:dashboard,Process']);
+        // Policy §3.4 "Mismatched Receipt Flagged": staff raise it on an
+        // existing request; Super Admin is alerted. Authorization is
+        // DocumentRequestPolicy::flagReceipt(), checked in the form request.
+        Route::post('{documentRequest}/flag-receipt', [ReceiptFlagController::class, 'store'])
+            ->middleware(['role:3', 'module:dashboard,Process', 'throttle:20,1']);
+        // Notification Policy §3.6: staff record / view the representative of
+        // a deceased or incapacitated requestor. Authorization is
+        // DocumentRequestPolicy::manageRepresentative(), checked in the
+        // controller and form request. Verification is Super Admin only
+        // (see the 'representatives' group below).
+        Route::get('{documentRequest}/representative', [RequestRepresentativeController::class, 'show'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
+        Route::post('{documentRequest}/representative', [RequestRepresentativeController::class, 'store'])
+            ->middleware(['role:3', 'module:dashboard,Process', 'throttle:10,1,representative-store']);
         // Item-level status — see RequestItemStatusService and
         // DocumentRequestController::updateDocumentItemStatus()/
         // updateCertificateItemStatus(). Same coarse role/module gate as
@@ -696,8 +750,29 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::delete('signatories/{id}',   [SignatoryController::class, 'destroy']);
     });
 
+    // Notification Policy §3.6 — flag a requestor as deceased / incapacitated.
+    // Staff (Admin with dashboard 'Process', or Super Admin). Authorization is
+    // RequestRepresentativePolicy::flag(), checked in FlagRequestorRequest.
+    Route::post('requestors/{user}/status-flag', [RequestorStatusFlagController::class, 'store'])
+        ->middleware(['role:3', 'module:dashboard,Process', 'throttle:20,1,requestor-flag']);
+
     // Superadmin only (role 4)
     Route::middleware('role:4')->group(function () {
+        // Notification Policy §3.6 — Super Admin controls over whose inbox
+        // receives a deceased/incapacitated requestor's closure notice.
+        // Authorization is RequestRepresentativePolicy.
+        Route::delete('requestors/{user}/status-flag', [RequestorStatusFlagController::class, 'destroy'])
+            ->middleware('throttle:20,1,requestor-flag-lift');
+        Route::prefix('representatives')->group(function () {
+            Route::get('/',                                [RequestRepresentativeController::class, 'index']);
+            Route::post('{representative}/verify',         [RequestRepresentativeController::class, 'verify'])
+                ->middleware('throttle:20,1,representative-verify');
+            Route::post('{representative}/revoke',         [RequestRepresentativeController::class, 'revoke'])
+                ->middleware('throttle:20,1,representative-revoke');
+            Route::get('{representative}/proofs/{kind}',   [RequestRepresentativeController::class, 'proof'])
+                ->middleware('throttle:30,1,representative-proof');
+        });
+
         // Admin creation gets its own dedicated, tighter throttle on top of
         // the group's throttle:60,1 — this is now the primary defense
         // against bulk/automated admin creation (see IdpClient::createUser()
@@ -749,6 +824,10 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             Route::get('access-request-throughput',  [SuperAdminAnalyticsController::class, 'accessRequestThroughput']);
             Route::get('cashier-verification-health', [SuperAdminAnalyticsController::class, 'cashierVerificationHealth']);
             Route::get('scheduled-jobs-health',       [SuperAdminAnalyticsController::class, 'scheduledJobsHealth']);
+
+            // System Mailer: quota, 7-day dispatch roll-up and recent failures
+            // (Notification Policy). Not flag-gated: the mailer is always live.
+            Route::get('mail-status',                 [MailStatusController::class, 'show']);
 
             // System Health (Phase 3): flag-gated. Reads rollups/alerts only.
             // Acknowledge has its own named bucket and is audited.
@@ -866,6 +945,84 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
             // RoleAssignmentService::editPolicy().
             Route::patch('{roleAssignment}/policy',   [RoleAssignmentController::class, 'editPolicy']);
         });
+    });
+
+    // ── Support Ticketing ───────────────────────────────────────────────────────
+    // Every ticketing route lives under 'feature:tickets' (config/features.php,
+    // FEATURE_TICKETS, default false): the whole module answers 404 while the
+    // flag is off, whatever any policy grants.
+    //
+    // {ticket} is the lowercase ULID public_id, never the integer id; the
+    // pattern below also stops "categories" from ever being read as a ticket.
+    //
+    // Three layers guard each route: the flag (404), the coarse role/module
+    // middleware, and the Form Request's TicketPolicy check, which is the real
+    // one (ownership for requesters, per-action permission for staff).
+    //
+    // Throttles: the group's throttle:60,1 applies to everything. The two named
+    // limiters below add the ticket-specific ceilings and are registered in
+    // TicketServiceProvider (limits come from config/tickets.php).
+    Route::middleware('feature:tickets')->group(function () {
+        // Categories for the new-ticket form and queue filters. Any signed-in
+        // account; not sensitive.
+        Route::get('tickets/categories', [TicketCategoryController::class, 'index']);
+
+        // ── Requester side: Student, Alumni, Undergrad Requestor ────────────
+        // Ownership is enforced per ticket by TicketPolicy (404 if not theirs).
+        Route::prefix('tickets')
+            ->middleware('role:1,2,5')
+            ->where(['ticket' => '[0-9a-z]{26}'])
+            ->group(function () {
+                Route::get('/',  [TicketController::class, 'index']);
+                Route::post('/', [TicketController::class, 'store'])
+                    ->middleware('throttle:tickets-create');
+
+                Route::get('{ticket}',          [TicketController::class, 'show']);
+                Route::post('{ticket}/replies', [TicketController::class, 'reply'])
+                    ->middleware('throttle:tickets-reply');
+                Route::post('{ticket}/confirm', [TicketController::class, 'confirm']);
+                Route::post('{ticket}/return',  [TicketController::class, 'returnToProgress']);
+            });
+
+        // ── Staff side: the shared queue ────────────────────────────────────
+        // Policy Management module 'tickets' (Policy::MODULE_ACTIONS). View is
+        // required for every route here because every answer contains the
+        // ticket; each action then needs its own permission on top.
+        Route::prefix('admin/tickets')
+            ->middleware(['role:3,4', 'module:tickets,View'])
+            ->where(['ticket' => '[0-9a-z]{26}'])
+            ->group(function () {
+                // ── Management (Phase 8): tickets/Manage on top of View ───────
+                // Fixed words, so they can never be read as a {ticket} (always a
+                // 26-character ULID). Each Form Request re-checks TicketPolicy::manage.
+                Route::middleware('module:tickets,Manage')->group(function () {
+                    Route::get('categories',              [StaffTicketCategoryController::class, 'index']);
+                    Route::post('categories',             [StaffTicketCategoryController::class, 'store']);
+                    Route::patch('categories/{category}', [StaffTicketCategoryController::class, 'update'])->whereNumber('category');
+
+                    Route::get('blocks',            [StaffTicketBlockController::class, 'index']);
+                    Route::post('blocks',           [StaffTicketBlockController::class, 'store']);
+                    Route::delete('blocks/{block}', [StaffTicketBlockController::class, 'destroy'])->whereNumber('block');
+
+                    Route::get('summary', [StaffTicketReportController::class, 'summary'])->middleware('throttle:30,1,tickets-reports');
+                    Route::get('export',  [StaffTicketReportController::class, 'export'])->middleware('throttle:6,1,tickets-export');
+
+                    Route::post('{ticket}/spam', [StaffTicketBlockController::class, 'flagSpam']);
+                });
+
+                Route::get('/',         [StaffTicketController::class, 'index']);
+                Route::get('{ticket}',  [StaffTicketController::class, 'show']);
+
+                Route::post('{ticket}/claim',   [StaffTicketController::class, 'claim'])
+                    ->middleware('module:tickets,Claim');
+                // The claimer (Claim) or a manager (Manage); TicketPolicy::release decides which.
+                Route::post('{ticket}/release', [StaffTicketController::class, 'release'])
+                    ->middleware('module:tickets,Claim|Manage');
+                Route::post('{ticket}/replies', [StaffTicketController::class, 'reply'])
+                    ->middleware('module:tickets,Reply');
+                Route::post('{ticket}/resolve', [StaffTicketController::class, 'resolve'])
+                    ->middleware('module:tickets,Resolve');
+            });
     });
 });
 /*

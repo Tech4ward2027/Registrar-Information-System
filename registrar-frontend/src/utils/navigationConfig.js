@@ -13,11 +13,12 @@ import {
   ShieldCheckIcon,
   CalendarDaysIcon,
   ScaleIcon,
+  LifebuoyIcon,
 } from '@heroicons/react/24/outline';
 import { MODULE_KEYS } from './policy';
 
 export const ROLE_CONFIG = {
-    undergrad: {
+  undergrad: {
     profileKey: 'undergrad_requestor_profile',
     profileLabel: (user) => user?.undergrad_requestor_profile?.student_number || user?.email || 'Undergraduate',
     sections: [
@@ -33,6 +34,7 @@ export const ROLE_CONFIG = {
         items: [
           { name: 'Document Lists', to: 'lists', icon: TableCellsIcon },
           { name: 'Undergrad Requests', to: 'request', icon: ClipboardDocumentCheckIcon },
+          { name: 'Ticketing System', to: 'tickets', icon: LifebuoyIcon, module: MODULE_KEYS.TICKETS },
           { name: 'FAQs & Support', to: 'faqs', icon: QuestionMarkCircleIcon },
         ],
       },
@@ -54,6 +56,7 @@ export const ROLE_CONFIG = {
         items: [
           { name: 'Document Lists', to: 'lists', icon: TableCellsIcon },
           { name: 'Student Requests', to: 'request', icon: ClipboardDocumentCheckIcon },
+          { name: 'Ticketing System', to: 'tickets', icon: LifebuoyIcon, module: MODULE_KEYS.TICKETS },
           { name: 'FAQs & Support', to: 'faqs', icon: QuestionMarkCircleIcon },
         ],
       },
@@ -75,6 +78,7 @@ export const ROLE_CONFIG = {
         items: [
           { name: 'Document Lists', to: 'lists', icon: TableCellsIcon },
           { name: 'Alumni Request', to: 'request', icon: AcademicCapIcon },
+          { name: 'Ticketing System', to: 'tickets', icon: LifebuoyIcon, module: MODULE_KEYS.TICKETS },
           { name: 'FAQs & Support', to: 'faqs', icon: QuestionMarkCircleIcon },
         ],
       },
@@ -110,6 +114,18 @@ export const ROLE_CONFIG = {
           { name: 'Cashier OR Overrides', to: 'cashier-overrides', icon: ShieldCheckIcon, module: MODULE_KEYS.CASHIER_OVERRIDES },
           { name: 'Free Requests', to: 'free-requests', icon: DocumentDuplicateIcon, module: MODULE_KEYS.FREE_REQUESTS },
           { name: 'Undergrad Requestors', to: 'undergrad-requestors', icon: AcademicCapIcon, module: MODULE_KEYS.UNDERGRAD_VERIFICATION },
+          {
+            name: 'Ticketing Management',
+            to: 'tickets',
+            icon: LifebuoyIcon,
+            module: MODULE_KEYS.TICKETS,
+            children: [
+              { name: 'Ticket queue', to: 'tickets?tab=queue', tabKey: 'queue' },
+              { name: 'Categories', to: 'tickets?tab=categories', tabKey: 'categories', action: 'Manage' },
+              { name: 'Spam & blocklist', to: 'tickets?tab=blocks', tabKey: 'blocks', action: 'Manage' },
+              { name: 'Reports & export', to: 'tickets?tab=reports', tabKey: 'reports', action: 'Manage' },
+            ],
+          },
         ],
       },
       {
@@ -174,6 +190,18 @@ export const ROLE_CONFIG = {
           },
           { name: 'Announcement management', to: 'settings', icon: Cog6ToothIcon },
           {
+            name: 'Ticketing management',
+            to: 'tickets',
+            icon: LifebuoyIcon,
+            module: MODULE_KEYS.TICKETS,
+            children: [
+              { name: 'Ticket queue', to: 'tickets?tab=queue', tabKey: 'queue' },
+              { name: 'Categories', to: 'tickets?tab=categories', tabKey: 'categories' },
+              { name: 'Spam & blocklist', to: 'tickets?tab=blocks', tabKey: 'blocks' },
+              { name: 'Reports & export', to: 'tickets?tab=reports', tabKey: 'reports' },
+            ],
+          },
+          {
             name: 'Cashier reconciliation',
             to: 'cashier-reconciliation',
             icon: ScaleIcon,
@@ -183,6 +211,7 @@ export const ROLE_CONFIG = {
             ],
           },
           { name: 'Cashier overrides', to: 'cashier-overrides', icon: ShieldCheckIcon },
+          { name: 'Representative verification', to: 'representatives', icon: ClipboardDocumentCheckIcon },
         ],
       },
       {

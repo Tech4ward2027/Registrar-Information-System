@@ -16,7 +16,7 @@ import { useTheme } from "../context/ThemeContext";
 import ConfirmationModal from "../components/ConfirmationModal";
 import LineLoading from "../components/LineLoading.jsx";
 import SwitchRoleModal from "../components/SwitchRoleModal.jsx";
-import { hasModuleAccess } from "../utils/policy";
+import { hasModuleAccess, hasModuleAction } from "../utils/policy";
 import { ROLE_CONFIG } from "../utils/navigationConfig";
 
 const Navigation = ({ isOpen, onItemClick, role = 'student' }) => {
@@ -143,7 +143,18 @@ const Navigation = ({ isOpen, onItemClick, role = 'student' }) => {
   const config = useMemo(() => {
     const sections = (baseConfig.sections || []).map((sec) => ({
       ...sec,
-      items: sec.items.filter((item) => !item.module || hasModuleAccess(user, item.module)),
+      items: sec.items
+        .filter((item) => !item.module || hasModuleAccess(user, item.module))
+        .map((item) => {
+          if (!item.children) return item;
+          const visibleChildren = item.children.filter(
+            (child) => !child.action || !item.module || hasModuleAction(user, item.module, child.action)
+          );
+          return {
+            ...item,
+            children: visibleChildren.length > 1 ? visibleChildren : undefined,
+          };
+        }),
     })).filter((sec) => sec.items.length > 0);
     return { ...baseConfig, sections };
   }, [baseConfig, user]);

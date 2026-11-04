@@ -425,7 +425,7 @@ test('clearing a notice notifies the owner that processing has resumed', functio
         ->first();
 
     expect($notification)->not->toBeNull();
-    expect($notification->data['message'] ?? null)->toContain('resuming processing');
+    expect($notification->data['message'] ?? null)->toContain('resumed processing');
 });
 
 test('voiding a notice notifies the owner with the void reason', function () {

@@ -119,6 +119,14 @@ class AppServiceProvider extends ServiceProvider
         // have no effect for up to 6 hours (the cache TTL in NotificationService).
         NotificationType::observe(NotificationTypeObserver::class);
 
+        // System Mailer throttle (Notification Policy Section 3.2). One shared
+        // bucket for every lifecycle email leaving the queue workers, so a bulk
+        // status change cannot burst past the SMTP provider's limits. Jobs over
+        // the limit are released back to the queue, not dropped.
+        RateLimiter::for('notification-mail', fn () => Limit::perMinute(
+            max(1, (int) config('notification_mail.rate_per_minute', 20))
+        ));
+
         $this->registerRateLimiters();
     }
 

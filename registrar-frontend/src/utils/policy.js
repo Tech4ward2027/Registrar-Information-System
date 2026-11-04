@@ -31,6 +31,10 @@ export const MODULE_KEYS = {
   // Cashier Reconciliation — Phase 1. Mirrors the backend's
   // App\Models\Policy::MODULE_KEYS entry (single-token 'Access' module).
   CASHIER_RECONCILIATION: "cashier_reconciliation",
+  // Support Ticketing — Phase 3. Mirrors the backend's App\Models\Policy
+  // MODULE_KEYS / MODULE_ACTIONS entry for 'tickets'. The whole module is
+  // behind the backend flag FEATURE_TICKETS (default off).
+  TICKETS: "tickets",
 };
 
 export const KEY_TO_LABEL = {
@@ -45,6 +49,7 @@ export const KEY_TO_LABEL = {
   free_requests: "Free Requests",
   undergrad_verification: "Undergrad Requestor Verification",
   cashier_reconciliation: "Cashier Reconciliation",
+  tickets: "Support Tickets",
 };
 
 export const LABEL_TO_KEY = Object.fromEntries(
@@ -67,12 +72,22 @@ export const MODULE_ACTIONS = {
   // Undergrad Requestor Registration — Phase 0/4. Mirrors the backend's
   // App\Models\Policy::MODULE_ACTIONS entry for 'undergrad_verification'.
   undergrad_verification: ["View", "Approve", "Reject"],
+  // Support Ticketing — Phase 3. Mirrors Policy::MODULE_ACTIONS['tickets'].
+  tickets: ["View", "Claim", "Reply", "Resolve", "Manage"],
 };
+
+/**
+ * True only when the backend environment has FEATURE_TICKETS enabled.
+ */
+export function isTicketsFeatureEnabled(user) {
+  return user?.features?.tickets === true;
+}
 
 /**
  * Can this user access the given module at all?
  *
  * - No user yet (still loading / logged out): false.
+ * - tickets module when FEATURE_TICKETS is off: false for every role.
  * - super_admin: always true.
  * - Any role other than admin (student, alumni): true — the policy
  *   system only ever restricts admin accounts, so nothing here should
@@ -85,6 +100,9 @@ export const MODULE_ACTIONS = {
  */
 export function hasModuleAccess(user, moduleKey) {
   if (!user) return false;
+  if (moduleKey === MODULE_KEYS.TICKETS && !isTicketsFeatureEnabled(user)) {
+    return false;
+  }
   if (user.role_name === "super_admin") return true;
   if (user.role_name !== "admin") return true;
 
@@ -125,6 +143,9 @@ export function hasModuleAccess(user, moduleKey) {
  */
 export function hasModuleAction(user, moduleKey, action) {
   if (!user) return false;
+  if (moduleKey === MODULE_KEYS.TICKETS && !isTicketsFeatureEnabled(user)) {
+    return false;
+  }
   if (user.role_name === "super_admin") return true;
   if (user.role_name !== "admin") return false;
 

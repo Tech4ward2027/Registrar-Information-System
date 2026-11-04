@@ -24,6 +24,19 @@ interface NotificationServiceInterface
     ): ?Notification;
 
     /**
+     * Dispatch a bulk-notification job targeting exactly the given roles
+     * (an allow-list: a role added to the system later is NOT included).
+     *
+     * @param int[] $roleIds
+     */
+    public function sendToRoles(
+        array  $roleIds,
+        string $triggerEvent,
+        array  $data      = [],
+        ?int   $requestId = null,
+    ): void;
+
+    /**
      * Dispatch a bulk-notification job targeting only super-admin users.
      */
     public function sendToSuperAdmins(

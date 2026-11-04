@@ -208,7 +208,7 @@ const SuperAdminAnalyticsDashboard = () => {
             </p>
           </div>
 
-          {(activeTab === 'overview' || activeTab === 'cashier') && (
+          {activeTab === 'overview' && (
             <div className="w-full sm:w-44">
               <DropdownGroup
                 name="dateRange"
@@ -401,6 +401,17 @@ const SuperAdminAnalyticsDashboard = () => {
                     isDark={isDark}
                     title="Cashier Verification Health"
                     icon={<CreditCardIcon className="w-5 h-5" />}
+                    action={
+                      <div className="w-36">
+                        <DropdownGroup
+                          name="cashierDateRange"
+                          value={dateRange}
+                          onChange={(e) => setDateRange(e.target.value)}
+                          options={['Today', 'This Week', 'This Month', 'This Year', 'All Time']}
+                          isDark={isDark}
+                        />
+                      </div>
+                    }
                   >
                     <div className="grid grid-cols-3 gap-4 mb-4">
                       <MiniStat isDark={isDark} label="Attempts" value={cashierHealth.total_attempts} />

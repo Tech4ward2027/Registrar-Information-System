@@ -19,23 +19,19 @@ test('a successful local (break-glass) login fires an admin-facing notification'
     ]);
 
     $this->mock(NotificationServiceInterface::class, function ($mock) use ($user) {
-        $mock->shouldReceive('sendToAllExcept')
+        // Allow-list, not an exclusion list: only Super Admin receives the
+        // alert (it discloses an account email + source IP), and a role
+        // added later is never included by default.
+        $mock->shouldReceive('sendToRoles')
             ->once()
-            ->withArgs(function ($excludedRoleIds, $triggerEvent, $data) use ($user) {
-                // Must exclude student/alumni, but must NOT exclude admin or
-                // super admin — otherwise the Super Admin who owns this
-                // break-glass account would never see the alert (see
-                // LocalAuthController::login() for why sendToAdmins() alone
-                // would be wrong here).
+            ->withArgs(function ($roleIds, $triggerEvent, $data) use ($user) {
                 return $triggerEvent === 'local_auth_login_used'
-                    && in_array(SystemUser::ROLE_STUDENT, $excludedRoleIds, true)
-                    && in_array(SystemUser::ROLE_ALUMNI, $excludedRoleIds, true)
-                    && !in_array(SystemUser::ROLE_ADMIN, $excludedRoleIds, true)
-                    && !in_array(SystemUser::ROLE_SUPER_ADMIN, $excludedRoleIds, true)
+                    && $roleIds === [SystemUser::ROLE_SUPER_ADMIN]
                     && $data['user_id'] === $user->user_id
                     && $data['email'] === $user->email
                     && array_key_exists('ip', $data);
             });
+        $mock->shouldReceive('sendToAllExcept')->never();
     });
 
     $this->postJson('/api/v1/auth/local-login', [

@@ -1,5 +1,5 @@
 import React, { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 
 // Auth
 import { ROLES, useAuth } from './context/AuthProvider';
@@ -8,6 +8,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import ModuleRoute from './components/ModuleRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import { MODULE_KEYS, hasModuleAccess } from './utils/policy';
+import { getRoleTicketRoot } from './utils/ticketHelpers';
 import { FolderLoadingOverlay } from './components/LoadingSkeleton.jsx';
 
 // Providers & Global UI (Synchronous)
@@ -41,6 +42,9 @@ const StudentDashboard = lazy(() => import('./layouts/StudentDashboard.jsx'));
 const UndergradRequestorRegisterPage = lazy(() => import('./pages/UndergradRequestorRegisterPage.jsx'));
 const UndergradRequestorVerifyEmailPage = lazy(() => import('./pages/UndergradRequestorVerifyEmailPage.jsx'));
 const UndergradRequestorVerificationPage = lazy(() => import('./pages/UndergradRequestorVerificationPage.jsx'));
+const PublicSupportPage = lazy(() => import('./pages/PublicSupportPage.jsx'));
+const PublicTicketConfirmPage = lazy(() => import('./pages/PublicTicketConfirmPage.jsx'));
+const PublicTicketTrackPage = lazy(() => import('./pages/PublicTicketTrackPage.jsx'));
 
 // Lazy-loaded Layouts
 const DocumentLists = lazy(() => import('./layouts/DocumentLists.jsx'));
@@ -56,9 +60,12 @@ const ReportManagement = lazy(() => import('./layouts/ReportManagement.jsx'));
 const SystemSettings = lazy(() => import('./layouts/SystemSettings.jsx'));
 const BusinessCalendarManagement = lazy(() => import('./layouts/BusinessCalendarManagement.jsx'));
 const CashierOrOverrideManagement = lazy(() => import('./layouts/CashierOrOverrideManagement.jsx'));
+const RepresentativeVerificationQueue = lazy(() => import('./layouts/RepresentativeVerificationQueue.jsx'));
 const SuperAdminAnalyticsDashboard = lazy(() => import('./layouts/SuperAdminAnalyticsDashboard.jsx'));
 const FreeRequestPage = lazy(() => import('./layouts/FreeRequestPage.jsx'));
 const CashierReconciliation = lazy(() => import('./pages/CashierReconciliation.jsx'));
+const TicketingSystem = lazy(() => import('./layouts/TicketingSystem.jsx'));
+const TicketingManagement = lazy(() => import('./layouts/TicketingManagement.jsx'));
 
 const StaffIndexRedirect = () => {
   const { user, loading } = useAuth();
@@ -70,6 +77,7 @@ const StaffIndexRedirect = () => {
     { to: "inbox", module: MODULE_KEYS.INBOX },
     { to: "analytics", module: MODULE_KEYS.ANALYTICS },
     { to: "logbook", module: MODULE_KEYS.LOGBOOK },
+    { to: "tickets", module: MODULE_KEYS.TICKETS },
     { to: "profile", module: MODULE_KEYS.PROFILE },
   ];
 
@@ -80,6 +88,23 @@ const StaffIndexRedirect = () => {
   }
 
   return <Navigate to="/forbidden" state={{ reason: "policy" }} replace />;
+};
+
+const TicketEmailRedirect = () => {
+  const { user, loading } = useAuth();
+  const { ticketId } = useParams();
+
+  if (loading) return null;
+  if (!hasModuleAccess(user, MODULE_KEYS.TICKETS)) {
+    return <Navigate to="/forbidden" state={{ reason: "policy" }} replace />;
+  }
+
+  const root = getRoleTicketRoot(user?.role_name);
+  if (!root) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Navigate to={ticketId ? `${root}/${ticketId}` : root} replace />;
 };
 
 const App = () => {
@@ -98,148 +123,268 @@ const App = () => {
                   navigation) actually clears the fallback instead of staying
                   stuck until a hard reload. See ErrorBoundary.jsx docblock. */}
               <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<FolderLoadingOverlay isDark={isDark} message="Loading..." />}>
-                <Routes>
-                  <Route path="/" element={<MainPage />} />
-                  <Route path="/forbidden" element={<ForbiddenPage />} />
-                  <Route path="/auth/callback" element={<SsoCallbackPage />} />
-                  <Route path="/access-control" element={<AccessControlPage />} />
-                  <Route path="/undergrad-requestor/register" element={<UndergradRequestorRegisterPage />} />
-                  <Route path="/undergrad-requestor/verify-email" element={<UndergradRequestorVerifyEmailPage />} />
+                <Suspense fallback={<FolderLoadingOverlay isDark={isDark} message="Loading..." />}>
+                  <Routes>
+                    <Route path="/" element={<MainPage />} />
+                    <Route path="/forbidden" element={<ForbiddenPage />} />
+                    <Route path="/auth/callback" element={<SsoCallbackPage />} />
+                    <Route path="/access-control" element={<AccessControlPage />} />
+                    <Route path="/undergrad-requestor/register" element={<UndergradRequestorRegisterPage />} />
+                    <Route path="/undergrad-requestor/verify-email" element={<UndergradRequestorVerifyEmailPage />} />
 
-                  {/* UNDERGRAD (role: undergrad_requestoR) */}
-                  <Route
-                    path="/undergrad"
-                    element={
-                      <ProtectedRoute allowedRoles={[ROLES.UNDERGRAD_REQUESTOR, ROLES.STUDENT]}>
-                        <StudentPage />
-                      </ProtectedRoute>
-                    }
-                  >
-                    <Route index element={<Navigate to="/undergrad/request" replace />} />
-                    <Route path="home" element={<StudentDashboard />} />
-                    <Route path="request" element={<RequestForm />} />
-                    <Route path="lists" element={<DocumentLists />} />
-                    <Route path="faqs" element={<FAQPage />} />
-                    <Route path="profile" element={<ProfilePage userType="undergrad" />} />
-                    <Route path="contact" element={<RegistrarContact />} />
-                    <Route path="inbox" element={<InboxCenter />} />
-                  </Route>
+                    {/* Public Support Ticketing (no account) */}
+                    <Route path="/support" element={<PublicSupportPage />} />
+                    <Route path="/support/confirm" element={<PublicTicketConfirmPage />} />
+                    <Route path="/support/ticket" element={<PublicTicketTrackPage />} />
 
-                  {/* STUDENT (role: student & undergrad_requestor) */}
-                  <Route
-                    path="/student"
-                    element={
-                      <ProtectedRoute allowedRoles={[ROLES.STUDENT, ROLES.UNDERGRAD_REQUESTOR]}>
-                        <StudentPage />
-                      </ProtectedRoute>
-                    }
-                  >
-                    <Route index element={<Navigate to="/student/request" replace />} />
-                    <Route path="home" element={<StudentDashboard />} />
-                    <Route path="request" element={<RequestForm />} />
-                    <Route path="lists" element={<DocumentLists />} />
-                    <Route path="faqs" element={<FAQPage />} />
-                    <Route path="profile" element={<ProfilePage userType="student" />} />
-                    <Route path="contact" element={<RegistrarContact />} />
-                    <Route path="inbox" element={<InboxCenter />} />
-                  </Route>
+                    {/* Signed-in email deep-link redirect (/tickets/:ticketId -> /:role/tickets/:ticketId) */}
+                    <Route
+                      path="/tickets"
+                      element={
+                        <ProtectedRoute
+                          allowedRoles={[
+                            ROLES.UNDERGRAD_REQUESTOR,
+                            ROLES.STUDENT,
+                            ROLES.ALUMNI,
+                            ROLES.ADMIN,
+                            ROLES.SUPER_ADMIN,
+                          ]}
+                        >
+                          <TicketEmailRedirect />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/tickets/:ticketId"
+                      element={
+                        <ProtectedRoute
+                          allowedRoles={[
+                            ROLES.UNDERGRAD_REQUESTOR,
+                            ROLES.STUDENT,
+                            ROLES.ALUMNI,
+                            ROLES.ADMIN,
+                            ROLES.SUPER_ADMIN,
+                          ]}
+                        >
+                          <TicketEmailRedirect />
+                        </ProtectedRoute>
+                      }
+                    />
 
-                  {/* ALUMNI (role: alumni) */}
-                  <Route
-                    path="/alumni"
-                    element={
-                      <ProtectedRoute allowedRoles={[ROLES.ALUMNI]}>
-                        <AlumniPage />
-                      </ProtectedRoute>
-                    }
-                  >
-                    <Route index element={<Navigate to="/alumni/request" replace />} />
-                    <Route path="home" element={<StudentDashboard />} />
-                    <Route path="request" element={<AlumniRequest />} />
-                    <Route path="lists" element={<AlumniDocumentList />} />
-                    <Route path="faqs" element={<FAQPage />} />
-                    <Route path="profile" element={<ProfilePage userType="alumni" />} />
-                    <Route path="contact" element={<RegistrarContact />} />
-                    <Route path="inbox" element={<InboxCenter />} />
-                  </Route>
+                    {/* UNDERGRAD (role: undergrad_requestor) */}
+                    <Route
+                      path="/undergrad"
+                      element={
+                        <ProtectedRoute allowedRoles={[ROLES.UNDERGRAD_REQUESTOR, ROLES.STUDENT]}>
+                          <StudentPage />
+                        </ProtectedRoute>
+                      }
+                    >
+                      <Route index element={<Navigate to="/undergrad/request" replace />} />
+                      <Route path="home" element={<StudentDashboard />} />
+                      <Route path="request" element={<RequestForm />} />
+                      <Route path="lists" element={<DocumentLists />} />
+                      <Route path="faqs" element={<FAQPage />} />
+                      <Route
+                        path="tickets"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingSystem />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="tickets/:ticketId"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingSystem />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route path="profile" element={<ProfilePage userType="undergrad" />} />
+                      <Route path="contact" element={<RegistrarContact />} />
+                      <Route path="inbox" element={<InboxCenter />} />
+                    </Route>
 
-                  {/* STAFF / ADMIN (role: admin) */}
-                  <Route
-                    path="/staff"
-                    element={
-                      <ProtectedRoute allowedRoles={[ROLES.ADMIN]}>
-                        <StaffPage />
-                      </ProtectedRoute>
-                    }
-                  >
-                    <Route index element={<StaffIndexRedirect />} />
-                    <Route path="dashboard" element={
-                      <ModuleRoute module={MODULE_KEYS.DASHBOARD}><StaffDashboardPage /></ModuleRoute>
-                    } />
-                    <Route path="request" element={<WalkInRequest />} />
-                    <Route path="request/student" element={<RequestForm showProfileStep />} />
-                    <Route path="request/alumni" element={<AlumniRequest showProfileStep />} />
-                    <Route path="analytics" element={
-                      <ModuleRoute module={MODULE_KEYS.ANALYTICS}><AnalyticsDashboard /></ModuleRoute>
-                    } />
-                    <Route path="logbook" element={
-                      <ModuleRoute module={MODULE_KEYS.LOGBOOK}><Logbook /></ModuleRoute>
-                    } />
-                    <Route path="profile" element={
-                      <ModuleRoute module={MODULE_KEYS.PROFILE}><ProfilePage userType="admin" /></ModuleRoute>
-                    } />
-                    <Route path="contact" element={<RegistrarContact />} />
-                    <Route path="inbox" element={
-                      <ModuleRoute module={MODULE_KEYS.INBOX}><InboxCenter /></ModuleRoute>
-                    } />
-                    <Route path="access-requests" element={
-                      <ModuleRoute module={MODULE_KEYS.ACCESS_REQUESTS}><RequestAccessPage /></ModuleRoute>
-                    } />
-                    <Route path="business-calendar" element={
-                      <ModuleRoute module={MODULE_KEYS.BUSINESS_CALENDAR}><BusinessCalendarManagement /></ModuleRoute>
-                    } />
-                    <Route path="cashier-overrides" element={
-                      <ModuleRoute module={MODULE_KEYS.CASHIER_OVERRIDES}><CashierOrOverrideManagement /></ModuleRoute>
-                    } />
-                    <Route path="cashier-reconciliation" element={
-                      <ModuleRoute module={MODULE_KEYS.CASHIER_RECONCILIATION}><CashierReconciliation /></ModuleRoute>
-                    } />
-                    <Route path="free-requests" element={
-                      <ModuleRoute module={MODULE_KEYS.FREE_REQUESTS}><FreeRequestPage /></ModuleRoute>
-                    } />
-                    <Route path="undergrad-requestors" element={
-                      <ModuleRoute module={MODULE_KEYS.UNDERGRAD_VERIFICATION}><UndergradRequestorVerificationPage /></ModuleRoute>
-                    } />
-                  </Route>
+                    {/* STUDENT (role: student & undergrad_requestor) */}
+                    <Route
+                      path="/student"
+                      element={
+                        <ProtectedRoute allowedRoles={[ROLES.STUDENT, ROLES.UNDERGRAD_REQUESTOR]}>
+                          <StudentPage />
+                        </ProtectedRoute>
+                      }
+                    >
+                      <Route index element={<Navigate to="/student/request" replace />} />
+                      <Route path="home" element={<StudentDashboard />} />
+                      <Route path="request" element={<RequestForm />} />
+                      <Route path="lists" element={<DocumentLists />} />
+                      <Route path="faqs" element={<FAQPage />} />
+                      <Route
+                        path="tickets"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingSystem />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="tickets/:ticketId"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingSystem />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route path="profile" element={<ProfilePage userType="student" />} />
+                      <Route path="contact" element={<RegistrarContact />} />
+                      <Route path="inbox" element={<InboxCenter />} />
+                    </Route>
 
-                  {/* SUPER ADMIN (role: super_admin) */}
-                  <Route
-                    path="/super-admin"
-                    element={
-                      <ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN]}>
-                        <SuperAdminPage />
-                      </ProtectedRoute>
-                    }
-                  >
-                    <Route index element={<Navigate to="/super-admin/user" replace />} />
-                    <Route path="contact" element={<RegistrarContact />} />
-                    <Route path="user" element={<UserManagementPage />} />
-                    <Route path="system-analytics" element={<SuperAdminAnalyticsDashboard />} />
-                    <Route path="documents" element={<DocumentAndCertificateManagement />} />
-                    <Route path="certificates" element={<Navigate to="../documents" replace />} />
-                    <Route path="report" element={<ReportManagement />} />
-                    <Route path="settings" element={<SystemSettings />} />
-                    <Route path="business-calendar" element={<BusinessCalendarManagement />} />
-                    <Route path="cashier-overrides" element={<CashierOrOverrideManagement />} />
-                    <Route path="cashier-reconciliation" element={<CashierReconciliation />} />
-                    <Route path="inbox" element={<InboxCenter />} />
-                    <Route path="profile" element={<ProfilePage userType="superAdmin" />} />
-                  </Route>
+                    {/* ALUMNI (role: alumni) */}
+                    <Route
+                      path="/alumni"
+                      element={
+                        <ProtectedRoute allowedRoles={[ROLES.ALUMNI]}>
+                          <AlumniPage />
+                        </ProtectedRoute>
+                      }
+                    >
+                      <Route index element={<Navigate to="/alumni/request" replace />} />
+                      <Route path="home" element={<StudentDashboard />} />
+                      <Route path="request" element={<AlumniRequest />} />
+                      <Route path="lists" element={<AlumniDocumentList />} />
+                      <Route path="faqs" element={<FAQPage />} />
+                      <Route
+                        path="tickets"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingSystem />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="tickets/:ticketId"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingSystem />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route path="profile" element={<ProfilePage userType="alumni" />} />
+                      <Route path="contact" element={<RegistrarContact />} />
+                      <Route path="inbox" element={<InboxCenter />} />
+                    </Route>
 
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </Suspense>
+                    {/* STAFF / ADMIN (role: admin) */}
+                    <Route
+                      path="/staff"
+                      element={
+                        <ProtectedRoute allowedRoles={[ROLES.ADMIN]}>
+                          <StaffPage />
+                        </ProtectedRoute>
+                      }
+                    >
+                      <Route index element={<StaffIndexRedirect />} />
+                      <Route path="dashboard" element={
+                        <ModuleRoute module={MODULE_KEYS.DASHBOARD}><StaffDashboardPage /></ModuleRoute>
+                      } />
+                      <Route path="request" element={<WalkInRequest />} />
+                      <Route path="request/student" element={<RequestForm showProfileStep />} />
+                      <Route path="request/alumni" element={<AlumniRequest showProfileStep />} />
+                      <Route path="analytics" element={
+                        <ModuleRoute module={MODULE_KEYS.ANALYTICS}><AnalyticsDashboard /></ModuleRoute>
+                      } />
+                      <Route path="logbook" element={
+                        <ModuleRoute module={MODULE_KEYS.LOGBOOK}><Logbook /></ModuleRoute>
+                      } />
+                      <Route path="profile" element={
+                        <ModuleRoute module={MODULE_KEYS.PROFILE}><ProfilePage userType="admin" /></ModuleRoute>
+                      } />
+                      <Route path="contact" element={<RegistrarContact />} />
+                      <Route path="inbox" element={
+                        <ModuleRoute module={MODULE_KEYS.INBOX}><InboxCenter /></ModuleRoute>
+                      } />
+                      <Route path="access-requests" element={
+                        <ModuleRoute module={MODULE_KEYS.ACCESS_REQUESTS}><RequestAccessPage /></ModuleRoute>
+                      } />
+                      <Route path="business-calendar" element={
+                        <ModuleRoute module={MODULE_KEYS.BUSINESS_CALENDAR}><BusinessCalendarManagement /></ModuleRoute>
+                      } />
+                      <Route path="cashier-overrides" element={
+                        <ModuleRoute module={MODULE_KEYS.CASHIER_OVERRIDES}><CashierOrOverrideManagement /></ModuleRoute>
+                      } />
+                      <Route path="cashier-reconciliation" element={
+                        <ModuleRoute module={MODULE_KEYS.CASHIER_RECONCILIATION}><CashierReconciliation /></ModuleRoute>
+                      } />
+                      <Route path="free-requests" element={
+                        <ModuleRoute module={MODULE_KEYS.FREE_REQUESTS}><FreeRequestPage /></ModuleRoute>
+                      } />
+                      <Route path="undergrad-requestors" element={
+                        <ModuleRoute module={MODULE_KEYS.UNDERGRAD_VERIFICATION}><UndergradRequestorVerificationPage /></ModuleRoute>
+                      } />
+                      <Route
+                        path="tickets"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingManagement />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="tickets/:ticketId"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingManagement />
+                          </ModuleRoute>
+                        }
+                      />
+                    </Route>
+
+                    {/* SUPER ADMIN (role: super_admin) */}
+                    <Route
+                      path="/super-admin"
+                      element={
+                        <ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN]}>
+                          <SuperAdminPage />
+                        </ProtectedRoute>
+                      }
+                    >
+                      <Route index element={<Navigate to="/super-admin/user" replace />} />
+                      <Route path="contact" element={<RegistrarContact />} />
+                      <Route path="user" element={<UserManagementPage />} />
+                      <Route path="system-analytics" element={<SuperAdminAnalyticsDashboard />} />
+                      <Route path="documents" element={<DocumentAndCertificateManagement />} />
+                      <Route path="certificates" element={<Navigate to="../documents" replace />} />
+                      <Route path="report" element={<ReportManagement />} />
+                      <Route path="settings" element={<SystemSettings />} />
+                      <Route path="business-calendar" element={<BusinessCalendarManagement />} />
+                      <Route path="cashier-overrides" element={<CashierOrOverrideManagement />} />
+                      <Route path="representatives" element={<RepresentativeVerificationQueue />} />
+                      <Route path="cashier-reconciliation" element={<CashierReconciliation />} />
+                      <Route
+                        path="tickets"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingManagement />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="tickets/:ticketId"
+                        element={
+                          <ModuleRoute module={MODULE_KEYS.TICKETS}>
+                            <TicketingManagement />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route path="inbox" element={<InboxCenter />} />
+                      <Route path="profile" element={<ProfilePage userType="superAdmin" />} />
+                    </Route>
+
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </Suspense>
               </ErrorBoundary>
 
               {/* Global toast stack — rendered outside Routes so it persists across navigation */}

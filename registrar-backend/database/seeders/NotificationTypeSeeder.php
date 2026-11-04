@@ -35,10 +35,11 @@ class NotificationTypeSeeder extends Seeder
             ],
             [
                 'trigger_event'    => 'reminder_final_warning',
-                'title'            => 'Documents Shredded — Request Forfeited',
-                'message_template' => "Your unclaimed documents for request #:request_id have been shredded "
-                                    . "after 90 days per Registrar policy. "
-                                    . "Please submit a new request if you still need these documents.",
+                'title'            => 'Final Notice: Forfeiture Tomorrow',
+                'message_template' => 'Final Notice: Your :document_noun :document_name will be forfeited '
+                                    . 'and shredded tomorrow per the 90-day unclaimed policy.',
+                'send_push'        => true,
+                'send_email'       => true,
                 'audience'         => 'student_alumni',
                 'is_active'        => true,
             ],
@@ -54,6 +55,6 @@ class NotificationTypeSeeder extends Seeder
             );
         }
 
-        $this->command->info('NotificationTypeSeeder: reminder_claim and reminder_final_warning seeded.');
+        $this->command->info('NotificationTypeSeeder: reminder_claim and the Day 89 reminder_final_warning seeded.');
     }
 }

@@ -179,6 +179,26 @@ class AuditLog extends Model
     public const ACTION_ACCESS_REQUEST_REJECTED  = 'access_request_rejected';
     public const ACTION_ACCESS_REQUEST_EXPIRED   = 'access_request_expired';
 
+    // Staff flagged an existing request's Official Receipt as mismatched or
+    // altered (see ReceiptFlagService). Notifies Super Admin; changes no status.
+    public const ACTION_RECEIPT_FLAGGED = 'receipt_flagged';
+
+    // Deceased / permanently incapacitated requestor (Notification Policy §3.6).
+    // Metadata never carries the representative's name or email: those stay
+    // encrypted on request_representatives. target_user_id is the requestor.
+    public const ACTION_REQUESTOR_FLAGGED              = 'requestor_flagged';
+    public const ACTION_REQUESTOR_FLAG_LIFTED          = 'requestor_flag_lifted';
+    public const ACTION_REPRESENTATIVE_ADDED           = 'representative_added';
+    public const ACTION_REPRESENTATIVE_VERIFIED        = 'representative_verified';
+    public const ACTION_REPRESENTATIVE_REVOKED         = 'representative_revoked';
+    public const ACTION_REPRESENTATIVE_PROOF_VIEWED    = 'representative_proof_viewed';
+    // The closure email had nobody to go to: the requestor's own address is
+    // suppressed and no verified representative exists. In-app is the record.
+    public const ACTION_CLOSURE_NOTICE_SENT_ON_FILE    = 'closure_notice_sent_on_file';
+    // A representative was verified after the closure notice was filed
+    // "sent-on-file", so that notice was released to the representative.
+    public const ACTION_CLOSURE_NOTICE_RESENT          = 'closure_notice_resent_to_representative';
+
     // Cashier OR verification attempts (see NameMatcher, DocumentRequestController::store)
     // Logged for every attempt regardless of outcome — not just failures —
     // via the existing tamper-evident audit_log table rather than a new
@@ -324,6 +344,16 @@ class AuditLog extends Model
     // shares the same hash chain as every interactive write, so a
     // retention action is exactly as tamper-evident as a decision.
     public const ACTION_UNDERGRAD_REQUESTOR_PII_PURGED      = 'undergrad_requestor_pii_purged';
+
+    // Support Ticketing — Phase 8. Staff actions with module permission
+    // tickets/Manage. Metadata never carries a requester's personal data: a
+    // blocked email or IP is recorded as a short hash prefix only.
+    public const ACTION_TICKET_CATEGORY_CREATED = 'ticket_category_created';
+    public const ACTION_TICKET_CATEGORY_UPDATED = 'ticket_category_updated';
+    public const ACTION_TICKET_BLOCK_ADDED      = 'ticket_block_added';
+    public const ACTION_TICKET_BLOCK_REMOVED    = 'ticket_block_removed';
+    public const ACTION_TICKET_SPAM_FLAGGED     = 'ticket_spam_flagged';
+    public const ACTION_TICKET_LOG_EXPORTED     = 'ticket_log_exported';
 
     // -------------------------------------------------------
     // Relationship back to the acting user (nullable — may be deleted)

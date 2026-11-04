@@ -77,19 +77,14 @@ class LocalAuthController extends Controller
             'email'   => $user->email,
         ]);
 
-        // Break-glass logins should be rare and always verified. This is
-        // meant to reach the people who can actually act on it — the
-        // Super Admins who own break-glass accounts (see
-        // SetLocalPasswordRequest, which now restricts local auth to
-        // that role). NotificationService::sendToAdmins() intentionally
-        // targets ONLY role_id = Admin (see its docblock) and would
-        // silently never reach a Super Admin, so we target Admin +
-        // Super Admin explicitly here via sendToAllExcept() instead —
-        // excluding only the roles (student/alumni) that can never be
-        // break-glass accounts and have no reason to see this alert.
-        $this->notificationService->sendToAllExcept(
-            excludedRoleIds: [SystemUser::ROLE_STUDENT, SystemUser::ROLE_ALUMNI],
-            triggerEvent:    'local_auth_login_used',
+        // Break-glass logins should be rare and always verified. The alert
+        // discloses an account email and a source IP, so it goes only to the
+        // roles named in config('notification_matrix.alert_audience_role_ids')
+        // (Super Admin, per Policy v1.2.0). It is an allow-list: a role added
+        // to the system later never receives it by default.
+        $this->notificationService->sendToRoles(
+            roleIds:      (array) config('notification_matrix.alert_audience_role_ids.local_auth_login_used', [SystemUser::ROLE_SUPER_ADMIN]),
+            triggerEvent: 'local_auth_login_used',
             data: [
                 'user_id' => $user->user_id,
                 'email'   => $user->email,

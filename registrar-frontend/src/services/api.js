@@ -30,6 +30,25 @@ api.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem("user");
     }
+
+    // On 429 (a rate limit tripped) surface how long to wait, so a form can
+    // say "try again in 40 seconds" and disable its submit button until then.
+    // The value is in SECONDS. It comes from the Retry-After response header
+    // (which the backend exposes through CORS), falling back to the same
+    // number in the JSON body. null means the server did not say.
+    //   err.rateLimited         true
+    //   err.retryAfterSeconds   number | null
+    if (err.response?.status === 429) {
+      const fromHeader = Number.parseInt(err.response.headers?.["retry-after"], 10);
+      const fromBody = Number.parseInt(err.response.data?.retry_after, 10);
+      err.rateLimited = true;
+      err.retryAfterSeconds = Number.isFinite(fromHeader)
+        ? fromHeader
+        : Number.isFinite(fromBody)
+          ? fromBody
+          : null;
+    }
+
     return Promise.reject(err);
   }
 );
@@ -1168,4 +1187,336 @@ export const approveUndergradRequestor = (userId) =>
 export const rejectUndergradRequestor = (userId, reason) =>
   api.post(`/admin/undergrad-requestors/${userId}/reject`, { rejection_reason: reason });
 
+// -------------------------------------------------------
+// SUPPORT TICKETS
+// -------------------------------------------------------
+// Everything here answers 404 until the backend flag FEATURE_TICKETS is on
+// (the SPA can read it from the feature flags it is sent: `tickets`).
+//
+// A ticket is addressed by its `id`, a 26-character lowercase public id —
+// never the numeric id, and never the ticket number (TKT-2026-00001), which
+// is for display and search only.
+//
+// Errors the UI should handle (all JSON, with a stable `code`):
+//   409  the ticket's current state does not allow it. err.response.data.code:
+//          already_claimed        lost the claim race; data.claimed_by.name says who has it
+//          not_claimed            released a ticket nobody holds
+//          invalid_transition     e.g. confirming a ticket that is not Resolved
+//          action_not_allowed     e.g. replying to a Closed ticket
+//          return_limit_reached   "this isn't resolved" used up; data.limit
+//   403  not allowed to do this to this ticket (staff).
+//   404  not found — for a requester this ALSO means "not your ticket".
+//   422  validation; field errors under err.response.data.errors.
+//   429  rate limited; see err.retryAfterSeconds (interceptor above).
+// Every action that changes a ticket responds with the whole updated ticket
+// (`res.data.data`), so there is no need to refetch afterwards.
+
+// GET /tickets/categories
+// Throttle: group default (60/min). Module: none (any signed-in account).
+// The active categories for the new-ticket form: [{ code, name, description, priority }].
+export const getTicketCategories = () => api.get("/tickets/categories");
+
+// --- Requester (Student, Alumni, Undergrad Requestor) ----------------------
+
+// POST /tickets
+// Throttle: tickets-create (3 per 10 minutes per user; config/tickets.php).
+// Module: none (requester roles only).
+// data: { category_code: "CAT-01", subject, description }. Priority comes
+// from the category and cannot be sent. Returns 201 with the new ticket.
+export const createTicket = (data) => api.post("/tickets", data);
+
+// GET /tickets
+// Throttle: group default (60/min). Module: none (requester roles only).
+// The caller's own tickets, most recent activity first. Cursor paginated:
+//   params: { status?, per_page? (max 50), cursor? }
+// Response: { data: [...], links: { next, prev }, meta: { next_cursor, ... } }.
+// To load more, pass links.next's `cursor` back as params.cursor (or request
+// links.next directly). Rows are summaries: no messages.
+export const getMyTickets = (params = {}) => api.get("/tickets", { params });
+
+// GET /tickets/{id}
+// Throttle: group default (60/min). Module: none (owner only; 404 otherwise).
+// One ticket with its conversation and what the requester can do next:
+// data.actions = { can_reply, can_confirm, can_return }.
+export const getTicket = (id) => api.get(`/tickets/${id}`);
+
+// POST /tickets/{id}/replies
+// Throttle: tickets-reply (10 per ticket per hour; config/tickets.php).
+// Module: none (owner only). Returns 201 with the updated ticket.
+// A reply to a Pending Client ticket moves it back to In Progress; a reply
+// during the Resolved window counts as "this isn't resolved".
+export const replyToTicket = (id, body) => api.post(`/tickets/${id}/replies`, { body });
+
+// POST /tickets/{id}/confirm
+// Throttle: group default (60/min). Module: none (owner only).
+// Confirms the resolution: Resolved -> Closed (final). 409 unless Resolved.
+export const confirmTicketResolution = (id) => api.post(`/tickets/${id}/confirm`);
+
+// POST /tickets/{id}/return
+// Throttle: group default (60/min). Module: none (owner only).
+// "This isn't resolved": Resolved -> In Progress, limited per ticket
+// (data.returns_remaining says how many are left). `reason` is optional and
+// is added to the conversation. 409 return_limit_reached once used up.
+export const returnTicket = (id, reason = null) =>
+  api.post(`/tickets/${id}/return`, reason ? { reason } : {});
+
+// --- Public (no account) ----------------------------------------------------
+// For people without a login. None of these send credentials that matter; they
+// are throttled per IP and each layer of the spam controls can answer 422/429:
+//   422  the form was sent too fast / the form token is stale (field `form_token`),
+//        the CAPTCHA failed (field `captcha_token`), or a field is invalid.
+//   429  a rate limit tripped; use err.retryAfterSeconds.
+//   409  code open_tickets_limit: the address already has the maximum open tickets.
+//
+// The journey:
+//   1. getPublicTicketForm()            -> categories, form_token, CAPTCHA setup
+//   2. startPublicTicket(form)          -> 202; a confirmation email is sent. NO ticket yet.
+//   3. the person clicks the emailed link, which opens a page of yours at
+//        <FRONTEND_URL>/support/confirm#token=...
+//      Read the token from window.location.hash (it is in the fragment so it
+//      never reaches a server log), then call
+//   4. confirmPublicTicketEmail(token)  -> 201: the ticket, plus `tracking_token`
+//   5. follow the ticket with that tracking token (also emailed as a link to
+//        <FRONTEND_URL>/support/ticket#token=...).
+// Show the confirm step as a BUTTON the person presses, not an automatic call on
+// page load: some mail scanners open links, and the confirmation link is single-use.
+// After reading a token from the fragment, strip it with
+// history.replaceState(null, "", location.pathname) so it is not left in history.
+//
+// The tracking token is the person's whole credential for that ticket. Keep it in
+// memory or sessionStorage, send it only in the X-Ticket-Token header (these
+// helpers do that), and never put it in a URL or a log line. 404 code
+// `invalid_ticket_link` means it is unknown, expired (a ticket stays reachable
+// until about 7 days after it closes) or wrong: offer resendPublicTicketLink().
+
+const ticketTokenHeaders = (token) => ({ headers: { "X-Ticket-Token": token } });
+
+// GET /public/tickets/form
+// Throttle: tickets-public-form (30/min per IP). Module: none.
+// Returns data = { form_token, honeypot_field, captcha: { enabled, site_key },
+//   categories: [...], limits: { subject_max_length, description_min_length,
+//   message_max_length, max_links_per_message } }.
+// form_token starts the minimum-fill-time clock: fetch it when the form is
+// shown, not earlier. Render the honeypot field (its name is data.honeypot_field)
+// as an input real people never see or fill: visually hidden with CSS,
+// tabindex=-1, autocomplete="off", aria-hidden. Do not use type="hidden".
+export const getPublicTicketForm = () => api.get("/public/tickets/form");
+
+// POST /public/tickets/start
+// Throttle: tickets-public-start (5/min and 10/hour per IP) plus 3 emails per
+// address per hour. Module: none.
+// form: { name, email, category_code, subject, description, form_token,
+//   captcha_token, [honeypot_field]: "" }. Always 202 with the same message once
+// accepted (it deliberately does not say whether anything was sent).
+export const startPublicTicket = (form) => api.post("/public/tickets/start", form);
+
+// POST /public/tickets/confirm-email
+// Throttle: tickets-public-confirm (10/min per IP). Module: none.
+// token: the value after #token= in the emailed link. 201 with the ticket in
+// `data` and the magic-link token in `tracking_token`. A used, expired or wrong
+// link is a 422 on field `token`.
+export const confirmPublicTicketEmail = (token) => api.post("/public/tickets/confirm-email", { token });
+
+// GET /public/tickets/track
+// Throttle: tickets-public-track (60/min per IP). Module: none (the token is the credential).
+// The ticket and its conversation, as a requester sees it (staff are never named):
+// data.actions = { can_reply, can_confirm, can_return }.
+export const getPublicTicket = (token) => api.get("/public/tickets/track", ticketTokenHeaders(token));
+
+// POST /public/tickets/track/replies
+// Throttle: tickets-public-reply (10 per ticket per hour) plus the tracking limit.
+// Module: none. At most 2 links per message. Returns 201 with the updated ticket.
+export const replyPublicTicket = (token, body) =>
+  api.post("/public/tickets/track/replies", { body }, ticketTokenHeaders(token));
+
+// POST /public/tickets/track/confirm
+// Throttle: tickets-public-track (60/min per IP). Module: none.
+// Confirms the resolution: Resolved -> Closed (final).
+export const confirmPublicTicketResolution = (token) =>
+  api.post("/public/tickets/track/confirm", {}, ticketTokenHeaders(token));
+
+// POST /public/tickets/track/return
+// Throttle: tickets-public-track (60/min per IP). Module: none.
+// "This isn't resolved", limited per ticket (409 return_limit_reached).
+export const returnPublicTicket = (token, reason = null) =>
+  api.post("/public/tickets/track/return", reason ? { reason } : {}, ticketTokenHeaders(token));
+
+// POST /public/tickets/resend-link
+// Throttle: tickets-public-resend (10/hour per IP, 3/hour per address).
+// Module: none. Always 202 with the same message whether or not the email and
+// ticket number matched anything: show that message as is, and do not try to
+// tell the person whether it worked.
+export const resendPublicTicketLink = (email, ticketNumber) =>
+  api.post("/public/tickets/resend-link", { email, ticket_number: ticketNumber });
+
+// --- Staff (under /admin/tickets) -------------------------------------------
+// Module: 'tickets' (Policy Management) — View for everything below, plus the
+// action noted on each call. Super Admin holds every action.
+
+// GET /admin/tickets
+// Throttle: group default (60/min). Module: tickets,View.
+// The shared queue, most urgent first and oldest first within a priority.
+// Cursor paginated (same shape as getMyTickets).
+//   params: {
+//     scope?:    "unclaimed" (default) | "mine" | "all",
+//     status?:   "open" | "in_progress" | "pending_client" | "resolved" | "closed"
+//                (omit for the three active statuses),
+//     priority?: "high" | "medium" | "low",
+//     category?: "CAT-01" ... "CAT-05",
+//     sla?:      "at_risk" | "breached" (tickets the SLA sweep has flagged),
+//     q?:        ticket number prefix ("TKT-2026-0012") or words from the subject,
+//     per_page?: max 50, cursor?
+//   }
+export const getTicketQueue = (params = {}) => api.get("/admin/tickets", { params });
+
+// GET /admin/tickets/{id}
+// Throttle: group default (60/min). Module: tickets,View.
+// One ticket with its conversation, activity log and
+// data.actions = { can_claim, can_release, can_reply, can_resolve }.
+export const getStaffTicket = (id) => api.get(`/admin/tickets/${id}`);
+
+// POST /admin/tickets/{id}/claim
+// Throttle: group default (60/min). Module: tickets,Claim.
+// Takes the ticket from the queue (Open -> In Progress). Two people clicking
+// at once: exactly one wins; the other gets 409 already_claimed with
+// data.claimed_by = { id, name }.
+export const claimTicket = (id) => api.post(`/admin/tickets/${id}/claim`);
+
+// POST /admin/tickets/{id}/release
+// Throttle: group default (60/min). Module: tickets,Claim (the claimer) or
+// tickets,Manage (anyone's). Puts the ticket back in the queue; status is
+// unchanged.
+export const releaseTicket = (id) => api.post(`/admin/tickets/${id}/release`);
+
+// POST /admin/tickets/{id}/replies
+// Throttle: group default (60/min). Module: tickets,Reply.
+// Replying to an unclaimed ticket claims it for you first. Pass
+// awaitRequester = true when the reply asks a question, which sets
+// Pending Client. Returns 201 with the updated ticket.
+export const replyAsStaff = (id, body, awaitRequester = false) =>
+  api.post(`/admin/tickets/${id}/replies`, { body, await_requester: awaitRequester });
+
+// POST /admin/tickets/{id}/resolve
+// Throttle: group default (60/min). Module: tickets,Resolve.
+// `resolutionNote` is required (minimum 10 characters) and is what the
+// requester reads. The ticket auto-closes 3 calendar days later unless the
+// requester confirms sooner or sends it back.
+export const resolveTicket = (id, resolutionNote) =>
+  api.post(`/admin/tickets/${id}/resolve`, { resolution_note: resolutionNote });
+
+// ── Support Ticketing — management (Phase 8) ───────────────────────────────
+// All of these need the tickets Manage permission (on top of View) and answer
+// 404 while FEATURE_TICKETS is off.
+
+// GET /admin/tickets/categories
+// Throttle: group default (60/min). Module: tickets,Manage.
+// Every category, inactive included: [{ id, code, name, description,
+// priority, is_active, sort_order, tickets_count }]. (Requesters use
+// GET /tickets/categories, active ones only.)
+export const getTicketCategoriesAdmin = () => api.get("/admin/tickets/categories");
+
+// POST /admin/tickets/categories
+// Throttle: group default (60/min). Module: tickets,Manage.
+// { code: "CAT-06" (fixed for life), name, description?, priority:
+//   "high"|"medium"|"low", is_active?, sort_order? }. 201 with the category.
+export const createTicketCategory = (payload) => api.post("/admin/tickets/categories", payload);
+
+// PATCH /admin/tickets/categories/{id}
+// Throttle: group default (60/min). Module: tickets,Manage.
+// Any of name, description, priority, is_active, sort_order. The code cannot
+// change. A new priority applies to tickets filed AFTER the change. The last
+// active category cannot be deactivated (422 on is_active).
+export const updateTicketCategory = (id, payload) => api.patch(`/admin/tickets/categories/${id}`, payload);
+
+// GET /admin/tickets/blocks
+// Throttle: group default (60/min). Module: tickets,Manage.
+// params: { type?: "email"|"ip", state?: "active"(default)|"expired"|"all",
+//           per_page?, cursor? }. Cursor-paginated, newest first.
+export const getTicketBlocks = (params = {}) => api.get("/admin/tickets/blocks", { params });
+
+// POST /admin/tickets/blocks
+// Throttle: group default (60/min). Module: tickets,Manage.
+// { type: "email"|"ip", value, reason?, expires_at? (ISO, future; omit = until
+//   lifted) }. 201 when new; 200 when the value was already listed (renewed).
+export const createTicketBlock = (payload) => api.post("/admin/tickets/blocks", payload);
+
+// DELETE /admin/tickets/blocks/{id}
+// Throttle: group default (60/min). Module: tickets,Manage.
+export const deleteTicketBlock = (id) => api.delete(`/admin/tickets/blocks/${id}`);
+
+// POST /admin/tickets/{id}/spam
+// Throttle: group default (60/min). Module: tickets,Manage (plus View).
+// Logs a spam flag on the ticket; the status does not change, so resolve it
+// as usual afterwards. { block_email?, block_ip?, reason?, block_expires_at? }.
+// Blocking is only possible for a public submitter whose details are still on
+// file (422 on `block` otherwise). Returns the full staff ticket.
+export const flagTicketSpam = (id, payload = {}) => api.post(`/admin/tickets/${id}/spam`, payload);
+
+// GET /admin/tickets/summary
+// Throttle: 30/min. Module: tickets,Manage.
+// params: { from?, to? } as YYYY-MM-DD Manila dates, both included; default
+// the last 30 days, at most 366 days. Returns { data: { range, volume:
+// { created, by_category, by_priority, by_status, per_day, returned, closed },
+// sla: { first_response, resolution } each { tracked, met, breached, pending,
+// at_risk_flagged, compliance_pct }, queue_now } }.
+export const getTicketSummary = (params = {}) => api.get("/admin/tickets/summary", { params });
+
+// GET /admin/tickets/export
+// Throttle: 6/min. Module: tickets,Manage.
+// params: { from?, to? } as above. Downloads the ticket event log as CSV
+// (resolves to a Blob; save it with the file name from Content-Disposition).
+// Every export is written to the audit log first. 422 on `to` when the range
+// holds more events than the server will export: pick a shorter range.
+export const exportTicketLog = (params = {}) =>
+  api.get("/admin/tickets/export", { params, responseType: "blob" });
+
 export default api;
+
+// -------------------------------------------------------
+// NOTIFICATION POLICY §3.6 — DECEASED / INCAPACITATED REQUESTOR
+// -------------------------------------------------------
+// Staff (Admin with dashboard "Process", or Super Admin):
+//   getRequestRepresentative(ref)         -> { data: representative|null, requestor_flag: {status, flagged_at}|null }
+//   addRequestRepresentative(ref, body)   -> 201 representative (body is FormData: full_name, email,
+//                                            relationship + three proof files; see representativeHelpers.js)
+//   flagRequestor(userId, status, note)   -> mark a requestor deceased / incapacitated
+// Super Admin only:
+//   liftRequestorFlag, listRepresentatives, verifyRepresentative,
+//   revokeRepresentative, downloadRepresentativeProof
+// `ref` is the request's public_id (see utils/requestRef.js).
+export const getRequestRepresentative = (requestRef) =>
+  api.get(`/document-requests/${requestRef}/representative`);
+
+export const addRequestRepresentative = (requestRef, formData) =>
+  api.post(`/document-requests/${requestRef}/representative`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+export const flagRequestor = (userId, status, note) =>
+  api.post(`/requestors/${userId}/status-flag`, { status, note: note || undefined });
+
+export const liftRequestorFlag = (userId, reason) =>
+  api.delete(`/requestors/${userId}/status-flag`, { data: { reason } });
+
+export const listRepresentatives = (status = "pending", page = 1) =>
+  api.get("/representatives", { params: { status, page } });
+
+export const verifyRepresentative = (id) => api.post(`/representatives/${id}/verify`);
+
+export const revokeRepresentative = (id, reason) =>
+  api.post(`/representatives/${id}/revoke`, { reason });
+
+// The proof is decrypted server-side and streamed back as an attachment;
+// every view is audited. Never cache it or put it in a URL the browser keeps.
+export const downloadRepresentativeProof = (id, kind) =>
+  api.get(`/representatives/${id}/proofs/${kind}`, { responseType: "blob" });
+
+// -------------------------------------------------------
+// NOTIFICATION POLICY §3.4 — MISMATCHED / ALTERED RECEIPT
+// -------------------------------------------------------
+// Staff raise it on an existing request; Super Admin is alerted with the
+// request number only. Does not change the request's status.
+// Returns { flagged: true, notified: boolean } — notified is false when an
+// alert for this request already went out in the last 24 hours.
+export const flagReceipt = (requestRef, reason) =>
+  api.post(`/document-requests/${requestRef}/flag-receipt`, { reason });
