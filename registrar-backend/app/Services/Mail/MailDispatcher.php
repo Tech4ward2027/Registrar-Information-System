@@ -4,10 +4,13 @@ namespace App\Services\Mail;
 
 use App\Jobs\SendLifecycleMailJob;
 use App\Mail\RequestLifecycleMail;
+use App\Models\AuditLog;
 use App\Models\Notification;
 use App\Models\NotificationDispatchLog;
 use App\Models\NotificationType;
 use App\Models\SystemUser;
+use App\Models\DocumentRequest;
+use App\Services\AuditLogger;
 use App\Services\NotificationDispatchLogger;
 use App\Services\RequestDocumentNames;
 use Illuminate\Mail\Mailable;
@@ -34,6 +37,8 @@ class MailDispatcher
     public function __construct(
         private readonly NotificationDispatchLogger $log,
         private readonly MailQuotaService $quota,
+        private readonly RepresentativeMailRouter $router,
+        private readonly AuditLogger $audit,
     ) {}
 
     // ------------------------------------------------------------------
@@ -127,16 +132,42 @@ class MailDispatcher
             return;
         }
 
-        $recipient = SystemUser::where('user_id', $notification->notifiable_id)
-            ->where('status', 'Activated')
-            ->first();
+        // Not filtered on status: a deceased requestor's account is usually
+        // deactivated, and the §3.6 representative route must still work.
+        $recipient = SystemUser::where('user_id', $notification->notifiable_id)->first();
         if (! $recipient) {
             $this->skip(NotificationDispatchLog::REASON_RECIPIENT_INACTIVE, $context);
 
             return;
         }
 
-        $address = $this->resolveAddress($recipient, $notification);
+        // Policy §3.6: deceased or incapacitated requestor.
+        $route = $this->router->route($recipient, $notification, $trigger);
+
+        if ($route->kind === MailRoute::SUPPRESSED) {
+            $this->skip(NotificationDispatchLog::REASON_REQUESTOR_FLAGGED, $context);
+
+            return;
+        }
+
+        if ($route->kind === MailRoute::SENT_ON_FILE) {
+            $this->recordSentOnFile($notification, $recipient, $context);
+
+            return;
+        }
+
+        if ($route->kind === MailRoute::REPRESENTATIVE) {
+            $address = filter_var($route->address, FILTER_VALIDATE_EMAIL) ? $route->address : null;
+        } else {
+            if ($recipient->status !== 'Activated') {
+                $this->skip(NotificationDispatchLog::REASON_RECIPIENT_INACTIVE, $context);
+
+                return;
+            }
+
+            $address = $this->resolveAddress($recipient, $notification);
+        }
+
         if ($address === null) {
             $this->skip(NotificationDispatchLog::REASON_NO_EMAIL_ADDRESS, $context);
 
@@ -158,7 +189,7 @@ class MailDispatcher
         }
 
         try {
-            Mail::to($address)->send($this->buildMailable($notification, $trigger));
+            Mail::to($address)->send($this->buildMailable($notification, $trigger, $route));
         } catch (Throwable $e) {
             $this->log->record(NotificationDispatchLog::CHANNEL_MAIL, NotificationDispatchLog::STATUS_FAILED, $context + [
                 'reason'    => NotificationDispatchLog::REASON_EXCEPTION,
@@ -170,6 +201,7 @@ class MailDispatcher
         }
 
         $this->log->record(NotificationDispatchLog::CHANNEL_MAIL, NotificationDispatchLog::STATUS_SENT, $context + [
+            'reason'    => $route->kind === MailRoute::REPRESENTATIVE ? NotificationDispatchLog::REASON_VIA_REPRESENTATIVE : null,
             'attempted' => 1,
             'delivered' => 1,
         ]);
@@ -237,10 +269,9 @@ class MailDispatcher
     // ------------------------------------------------------------------
 
     /**
-     * Where a lifecycle email goes. Today: the requestor's own address.
-     * Phase 6 (deceased or incapacitated requestor, Policy Section 3.6)
-     * replaces this with representative routing and suppresses the personal
-     * address; it is a separate method so that change touches one place.
+     * The requestor's own address, for the normal case. Representative and
+     * suppression decisions (Policy Section 3.6) are made before this by
+     * RepresentativeMailRouter.
      */
     private function resolveAddress(SystemUser $recipient, Notification $notification): ?string
     {
@@ -249,7 +280,41 @@ class MailDispatcher
         return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : null;
     }
 
-    private function buildMailable(Notification $notification, string $trigger): RequestLifecycleMail
+    /**
+     * Policy §3.6: the closure notice has no verified representative to go to.
+     * The requestor's own address stays suppressed and the in-app notice is
+     * the record. The audit entry is written once per notification even if the
+     * job runs again.
+     *
+     * @param array<string,mixed> $context
+     */
+    private function recordSentOnFile(Notification $notification, SystemUser $recipient, array $context): void
+    {
+        $already = NotificationDispatchLog::where('channel', NotificationDispatchLog::CHANNEL_MAIL)
+            ->where('reason', NotificationDispatchLog::REASON_SENT_ON_FILE)
+            ->where('notification_id', $notification->id)
+            ->exists();
+        if ($already) {
+            return;
+        }
+
+        // The actor is whoever closed the request; the requestor is never
+        // recorded as the actor of their own closure.
+        $closedBy = DocumentRequest::withArchived()->whereKey($notification->request_id)->value('closed_by');
+        $actor    = ($closedBy ? SystemUser::find($closedBy) : null) ?? $recipient;
+
+        // Audit first: if it throws, the queue retries and the skip row below
+        // (which marks the notice as handled) is not yet written.
+        $this->audit->logForSystem($actor, AuditLog::ACTION_CLOSURE_NOTICE_SENT_ON_FILE, [
+            'request_id'     => $notification->request_id,
+            'target_user_id' => $recipient->user_id,
+            'reason'         => 'no_verified_representative',
+        ]);
+
+        $this->skip(NotificationDispatchLog::REASON_SENT_ON_FILE, $context);
+    }
+
+    private function buildMailable(Notification $notification, string $trigger, MailRoute $route): RequestLifecycleMail
     {
         $data = (array) ($notification->data ?? []);
 
@@ -268,6 +333,7 @@ class MailDispatcher
             plural:       $plural,
             itemLabel:    isset($data['item_label']) ? (string) $data['item_label'] : null,
             reason:       $data['withdrawal_reason'] ?? $data['closure_reason'] ?? null,
+            studentName:  $route->kind === MailRoute::REPRESENTATIVE ? $route->studentName : null,
         );
     }
 

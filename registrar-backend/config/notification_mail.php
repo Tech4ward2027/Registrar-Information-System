@@ -54,4 +54,24 @@ return [
     */
     'duplicate_window_minutes' => (int) env('MAIL_DUPLICATE_WINDOW_MINUTES', 15),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Deceased / incapacitated requestor (Notification Policy §3.6)
+    |--------------------------------------------------------------------------
+    | proof_disk                 Filesystem disk for encrypted proof documents.
+    |                            Must be a private disk; a disk named "public"
+    |                            is refused. Use "s3" (private bucket) in
+    |                            multi-server deployments.
+    | max_proof_kb               Per-file size cap for each of the three proofs.
+    | require_distinct_verifier  true = the Super Admin who verifies a
+    |                            representative must differ from the staff
+    |                            member who added it (four-eyes control). Set
+    |                            false only if there is a single Super Admin.
+    */
+    'representative' => [
+        'proof_disk'                => env('REPRESENTATIVE_PROOF_DISK', 'local'),
+        'max_proof_kb'              => (int) env('REPRESENTATIVE_PROOF_MAX_KB', 5120),
+        'require_distinct_verifier' => (bool) env('REPRESENTATIVE_REQUIRE_DISTINCT_VERIFIER', true),
+    ],
+
 ];

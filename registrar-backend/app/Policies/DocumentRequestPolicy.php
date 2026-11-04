@@ -177,6 +177,15 @@ class DocumentRequestPolicy
         return $user->isStaff() && $user->hasModuleAccess('dashboard', 'Process');
     }
 
+    // Notification Policy §3.6: staff record the representative of a
+    // deceased or incapacitated requestor against a request, and may view
+    // it (email masked). Verifying, revoking and reading proofs are Super
+    // Admin only and live in RequestRepresentativePolicy.
+    public function manageRepresentative(SystemUser $user, DocumentRequest $request): bool
+    {
+        return $user->isStaff() && $user->hasModuleAccess('dashboard', 'Process');
+    }
+
     // -------------------------------------------------------
     // Close a request as "Closed — Unable to Process" (Data Retention &
     // Disposal Policy §3.4). Same coarse tier as withdraw()/

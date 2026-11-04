@@ -16,6 +16,8 @@ use App\Http\Controllers\ItemTerminationController;
 use App\Http\Controllers\RequestItemListController;
 use App\Http\Controllers\DeficiencyNoticeController;
 use App\Http\Controllers\ReceiptFlagController;
+use App\Http\Controllers\RequestRepresentativeController;
+use App\Http\Controllers\RequestorStatusFlagController;
 use App\Http\Controllers\RequestDocumentController;
 use App\Http\Controllers\RequestHistoryController;
 use App\Http\Controllers\AuthController;
@@ -369,6 +371,15 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         // DocumentRequestPolicy::flagReceipt(), checked in the form request.
         Route::post('{documentRequest}/flag-receipt', [ReceiptFlagController::class, 'store'])
             ->middleware(['role:3', 'module:dashboard,Process', 'throttle:20,1']);
+        // Notification Policy §3.6: staff record / view the representative of
+        // a deceased or incapacitated requestor. Authorization is
+        // DocumentRequestPolicy::manageRepresentative(), checked in the
+        // controller and form request. Verification is Super Admin only
+        // (see the 'representatives' group below).
+        Route::get('{documentRequest}/representative', [RequestRepresentativeController::class, 'show'])
+            ->middleware(['role:3', 'module:dashboard,Process']);
+        Route::post('{documentRequest}/representative', [RequestRepresentativeController::class, 'store'])
+            ->middleware(['role:3', 'module:dashboard,Process', 'throttle:10,1,representative-store']);
         // Item-level status — see RequestItemStatusService and
         // DocumentRequestController::updateDocumentItemStatus()/
         // updateCertificateItemStatus(). Same coarse role/module gate as
@@ -739,8 +750,29 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
         Route::delete('signatories/{id}',   [SignatoryController::class, 'destroy']);
     });
 
+    // Notification Policy §3.6 — flag a requestor as deceased / incapacitated.
+    // Staff (Admin with dashboard 'Process', or Super Admin). Authorization is
+    // RequestRepresentativePolicy::flag(), checked in FlagRequestorRequest.
+    Route::post('requestors/{user}/status-flag', [RequestorStatusFlagController::class, 'store'])
+        ->middleware(['role:3', 'module:dashboard,Process', 'throttle:20,1,requestor-flag']);
+
     // Superadmin only (role 4)
     Route::middleware('role:4')->group(function () {
+        // Notification Policy §3.6 — Super Admin controls over whose inbox
+        // receives a deceased/incapacitated requestor's closure notice.
+        // Authorization is RequestRepresentativePolicy.
+        Route::delete('requestors/{user}/status-flag', [RequestorStatusFlagController::class, 'destroy'])
+            ->middleware('throttle:20,1,requestor-flag-lift');
+        Route::prefix('representatives')->group(function () {
+            Route::get('/',                                [RequestRepresentativeController::class, 'index']);
+            Route::post('{representative}/verify',         [RequestRepresentativeController::class, 'verify'])
+                ->middleware('throttle:20,1,representative-verify');
+            Route::post('{representative}/revoke',         [RequestRepresentativeController::class, 'revoke'])
+                ->middleware('throttle:20,1,representative-revoke');
+            Route::get('{representative}/proofs/{kind}',   [RequestRepresentativeController::class, 'proof'])
+                ->middleware('throttle:30,1,representative-proof');
+        });
+
         // Admin creation gets its own dedicated, tighter throttle on top of
         // the group's throttle:60,1 — this is now the primary defense
         // against bulk/automated admin creation (see IdpClient::createUser()

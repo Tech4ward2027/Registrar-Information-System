@@ -24,6 +24,9 @@ class RequestLifecycleMail extends Mailable
         public readonly bool $plural = false,
         public readonly ?string $itemLabel = null,
         public readonly ?string $reason = null,
+        // Policy §3.6: set only when the email goes to a verified
+        // representative of a deceased or incapacitated requestor.
+        public readonly ?string $studentName = null,
     ) {}
 
     public function build(): self
@@ -33,6 +36,8 @@ class RequestLifecycleMail extends Mailable
         return $this->subject($subject)->markdown('mail.lifecycle.notice', [
             'headline' => $headline,
             'lines'    => $lines,
+            // A representative has no RIS account to sign in to.
+            'showSignIn' => $this->studentName === null,
         ]);
     }
 
@@ -75,7 +80,12 @@ class RequestLifecycleMail extends Mailable
                 'Request withdrawn',
                 ["Your request for {$doc} has been withdrawn: {$reason}. Contact the Registrar's Office if you have questions."],
             ],
-            'request_closed_unable_to_process' => [
+            'request_closed_unable_to_process' => $this->studentName !== null ? [
+                // Policy §3.6 wording, for the representative.
+                'A request could not be completed — PUPT Registrar',
+                'Request could not be completed',
+                ["We regret to inform you that the request filed for {$this->studentName} could not be completed: {$reason}. Please contact the Registrar's Office for assistance regarding records and accounts."],
+            ] : [
                 'Your request could not be completed — PUPT Registrar',
                 'Request could not be completed',
                 ["We regret to inform you that the request for {$doc} could not be completed: {$reason}."],
