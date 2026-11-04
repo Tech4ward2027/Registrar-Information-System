@@ -9,8 +9,11 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Jobs\SyncJob;
 use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Sends the System Mailer email for one saved notification.
@@ -61,7 +64,27 @@ class SendLifecycleMailJob implements ShouldQueue
 
     public function handle(MailDispatcher $dispatcher): void
     {
-        $dispatcher->deliver($this->notificationId);
+        try {
+            $dispatcher->deliver($this->notificationId);
+        } catch (Throwable $e) {
+            // On a real queue the exception must propagate so the worker
+            // retries with backoff. On the sync connection (tests, local
+            // dev) there is no worker and no retry, and because this job
+            // waits for the caller's transaction to commit, the exception
+            // would surface from that commit and turn a successful status
+            // change into a 500. Email is a secondary channel: deliver()
+            // has already written the failed row to the dispatch log.
+            if ($this->job === null || $this->job instanceof SyncJob) {
+                Log::warning('SendLifecycleMailJob: email failed on the sync queue; not retried', [
+                    'notification_id' => $this->notificationId,
+                    'error'           => $e->getMessage(),
+                ]);
+
+                return;
+            }
+
+            throw $e;
+        }
     }
 
     public function failed(\Throwable $e): void
