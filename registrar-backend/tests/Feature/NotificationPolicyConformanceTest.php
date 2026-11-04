@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\NotificationAudienceEnum;
 use App\Models\NotificationType;
 use App\Services\Mail\MailPolicy;
 use Illuminate\Console\Scheduling\Schedule;
@@ -64,7 +65,8 @@ test('every matrix row is live in the database with a title, an audience and a m
         expect($type)->not->toBeNull("{$trigger} is missing from notification_types");
         expect((bool) $type->is_active)->toBeTrue("{$trigger} must be active");
         expect(trim((string) $type->title))->not->toBe('', "{$trigger} needs a title");
-        expect(trim((string) $type->audience))->not->toBe('', "{$trigger} needs an audience");
+        // `audience` is cast to NotificationAudienceEnum, so a null or invalid value is not an enum.
+        expect($type->audience instanceof NotificationAudienceEnum)->toBeTrue("{$trigger} needs a valid audience");
         expect(trim((string) $type->message_template))->not->toBe('', "{$trigger} needs a message");
         expect((bool) $type->send_push)->toBeTrue("{$trigger} must have push on");
     }
