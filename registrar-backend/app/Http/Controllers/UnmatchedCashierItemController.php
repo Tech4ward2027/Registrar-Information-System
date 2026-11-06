@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\UnmatchedCashierItem\ResolveUnmatchedCashierItemRequest;
+use App\Http\Requests\PaginatedIndexRequest;
 use App\Models\AuditLog;
 use App\Models\CertificationType;
 use App\Models\DocumentType;
@@ -36,7 +37,7 @@ class UnmatchedCashierItemController extends Controller
      * first (a label seen 40 times is blocking more students than one
      * seen once). Pass ?resolved=1 to review resolution history instead.
      */
-    public function index(Request $request)
+    public function index(PaginatedIndexRequest $request)
     {
         $query = UnmatchedCashierItem::query();
 
@@ -58,7 +59,7 @@ class UnmatchedCashierItemController extends Controller
         $items = $query
             ->orderByDesc('occurrence_count')
             ->orderByDesc('last_seen_at')
-            ->paginate($request->integer('per_page', 25));
+            ->paginate($request->perPage(25));
 
         // Suggestions ship with the ai_label_suggestions flag: with it off
         // the screen behaves exactly as before, even if rows still carry

@@ -61,6 +61,13 @@ RUN sed -i \
     "s/return \$request->getHeader('Upgrade')\[0\] ?? null === 'websocket';/return (\$request->getHeader('Upgrade')[0] ?? null) === 'websocket';/" \
     /var/www/html/vendor/laravel/reverb/src/Servers/Reverb/Http/Router.php
 
+# Make sure the log directory exists in the image BEFORE ownership is set.
+# docker-compose mounts the persistent `ris_logs` volume at storage/logs; Docker
+# seeds a new named volume with the image's copy of that directory (including its
+# owner), so creating it here as www-data means the volume starts out writable by
+# php-fpm and by the queue/scheduler containers, which run as www-data.
+RUN mkdir -p /var/www/html/storage/logs
+
 # Set permissions
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 RUN chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache

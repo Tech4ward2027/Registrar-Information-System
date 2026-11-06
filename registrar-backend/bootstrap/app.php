@@ -42,7 +42,50 @@ return Application::configure(basePath: dirname(__DIR__))
         //     (browser rejects a non-Secure Set-Cookie over what it believes is
         //     plain HTTP), causing every /api/me call after login to return 401.
         //   • APP_URL-based helpers generate http:// URLs.
-        $middleware->trustProxies(at: '*');
+        //
+        // Which proxies are trusted is now configurable (BACKEND ACTION
+        // ITEM 9.11). Trusting '*' means ANY client can send a forged
+        // X-Forwarded-For header and have Laravel believe it, which lets a
+        // caller pick the IP that per-IP rate limits and audit logs record.
+        //
+        // TRUSTED_PROXIES (comma-separated IPs/CIDRs, or the keyword
+        // "private" for loopback + RFC1918 ranges):
+        //   unset / "*"  -> legacy behaviour: trust every proxy (default, so an
+        //                   upgrade never changes behaviour on its own).
+        //   "private"    -> trust only loopback and private networks, i.e. the
+        //                   host nginx / Docker bridge. Use this once the host
+        //                   nginx is the ONLY hop that can reach this container
+        //                   and it overwrites X-Forwarded-For with the real
+        //                   client IP (see the rollout notes that accompany
+        //                   this change).
+        //   "10.0.0.5,172.18.0.0/16" -> explicit list.
+        //
+        // env() is used on purpose: this closure runs before the config
+        // repository exists, so config() is not available here. The value must
+        // be passed to the container (see docker-compose.yml).
+        $middleware->trustProxies(at: (static function (): array|string {
+            $raw = trim((string) env('TRUSTED_PROXIES', '*'));
+
+            if ($raw === '' || $raw === '*') {
+                return '*';
+            }
+
+            $private = [
+                '127.0.0.1', '::1',
+                '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7',
+            ];
+
+            $list = [];
+            foreach (array_filter(array_map('trim', explode(',', $raw))) as $entry) {
+                if (strtolower($entry) === 'private') {
+                    $list = array_merge($list, $private);
+                } else {
+                    $list[] = $entry;
+                }
+            }
+
+            return array_values(array_unique($list));
+        })());
 
         // ── Cookie → Bearer token bridge ────────────────────────────────────
         // Login stores the Sanctum token in an HttpOnly cookie named "token".

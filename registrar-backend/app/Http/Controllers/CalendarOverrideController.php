@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\CalendarOverride\StoreCalendarOverrideRequest;
 use App\Http\Requests\CalendarOverride\UpdateCalendarOverrideRequest;
+use App\Http\Requests\PaginatedIndexRequest;
 use App\Models\BusinessCalendarOverride;
 use App\Services\CalendarOverrideService;
 use Illuminate\Http\Request;
@@ -15,11 +16,14 @@ use Illuminate\Http\Request;
  */
 class CalendarOverrideController extends Controller
 {
+    /** The Business Calendar screen loads the full list in one request (per_page=1000). */
+    private const MAX_PER_PAGE = 1000;
+
     public function __construct(
         private CalendarOverrideService $overrideService,
     ) {}
 
-    public function index(Request $request)
+    public function index(PaginatedIndexRequest $request)
     {
         $query = BusinessCalendarOverride::query()->orderByDesc('effective_from');
 
@@ -38,7 +42,7 @@ class CalendarOverrideController extends Controller
         }
 
         return response()->json(
-            $query->paginate($request->integer('per_page', 15))
+            $query->paginate($request->perPage(15, self::MAX_PER_PAGE))
         );
     }
 
