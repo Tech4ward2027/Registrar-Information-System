@@ -24,6 +24,13 @@ RUN apt-get update && apt-get install -y \
 # Install PHP extensions
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
 
+# PHP hardening (VAPT F-02 and defence in depth). Loaded by php-fpm and the CLI;
+# the "zz-" prefix makes it load after the image's own ini files.
+#   expose_php        = Off -> do not send "X-Powered-By: PHP/x.y.z"
+#   cgi.fix_pathinfo  = 0   -> never execute a different file than the one requested
+#                              (blocks the "/uploads/photo.png/x.php" trick)
+RUN printf 'expose_php = Off\ncgi.fix_pathinfo = 0\n' > /usr/local/etc/php/conf.d/zz-security.ini
+
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 

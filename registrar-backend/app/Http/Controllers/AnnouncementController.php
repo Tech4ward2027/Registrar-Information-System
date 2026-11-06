@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\Announcement\ArchiveAnnouncementRequest;
+use App\Http\Requests\Announcement\IndexAnnouncementsRequest;
 use App\Http\Requests\Announcement\StoreAnnouncementRequest;
 use App\Http\Requests\Announcement\UpdateAnnouncementRequest;
 use App\Models\Announcement;
@@ -40,9 +41,9 @@ class AnnouncementController extends Controller
         return $user !== null && $user->isStaff();
     }
 
-    public function index(Request $request)
+    public function index(IndexAnnouncementsRequest $request)
     {
-        $perPage    = $request->input('per_page', 4);
+        $perPage    = $request->perPage();
         $canSeeAll  = $this->canSeeUnpublished($request);
 
         // Archived tab: bypass the default ExcludeArchivedScope entirely and
