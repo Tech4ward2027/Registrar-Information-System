@@ -1,3 +1,15 @@
+# -------------------------------------------------------
+# Shared settings
+# -------------------------------------------------------
+# Docker's default json-file driver has NO size cap, so a chatty container can
+# fill the host disk (this host has a small root volume). Rotate container
+# stdout/stderr: 5 files x 10 MB per container.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   # -------------------------------------------------------
   # Laravel Backend
@@ -66,6 +78,21 @@ services:
       CASHIER_SINGLE_USE: ${CASHIER_SINGLE_USE}
       ALUMNI_MOCK: ${ALUMNI_MOCK}
       TELESCOPE_ENABLED: ${TELESCOPE_ENABLED:-false}
+      # Persistent, size-bounded application logs (see ris_logs volume below).
+      LOG_STACK: ${LOG_STACK:-daily}
+      LOG_DAILY_DAYS: ${LOG_DAILY_DAYS:-14}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Trusted reverse proxies for client-IP resolution (see bootstrap/app.php).
+      # Unset = legacy behaviour (trust all). Set to "private" or a CIDR list once
+      # the proxy chain has been verified.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-*}
+      # Login brute-force limits (see config/login_throttle.php).
+      LOGIN_THROTTLE_IP_PER_MINUTE: ${LOGIN_THROTTLE_IP_PER_MINUTE:-60}
+      LOGIN_THROTTLE_ACCOUNT_PER_MINUTE: ${LOGIN_THROTTLE_ACCOUNT_PER_MINUTE:-10}
+      LOGIN_THROTTLE_ACCOUNT_PER_HOUR: ${LOGIN_THROTTLE_ACCOUNT_PER_HOUR:-50}
+      LOCAL_LOGIN_THROTTLE_IP_PER_MINUTE: ${LOCAL_LOGIN_THROTTLE_IP_PER_MINUTE:-60}
+      LOCAL_LOGIN_THROTTLE_ACCOUNT_PER_MINUTE: ${LOCAL_LOGIN_THROTTLE_ACCOUNT_PER_MINUTE:-10}
+      LOCAL_LOGIN_THROTTLE_ACCOUNT_PER_HOUR: ${LOCAL_LOGIN_THROTTLE_ACCOUNT_PER_HOUR:-50}
       # Feature flags are NOT inherited from the host .env: this file passes
       # variables through explicitly, so every flag a service reads must be
       # listed here. Fail-closed default (see config/features.php): a missing
@@ -85,6 +112,9 @@ services:
       TICKETS_CAPTCHA_SECRET: ${TICKETS_CAPTCHA_SECRET:-}
     ports:
       - "8000:8000"
+    volumes:
+      - ris_logs:/var/www/html/storage/logs
+    logging: *default-logging
     networks:
       - ris_network
 
@@ -144,6 +174,7 @@ services:
       SSO_API_KEY: ${SSO_API_KEY}
     ports:
       - "8080:8080"
+    logging: *default-logging
     depends_on:
       backend:
         condition: service_started
@@ -157,6 +188,10 @@ services:
     image: ${ECR_REPOSITORY}:${IMAGE_TAG:-latest}
     container_name: ris_worker
     restart: unless-stopped
+    # Run as the same user as php-fpm so every file this container creates in the
+    # shared log volume is writable by php-fpm (a root-created daily log file would
+    # otherwise lock php-fpm out of that day's log).
+    user: www-data
     command: >
       php artisan queue:work
         --queue=default
@@ -164,6 +199,10 @@ services:
         --tries=3
         --timeout=300
     environment:
+      # Persistent, size-bounded application logs (see ris_logs volume below).
+      LOG_STACK: ${LOG_STACK:-daily}
+      LOG_DAILY_DAYS: ${LOG_DAILY_DAYS:-14}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       APP_ENV: ${APP_ENV:-production}
       APP_KEY: ${APP_KEY}
       APP_DEBUG: ${APP_DEBUG:-false}
@@ -210,6 +249,9 @@ services:
       OCMS_CLIENT_ID: ${OCMS_CLIENT_ID}
       OCMS_CLIENT_SECRET: ${OCMS_CLIENT_SECRET}
       SSO_API_KEY: ${SSO_API_KEY}
+    volumes:
+      - ris_logs:/var/www/html/storage/logs
+    logging: *default-logging
     depends_on:
       backend:
         condition: service_started
@@ -224,6 +266,7 @@ services:
     container_name: ris_redis
     command: redis-server --requirepass ${REDIS_PASSWORD}
     restart: always
+    logging: *default-logging
     networks:
       - ris_network
 
@@ -238,6 +281,10 @@ services:
     image: ${ECR_REPOSITORY}:${IMAGE_TAG:-latest}
     container_name: ris_broadcast_worker
     restart: unless-stopped
+    # Run as the same user as php-fpm so every file this container creates in the
+    # shared log volume is writable by php-fpm (a root-created daily log file would
+    # otherwise lock php-fpm out of that day's log).
+    user: www-data
     command: >
       php artisan queue:work database
         --queue=broadcasts
@@ -245,6 +292,10 @@ services:
         --tries=3
         --timeout=30
     environment:
+      # Persistent, size-bounded application logs (see ris_logs volume below).
+      LOG_STACK: ${LOG_STACK:-daily}
+      LOG_DAILY_DAYS: ${LOG_DAILY_DAYS:-14}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       APP_ENV: ${APP_ENV:-production}
       APP_KEY: ${APP_KEY}
       APP_DEBUG: ${APP_DEBUG:-false}
@@ -293,6 +344,9 @@ services:
       OCMS_CLIENT_ID: ${OCMS_CLIENT_ID}
       OCMS_CLIENT_SECRET: ${OCMS_CLIENT_SECRET}
       SSO_API_KEY: ${SSO_API_KEY}
+    volumes:
+      - ris_logs:/var/www/html/storage/logs
+    logging: *default-logging
     depends_on:
       backend:
         condition: service_started
@@ -308,9 +362,17 @@ services:
     image: ${ECR_REPOSITORY}:${IMAGE_TAG:-latest}
     container_name: ris_scheduler
     restart: unless-stopped
+    # Run as the same user as php-fpm so every file this container creates in the
+    # shared log volume is writable by php-fpm (a root-created daily log file would
+    # otherwise lock php-fpm out of that day's log).
+    user: www-data
     command: >
-      sh -c "while true; do php artisan schedule:run --no-interaction >> /var/log/scheduler.log 2>&1; sleep 60; done"
+      sh -c "while true; do php artisan schedule:run --no-interaction; sleep 60; done"
     environment:
+      # Persistent, size-bounded application logs (see ris_logs volume below).
+      LOG_STACK: ${LOG_STACK:-daily}
+      LOG_DAILY_DAYS: ${LOG_DAILY_DAYS:-14}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       # health:rollup / health:detect are no-ops unless this flag is on, so the
       # scheduler needs the same value as the backend. Fail-closed default.
       FEATURE_SYSTEM_HEALTH: ${FEATURE_SYSTEM_HEALTH:-false}
@@ -363,6 +425,9 @@ services:
       OCMS_CLIENT_ID: ${OCMS_CLIENT_ID}
       OCMS_CLIENT_SECRET: ${OCMS_CLIENT_SECRET}
       SSO_API_KEY: ${SSO_API_KEY}
+    volumes:
+      - ris_logs:/var/www/html/storage/logs
+    logging: *default-logging
     depends_on:
       backend:
         condition: service_started
@@ -371,6 +436,9 @@ services:
 
 volumes:
   ris_db_data:
+  # Application logs (storage/logs) survive container re-creation, so evidence from a
+  # test window is not lost on the next deploy. Retention: LOG_DAILY_DAYS (default 14).
+  ris_logs:
 
 networks:
   ris_network:

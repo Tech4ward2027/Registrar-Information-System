@@ -67,8 +67,10 @@ use App\Http\Controllers\PublicTicketTrackingController;
 | PUBLIC ROUTES
 |--------------------------------------------------------------------------
 */
+// Named limiter (per-IP + per-account) — see AuthRateLimitServiceProvider and
+// config/login_throttle.php. Replaces the flat per-IP throttle:60,1.
 Route::post('/login', [AuthController::class, 'login'])
-    ->middleware('throttle:60,1');
+    ->middleware('throttle:login');
 
 Route::post('/auth/callback', [SsoCallbackController::class, 'handle'])
     ->middleware('throttle:20,1');
@@ -1037,8 +1039,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:60,1'])->group(function (
 */
 use App\Http\Controllers\LocalAuthController;
 
+// Same per-IP + per-account protection; separate bucket namespace from /login.
 Route::post('/auth/local-login', [LocalAuthController::class, 'login'])
-    ->middleware('throttle:60,1');
+    ->middleware('throttle:local-login');
 
 Route::middleware(['auth:sanctum', 'active', 'role:4'])->group(function () {
     Route::post('/auth/local-password',    [LocalAuthController::class, 'setPassword']);

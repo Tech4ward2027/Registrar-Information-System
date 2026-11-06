@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\CashierOrOverride\StoreCashierOrOverrideRequest;
+use App\Http\Requests\PaginatedIndexRequest;
 use App\Http\Resources\GrantableUserResource;
 use App\Models\AuditLog;
 use App\Models\CashierOrOverride;
@@ -47,7 +48,7 @@ class CashierOrOverrideController extends Controller
      * default-then-opt-out convention as
      * UnmatchedCashierItemController::index()'s ?resolved= param.
      */
-    public function index(Request $request)
+    public function index(PaginatedIndexRequest $request)
     {
         $query = CashierOrOverride::with([
             'user:user_id,email',
@@ -62,7 +63,7 @@ class CashierOrOverrideController extends Controller
 
         $overrides = $query
             ->orderByDesc('override_id')
-            ->paginate($request->integer('per_page', 25));
+            ->paginate($request->perPage(25));
 
         return response()->json($overrides, 200);
     }

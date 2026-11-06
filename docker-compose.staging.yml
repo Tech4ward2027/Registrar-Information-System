@@ -1,9 +1,28 @@
+# -------------------------------------------------------
+# Shared settings
+# -------------------------------------------------------
+# Docker's default json-file driver has NO size cap, so a chatty container can
+# fill the host disk (staging is a 1 GB host). Rotate container
+# stdout/stderr: 5 files x 10 MB per container.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   backend:
     image: ${ECR_REPOSITORY}:${IMAGE_TAG:-latest}
     container_name: ris_staging_backend
     restart: unless-stopped
     env_file: .env.staging
+    environment:
+      LOG_STACK: ${LOG_STACK:-daily}
+      LOG_DAILY_DAYS: ${LOG_DAILY_DAYS:-14}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-*}
+    volumes:
+      - ris_staging_logs:/var/www/html/storage/logs
+    logging: *default-logging
     mem_limit: 384m
     ports:
       - "8000:8000"
@@ -21,6 +40,7 @@ services:
     command: php artisan reverb:start --host=0.0.0.0 --port=8080
     env_file: .env.staging
     mem_limit: 128m
+    logging: *default-logging
     ports:
       - "8080:8080"
     depends_on:
@@ -32,6 +52,10 @@ services:
     image: ${ECR_REPOSITORY}:${IMAGE_TAG:-latest}
     container_name: ris_staging_worker
     restart: unless-stopped
+    # Run as the same user as php-fpm so every file this container creates in the
+    # shared log volume is writable by php-fpm (a root-created daily log file would
+    # otherwise lock php-fpm out of that day's log).
+    user: www-data
     command: >
       php artisan queue:work
         --queue=default
@@ -39,6 +63,12 @@ services:
         --tries=3
         --timeout=300
     env_file: .env.staging
+    environment:
+      LOG_STACK: ${LOG_STACK:-daily}
+      LOG_DAILY_DAYS: ${LOG_DAILY_DAYS:-14}
+    volumes:
+      - ris_staging_logs:/var/www/html/storage/logs
+    logging: *default-logging
     mem_limit: 128m
     depends_on:
       backend:
@@ -49,6 +79,10 @@ services:
     image: ${ECR_REPOSITORY}:${IMAGE_TAG:-latest}
     container_name: ris_staging_broadcast_worker
     restart: unless-stopped
+    # Run as the same user as php-fpm so every file this container creates in the
+    # shared log volume is writable by php-fpm (a root-created daily log file would
+    # otherwise lock php-fpm out of that day's log).
+    user: www-data
     command: >
       php artisan queue:work database
         --queue=broadcasts
@@ -56,6 +90,12 @@ services:
         --tries=3
         --timeout=30
     env_file: .env.staging
+    environment:
+      LOG_STACK: ${LOG_STACK:-daily}
+      LOG_DAILY_DAYS: ${LOG_DAILY_DAYS:-14}
+    volumes:
+      - ris_staging_logs:/var/www/html/storage/logs
+    logging: *default-logging
     mem_limit: 96m
     depends_on:
       backend:
@@ -66,9 +106,19 @@ services:
     image: ${ECR_REPOSITORY}:${IMAGE_TAG:-latest}
     container_name: ris_staging_scheduler
     restart: unless-stopped
+    # Run as the same user as php-fpm so every file this container creates in the
+    # shared log volume is writable by php-fpm (a root-created daily log file would
+    # otherwise lock php-fpm out of that day's log).
+    user: www-data
     command: >
-      sh -c "while true; do php artisan schedule:run --no-interaction >> /var/log/scheduler.log 2>&1; sleep 60; done"
+      sh -c "while true; do php artisan schedule:run --no-interaction; sleep 60; done"
     env_file: .env.staging
+    environment:
+      LOG_STACK: ${LOG_STACK:-daily}
+      LOG_DAILY_DAYS: ${LOG_DAILY_DAYS:-14}
+    volumes:
+      - ris_staging_logs:/var/www/html/storage/logs
+    logging: *default-logging
     mem_limit: 96m
     depends_on:
       backend:
@@ -84,6 +134,7 @@ services:
       MYSQL_DATABASE: registrar_information_system
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     mem_limit: 256m
+    logging: *default-logging
     volumes:
       - ris_staging_db_data:/var/lib/mysql
     networks: [ris_staging_network]
@@ -100,10 +151,12 @@ services:
     restart: unless-stopped
     command: redis-server --requirepass ${REDIS_PASSWORD}
     mem_limit: 48m
+    logging: *default-logging
     networks: [ris_staging_network]
 
 volumes:
   ris_staging_db_data:
+  ris_staging_logs:
 
 networks:
   ris_staging_network:

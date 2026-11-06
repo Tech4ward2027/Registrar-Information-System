@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\PaginatedIndexRequest;
 use App\Models\SecurityEvent;
 use Illuminate\Http\Request;
 
@@ -29,7 +30,7 @@ class SecurityEventController extends Controller
     //
     // Example: GET /security-events?event_type=login_failed&per_page=50
     // -------------------------------------------------------
-    public function index(Request $request)
+    public function index(PaginatedIndexRequest $request)
     {
         $query = SecurityEvent::query()->orderByDesc('created_at');
 
@@ -45,7 +46,7 @@ class SecurityEventController extends Controller
             $query->where('reason', $reason);
         }
 
-        $perPage = min((int) $request->query('per_page', 20), 100);
+        $perPage = $request->perPage(20);
 
         $events = $query->paginate($perPage);
 

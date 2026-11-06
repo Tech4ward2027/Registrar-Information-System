@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\CalendarException\StoreCalendarExceptionRequest;
 use App\Http\Requests\CalendarException\UpdateCalendarExceptionRequest;
+use App\Http\Requests\PaginatedIndexRequest;
 use App\Models\BusinessCalendarHoliday;
 use App\Services\CalendarExceptionService;
 use Illuminate\Http\Request;
@@ -18,11 +19,14 @@ use Illuminate\Http\Request;
  */
 class CalendarExceptionController extends Controller
 {
+    /** The Business Calendar screen loads the full list in one request (per_page=1000). */
+    private const MAX_PER_PAGE = 1000;
+
     public function __construct(
         private CalendarExceptionService $exceptionService,
     ) {}
 
-    public function index(Request $request)
+    public function index(PaginatedIndexRequest $request)
     {
         $query = BusinessCalendarHoliday::query()->orderByDesc('date');
 
@@ -41,7 +45,7 @@ class CalendarExceptionController extends Controller
         }
 
         return response()->json(
-            $query->paginate($request->integer('per_page', 15))
+            $query->paginate($request->perPage(15, self::MAX_PER_PAGE))
         );
     }
 

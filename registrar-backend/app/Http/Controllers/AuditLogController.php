@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\PaginatedIndexRequest;
 use App\Models\AuditLog;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -49,7 +50,7 @@ class AuditLogController extends Controller
     // compliance record; they're just not surfaced as their own list
     // entry here.
     // -------------------------------------------------------
-    public function index(Request $request)
+    public function index(PaginatedIndexRequest $request)
     {
         $query = AuditLog::query()
             ->where('action', '!=', AuditLog::ACTION_CASHIER_VERIFICATION_ENRICHED)
@@ -112,7 +113,7 @@ class AuditLogController extends Controller
             }
         }
 
-        $perPage = min((int) $request->query('per_page', 20), 100);
+        $perPage = $request->perPage(20);
 
         $logs = $query->paginate($perPage);
 
