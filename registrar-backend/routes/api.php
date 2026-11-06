@@ -73,8 +73,10 @@ Route::post('/login', [AuthController::class, 'login'])
 Route::post('/auth/callback', [SsoCallbackController::class, 'handle'])
     ->middleware('throttle:20,1');
 
-Route::get('announcements',               [AnnouncementController::class, 'index']);
-Route::get('announcements/{announcement}', [AnnouncementController::class, 'show']);
+Route::get('announcements',               [AnnouncementController::class, 'index'])
+    ->middleware('throttle:60,1');
+Route::get('announcements/{announcement}', [AnnouncementController::class, 'show'])
+    ->middleware('throttle:60,1');
 
 // Step 4: lets the public request form tell requesters whether the
 // Registrar is open right now, and when processing begins if not.
