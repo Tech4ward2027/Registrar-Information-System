@@ -30,7 +30,7 @@ ok=0; throttled=0; other=0
 for ((i = 1; i <= N; i++)); do
   # 198.51.100.0/24 and 203.0.113.0/24 are documentation ranges (never real clients).
   forged="203.0.113.$(( (i % 250) + 1 ))"
-  code=$(curl -s -o /dev/null -w '%{http_code}' "${auth[@]}" \
+  code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' ${auth[@]+"${auth[@]}"} \
          -H "X-Forwarded-For: ${forged}" "$URL" || echo 000)
   case "$code" in
     200)     ok=$((ok + 1)) ;;
