@@ -116,12 +116,17 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Variables travel on stdin, not on a command line, so the token never shows in `ps`.
+          set -o pipefail
           {
             printf 'export IMAGE=%q TAG=%q GHCR_USER=%q GHCR_TOKEN=%q\n' \
               "$IMAGE" "$TAG" "$GHCR_USER" "$GHCR_TOKEN"
             cat scripts/vps-deploy-staging.sh
           } | ssh -i ~/.ssh/ris_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-                "$VPS_USER@$VPS_HOST" 'bash -s'
+                "$VPS_USER@$VPS_HOST" 'bash -s' | tee deploy.log
+          # A green exit code is not enough: the script must reach its last line.
+          # (An early silent exit once let a half-finished deploy look successful.)
+          grep -q "^deploy ok: ${IMAGE}:${TAG}$" deploy.log || {
+            echo "::error::The VPS script did not finish (no 'deploy ok' line)."; exit 1; }
 
   deploy-frontend:
     name: Deploy frontend to the VPS
