@@ -133,7 +133,7 @@ step "2b/3 decrypt + payload checksum"
 # 4 ---- throwaway MySQL
 ROOTPW="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)"
 docker run -d --name "$CONTAINER" -e MYSQL_ROOT_PASSWORD="$ROOTPW" -e MYSQL_DATABASE=ris_restore \
-  -p 127.0.0.1::3306 mysql:8.0 --character-set-server=utf8mb4 --max-allowed-packet=256M >/dev/null
+  -p 127.0.0.1::3306 mysql:8.4 --character-set-server=utf8mb4 --max-allowed-packet=256M >/dev/null
 PORT="$(docker port "$CONTAINER" 3306/tcp | head -n1 | sed 's/.*://')"
 for i in $(seq 1 90); do
   docker exec "$CONTAINER" mysqladmin ping -uroot -p"$ROOTPW" --silent >/dev/null 2>&1 && break
