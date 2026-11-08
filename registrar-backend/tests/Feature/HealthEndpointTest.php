@@ -2,7 +2,6 @@
 
 use App\Models\JobRunLog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
@@ -113,7 +112,16 @@ test('returns 503 when the database is unreachable, without leaking the error', 
 });
 
 test('returns 503 when the cache store is unreachable', function () {
-    Cache::shouldReceive('put')->andThrow(new RuntimeException('redis down'));
+    // A real failure, not a mock: point the default cache at a Redis that
+    // refuses connections immediately (port 1). Facade mocks of the cache
+    // manager also break unrelated framework code that resolves it.
+    config([
+        'cache.default'                 => 'redis',
+        'database.redis.client'         => 'predis',
+        'database.redis.cache.host'     => '127.0.0.1',
+        'database.redis.cache.port'     => 1,
+        'database.redis.cache.password' => null,
+    ]);
 
     $this->getJson('/api/health')
         ->assertStatus(503)
