@@ -1,0 +1,15 @@
+# /etc/cron.d/ris-backup   (installed by install.sh)
+# The host clock is UTC. Policy times are PHT (UTC+8), so:
+#   01:00 PHT = 17:00 UTC (previous calendar day)   <- DR policy 3.3, daily DB dump
+#   02:00 PHT = 18:00 UTC                            <- media archive
+#   02:30 PHT = 18:30 UTC                            <- config/secrets (root)
+# Evidence EV-BCDR-02: `crontab -l` equivalent is `cat /etc/cron.d/ris-backup`,
+# plus the tail of /var/log/ris/backup.log.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+0 17 * * *   ubuntu  /opt/ris-backup/ris-backup-db.sh
+0 18 * * *   ubuntu  /opt/ris-backup/ris-backup-media.sh
+30 18 * * *  root    /opt/ris-backup/ris-backup-config.sh
+# Dead-man check every 6 hours (alerts if a backup stopped running at all).
+20 */6 * * * ubuntu  /opt/ris-backup/ris-backup-check.sh

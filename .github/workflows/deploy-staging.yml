@@ -1,12 +1,19 @@
-name: RIS Staging Deploy
+name: RIS Staging Deploy (VPS)
+
+# Replaces the old AWS/ECR staging pipeline.
+# develop -> test -> build image -> push to GHCR -> deploy backend to the VPS -> deploy frontend.
 
 on:
   push:
     branches: [develop]
+  workflow_dispatch:
 
-env:
-  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_URI }}
-  AWS_REGION: ap-southeast-1
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false   # never cut a deploy off half way
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -52,103 +59,80 @@ jobs:
       - run: php artisan test
 
   build-and-push:
-    name: Build & Push Image to ECR
+    name: Build and push image to GHCR
     runs-on: ubuntu-latest
     needs: test
+    permissions:
+      contents: read
+      packages: write
     outputs:
-      image_tag: ${{ steps.vars.outputs.tag }}
+      image: ${{ steps.vars.outputs.image }}
+      tag: ${{ steps.vars.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-      - name: Set image tag
+      - name: Set image name and tag
         id: vars
-        run: echo "tag=staging-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        run: |
+          # GHCR names must be lowercase.
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}/ris-backend" >> "$GITHUB_OUTPUT"
+          echo "tag=staging-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Log in to ECR
-        uses: aws-actions/amazon-ecr-login@v2
-      - name: Build and push image
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push (linux/amd64)
         working-directory: registrar-backend
         run: |
-          docker build --pull -t ${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.tag }} .
-          docker push ${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.tag }}
+          docker build --pull --platform linux/amd64 -t "${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.tag }}" .
+          docker push "${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.tag }}"
 
   deploy-backend:
-    name: Deploy Backend (EC2)
+    name: Deploy backend to the VPS
     runs-on: ubuntu-latest
-    needs: [test, build-and-push]
+    needs: build-and-push
+    environment: staging
+    permissions:
+      contents: read
+      packages: read
     steps:
-      - name: Deploy to Staging EC2 via SSH
-        uses: appleboy/ssh-action@v1.0.3
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        with:
-          host: ${{ secrets.EC2_HOST_STAGING }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY_STAGING }}
-          envs: IMAGE_TAG,ECR_REPOSITORY_URI,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
-          script: |
-            set -e
-            cd /home/ubuntu/Registrar-Information-System
-
-            echo "── Pulling latest compose/config files ──────────"
-            git pull origin develop
-
-            echo "── Logging in to ECR ────────────────────────────"
-            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
-            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
-            export AWS_DEFAULT_REGION=ap-southeast-1
-            aws ecr get-login-password --region ap-southeast-1 | \
-              docker login --username AWS --password-stdin ${{ secrets.ECR_REPOSITORY_URI }}
-
-            export ECR_REPOSITORY=${{ secrets.ECR_REPOSITORY_URI }}
-            export IMAGE_TAG=${{ needs.build-and-push.outputs.image_tag }}
-
-            echo "── Pulling image from ECR ───────────────────────"
-            docker compose -f docker-compose.staging.yml pull
-
-            echo "── Running migrations ────────────────────────────"
-            # Migrate BEFORE (re)starting the long-running containers —
-            # see deploy.yml for the full reasoning (no healthcheck on
-            # the backend service means `up -d` doesn't guarantee the
-            # app is actually ready, so migrating first avoids a window
-            # where new code could serve traffic before its own schema
-            # migration finishes).
-            #
-            # --no-deps assumes mysql/redis are already running from the
-            # prior deploy (restart: unless-stopped). On a from-scratch
-            # stand-up, start them first:
-            # `docker compose -f docker-compose.staging.yml up -d mysql redis`.
-            docker compose -f docker-compose.staging.yml \
-              run --rm --no-deps backend php artisan migrate --force --isolated
-
-            echo "── Starting containers ──────────────────────────"
-            docker compose -f docker-compose.staging.yml up -d
-
-            echo "── Caching config and routes ─────────────────────"
-            docker exec ris_staging_backend php artisan config:cache
-            docker exec ris_staging_backend php artisan route:cache
-
-            echo "── Re-asserting storage/cache ownership ──────────"
-            docker exec -u root ris_staging_backend chown -R www-data:www-data \
-              /var/www/html/storage /var/www/html/bootstrap/cache
-
-            echo "── Verifying containers are up ───────────────────"
-            docker compose -f docker-compose.staging.yml ps
-
-            echo "── Pruning old images (keep disk clean) ──────────"
-            docker image prune -a -f
-
-            echo "── Done ───────────────────────────────────────────"
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/ris_deploy
+          chmod 600 ~/.ssh/ris_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Deploy over SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          IMAGE: ${{ needs.build-and-push.outputs.image }}
+          TAG: ${{ needs.build-and-push.outputs.tag }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Variables travel on stdin, not on a command line, so the token never shows in `ps`.
+          set -o pipefail
+          {
+            printf 'export IMAGE=%q TAG=%q GHCR_USER=%q GHCR_TOKEN=%q\n' \
+              "$IMAGE" "$TAG" "$GHCR_USER" "$GHCR_TOKEN"
+            cat scripts/vps-deploy-staging.sh
+          } | ssh -i ~/.ssh/ris_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+                "$VPS_USER@$VPS_HOST" 'bash -s' | tee deploy.log
+          # A green exit code is not enough: the script must reach its last line.
+          # (An early silent exit once let a half-finished deploy look successful.)
+          grep -q "^deploy ok: ${IMAGE}:${TAG}$" deploy.log || {
+            echo "::error::The VPS script did not finish (no 'deploy ok' line)."; exit 1; }
 
   deploy-frontend:
-    name: Deploy Frontend (EC2 static)
+    name: Deploy frontend to the VPS
     runs-on: ubuntu-latest
-    needs: test
+    needs: deploy-backend
+    environment: staging
     defaults:
       run:
         working-directory: registrar-frontend
@@ -159,9 +143,8 @@ jobs:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: registrar-frontend/package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Build frontend
+      - run: npm ci
+      - name: Build frontend (staging mode)
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL_STAGING }}
           VITE_SSO_LOGIN_URL: ${{ secrets.VITE_SSO_LOGIN_URL_STAGING }}
@@ -172,12 +155,20 @@ jobs:
           VITE_REVERB_PORT: ${{ secrets.VITE_REVERB_PORT_STAGING }}
           VITE_REVERB_SCHEME: ${{ secrets.VITE_REVERB_SCHEME_STAGING }}
         run: npm run build -- --mode staging
-      - name: Sync build to staging EC2
-        uses: burnett01/rsync-deployments@7.0.1
-        with:
-          switches: -avzr --delete
-          path: registrar-frontend/dist/
-          remote_path: /var/www/staging-dist/
-          remote_host: ${{ secrets.EC2_HOST_STAGING }}
-          remote_user: ubuntu
-          remote_key: ${{ secrets.EC2_SSH_KEY_STAGING }}
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/ris_deploy
+          chmod 600 ~/.ssh/ris_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Sync build to the VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          rsync -az --delete \
+            -e "ssh -i $HOME/.ssh/ris_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes" \
+            dist/ "$VPS_USER@$VPS_HOST:/srv/ris/staging/frontend/dist/"
