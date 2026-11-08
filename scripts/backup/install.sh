@@ -15,7 +15,8 @@ install -d -m 0755 /opt/ris-backup
 install -m 0755 "$SRC"/lib.sh "$SRC"/ris-backup-db.sh "$SRC"/ris-backup-media.sh \
                 "$SRC"/ris-backup-config.sh "$SRC"/ris-backup-check.sh /opt/ris-backup/
 install -d -m 0750 -o "$BACKUP_USER" -g "$BACKUP_USER" /var/backups/ris /var/lib/ris-backup /var/log/ris
-install -d -m 0750 -o "$BACKUP_USER" -g "$BACKUP_USER" /etc/ris-backup /etc/ris-backup/gnupg
+install -d -m 0750 -o "$BACKUP_USER" -g "$BACKUP_USER" /etc/ris-backup
+install -d -m 0700 -o "$BACKUP_USER" -g "$BACKUP_USER" /etc/ris-backup/gnupg   # gpg requires 0700
 
 if [[ ! -e /etc/ris-backup/backup.env ]]; then
   install -m 0600 -o "$BACKUP_USER" -g "$BACKUP_USER" "$SRC/backup.env.example" /etc/ris-backup/backup.env

@@ -71,7 +71,9 @@ step() {  # step <name>: record elapsed since previous step
 }
 cleanup() {
   local rc=$?
-  if (( KEEP == 0 )); then docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; fi
+  # -v also removes the anonymous /var/lib/mysql volume the mysql image creates;
+  # without it the restored student data would stay on disk after the drill.
+  if (( KEEP == 0 )); then docker rm -f -v "$CONTAINER" >/dev/null 2>&1 || true; fi
   command -v shred >/dev/null && find "$WORK" -type f -exec shred -u {} + 2>/dev/null || true
   rm -rf "$WORK"
   local total within="NO" removed="no (--keep)"
