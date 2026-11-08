@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -13,6 +14,16 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         channels: __DIR__.'/../routes/channels.php',
         health: '/up',
+        // Unversioned, unauthenticated, middleware-free health probe at
+        // GET /api/health (see routes/health.php and HealthController). It is
+        // mounted here instead of in routes/api.php so it never depends on the
+        // Sanctum cookie bridge, sessions or the /api/v1 prefix, and keeps
+        // answering when those are what is broken.
+        then: function () {
+            Route::middleware([])
+                ->prefix('api')
+                ->group(base_path('routes/health.php'));
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         // ── Cookie encryption exclusion ──────────────────────────────────────

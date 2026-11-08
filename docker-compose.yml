@@ -86,6 +86,9 @@ services:
       # Unset = legacy behaviour (trust all). Set to "private" or a CIDR list once
       # the proxy chain has been verified.
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-*}
+      # GET /api/health detailed view (see config/health.php). Unset or shorter
+      # than 32 chars = detailed view OFF; the public probe still works.
+      HEALTH_CHECK_TOKEN: ${HEALTH_CHECK_TOKEN:-}
       # Login brute-force limits (see config/login_throttle.php).
       LOGIN_THROTTLE_IP_PER_MINUTE: ${LOGIN_THROTTLE_IP_PER_MINUTE:-60}
       LOGIN_THROTTLE_ACCOUNT_PER_MINUTE: ${LOGIN_THROTTLE_ACCOUNT_PER_MINUTE:-10}
