@@ -207,5 +207,6 @@ finish_backup() {
     exit 2
   fi
   date -u +%s > "$STATE_DIR/last_success_$type"
+  chown "${BACKUP_USER:-ubuntu}:${BACKUP_USER:-ubuntu}" "$STATE_DIR/last_success_$type" "$STATE_DIR/$type.lock" 2>/dev/null || true
   log INFO "done: $(basename "$file") payload_sha256=$payload_sha bytes=$bytes"
 }
