@@ -33,6 +33,10 @@ return [
         'model'   => env('ANTHROPIC_MODEL', 'claude-sonnet-4-5-20250929'),
         // Small, fast model for the closed-set label re-ranker (Phase 4).
         'label_model' => env('ANTHROPIC_LABEL_MODEL', 'claude-haiku-4-5-20251001'),
+        // Sampling temperature for the re-ranker. Newer models (e.g. the
+        // Sonnet 5 family) reject the parameter: set ANTHROPIC_LABEL_TEMPERATURE=
+        // (empty) to omit it from the request.
+        'label_temperature' => env('ANTHROPIC_LABEL_TEMPERATURE', 0),
     ],
 
     'cashier' => [

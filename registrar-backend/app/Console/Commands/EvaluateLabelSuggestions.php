@@ -151,6 +151,15 @@ class EvaluateLabelSuggestions extends Command
 
         $this->report($stats, $withLlm, $llmSent, $llmEligible, $skipped);
 
+        // A run where most requests failed says nothing about the model.
+        if ($withLlm && $llmSent > 0 && $reranker->failureCount() * 2 > $llmSent) {
+            $this->error(sprintf(
+                'INVALID LLM RESULTS: %d of %d requests failed at the API level. Lift figures above are meaningless. Check storage/logs/laravel.log (status and error_type).',
+                $reranker->failureCount(),
+                $llmSent
+            ));
+        }
+
         Storage::disk('local')->put($output, $this->toCsv($csv));
         $this->info('Row-level results: storage/app/private/' . $output);
 
