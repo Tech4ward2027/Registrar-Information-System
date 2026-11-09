@@ -29,6 +29,12 @@ class LabelReranker
     private const API_VERSION = '2023-06-01';
     private const MAX_PATTERNS = 8;
 
+    /** Output budget used when nothing valid is configured (sufficient for Haiku). */
+    private const DEFAULT_MAX_TOKENS = 80;
+
+    /** Upper bound so a misconfigured value cannot cause runaway spend. */
+    private const MAX_TOKENS_CEILING = 1024;
+
     /**
      * What happened on the most recent rerank() call. Fixed vocabulary, never
      * built from receipt or model text, so it is safe to log and export.
@@ -199,6 +205,23 @@ PROMPT;
     }
 
     /**
+     * Output token budget. Configurable because models differ: 80 suits Haiku,
+     * but Sonnet 5.5 had about half of its answers cut off at 80. A missing,
+     * empty or non-numeric value falls back to the default, and the result is
+     * clamped to 1..MAX_TOKENS_CEILING so a typo cannot cause runaway spend.
+     */
+    private function maxTokens(): int
+    {
+        $value = config('services.anthropic.label_max_tokens', self::DEFAULT_MAX_TOKENS);
+
+        if (!is_numeric($value)) {
+            return self::DEFAULT_MAX_TOKENS;
+        }
+
+        return max(1, min((int) $value, self::MAX_TOKENS_CEILING));
+    }
+
+    /**
      * Exactly what leaves the system. Public so a test can assert that
      * nothing besides the sanitised label and candidates is present.
      *
@@ -249,7 +272,7 @@ PROMPT;
 
         $payload = [
             'model'      => (string) config('services.anthropic.label_model'),
-            'max_tokens' => 80,
+            'max_tokens' => $this->maxTokens(),
         ];
 
         $temperature = $this->temperature();

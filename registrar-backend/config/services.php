@@ -23,7 +23,7 @@ return [
     ],
 
     'ses' => [
-        'key' => env('AWS_ACCESS_KEY_ID'),
+        'key'    => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
@@ -37,11 +37,16 @@ return [
         // Sonnet 5 family) reject the parameter: set ANTHROPIC_LABEL_TEMPERATURE=
         // (empty) to omit it from the request.
         'label_temperature' => env('ANTHROPIC_LABEL_TEMPERATURE', 0),
+        // Output token budget for the re-ranker. 80 is enough for Haiku. The
+        // Sonnet 5.5 benchmark showed about half of its answers cut off at 80,
+        // so raise it for that model (for example 400). Values outside 1-1024
+        // or non-numeric values fall back to safe bounds in LabelReranker.
+        'label_max_tokens' => env('ANTHROPIC_LABEL_MAX_TOKENS', 80),
     ],
 
     'cashier' => [
-        'api_key'     => env('CASHIER_API_KEY', ''),
-        'url'         => env('CASHIER_API_URL', 'https://puptec.ojt-ims-bsit.net/api/verify-payment'),
+        'api_key'    => env('CASHIER_API_KEY', ''),
+        'url'        => env('CASHIER_API_URL', 'https://puptec.ojt-ims-bsit.net/api/verify-payment'),
         // single_use: when true, each OR number can only be used once.
         // SECURE-BY-DEFAULT: defaults to true. A student/alumni's OR is
         // a real payment; the default posture must be "one OR funds one
@@ -49,13 +54,13 @@ return [
         // Set CASHIER_SINGLE_USE=false only in local dev/testing .env
         // files where the same fixture OR number needs to be reused
         // across runs — never in a staging or production .env.
-        'single_use'  => env('CASHIER_SINGLE_USE', true),
+        'single_use' => env('CASHIER_SINGLE_USE', true),
     ],
 
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
-            'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
+            'channel'              => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
 
