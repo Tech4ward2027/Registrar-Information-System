@@ -152,3 +152,69 @@ test('API-level failures are counted, "none" answers are not', function () {
     $reranker->rerank('Dip', lr_candidates());
     expect($reranker->failureCount())->toBe(1);
 });
+test('lastOutcome says why a rerank produced no usable choice', function (string $kind, string $expected) {
+    Http::fake(['api.anthropic.com/*' => match ($kind) {
+        'choice'       => lr_reply('{"choice":"d1","reason":"x"}'),
+        'none'         => lr_reply('{"choice":"none","reason":"x"}'),
+        'outside-set'  => lr_reply('{"choice":"d99","reason":"x"}'),
+        'malformed'    => lr_reply('I think it is Diploma'),
+        'wrong-type'   => lr_reply('{"choice":["d1"],"reason":"x"}'),
+        'cut-off-json' => Http::response([
+            'content'     => [['type' => 'text', 'text' => '{"choice":"d1","reas']],
+            'stop_reason' => 'max_tokens',
+        ]),
+        'only-thinking-cut-off' => Http::response([
+            'content'     => [['type' => 'thinking', 'thinking' => '...']],
+            'stop_reason' => 'max_tokens',
+        ]),
+        'no-text'      => Http::response(['content' => [['type' => 'thinking', 'thinking' => '...']], 'stop_reason' => 'end_turn']),
+        'http-500'     => lr_reply('', 500),
+        'timeout'      => fn () => throw new \Illuminate\Http\Client\ConnectionException('timed out'),
+    }]);
+
+    $reranker = app(LabelReranker::class);
+    $reranker->rerank('Dip', lr_candidates());
+
+    expect($reranker->lastOutcome())->toBe($expected);
+})->with([
+    'choice'                => ['choice', LabelReranker::OUTCOME_CHOICE],
+    'none'                  => ['none', LabelReranker::OUTCOME_NONE],
+    'outside-set'           => ['outside-set', LabelReranker::OUTCOME_OUTSIDE_SET],
+    'malformed'             => ['malformed', LabelReranker::OUTCOME_MALFORMED],
+    'wrong-type'            => ['wrong-type', LabelReranker::OUTCOME_MALFORMED],
+    'cut-off-json'          => ['cut-off-json', LabelReranker::OUTCOME_TRUNCATED],
+    'only-thinking-cut-off' => ['only-thinking-cut-off', LabelReranker::OUTCOME_TRUNCATED],
+    'no-text'               => ['no-text', LabelReranker::OUTCOME_NO_TEXT],
+    'http-500'              => ['http-500', LabelReranker::OUTCOME_API_ERROR],
+    'timeout'               => ['timeout', LabelReranker::OUTCOME_TRANSPORT_ERROR],
+]);
+
+test('lastOutcome reports unavailable and no_label without calling the API', function () {
+    Http::fake();
+    $reranker = app(LabelReranker::class);
+
+    // Nothing survives the privacy filter: no request is made.
+    $reranker->rerank('', lr_candidates());
+    expect($reranker->lastOutcome())->toBe(LabelReranker::OUTCOME_NO_LABEL);
+
+    // Flag off: no request is made.
+    config(['features.ai_label_suggestions' => false]);
+    $reranker->rerank('Dip', lr_candidates());
+    expect($reranker->lastOutcome())->toBe(LabelReranker::OUTCOME_UNAVAILABLE);
+
+    Http::assertNothingSent();
+});
+
+test('lastOutcome is replaced on every call, not accumulated', function () {
+    Http::fake(['api.anthropic.com/*' => Http::sequence()
+        ->push(['content' => [['type' => 'text', 'text' => '{"choice":"d1","reason":"x"}']]], 200)
+        ->push(['content' => [['type' => 'text', 'text' => '{"choice":"none","reason":"x"}']]], 200)]);
+
+    $reranker = app(LabelReranker::class);
+
+    $reranker->rerank('Dip', lr_candidates());
+    expect($reranker->lastOutcome())->toBe(LabelReranker::OUTCOME_CHOICE);
+
+    $reranker->rerank('Dip', lr_candidates());
+    expect($reranker->lastOutcome())->toBe(LabelReranker::OUTCOME_NONE);
+});

@@ -31,6 +31,11 @@ use Illuminate\Support\Facades\Storage;
  * model received, which candidate keys it was offered, what it chose and the
  * reason it gave. All of it is catalogue text or scrubbed model output, so it
  * contains no personal data.
+ *
+ * llm_outcome (last column) says WHY a row has no usable choice: the model
+ * answered "none", the answer was cut off, the reply was malformed, or the
+ * request itself failed. It is a fixed vocabulary from LabelReranker, so it
+ * never carries receipt or model text.
  */
 class EvaluateLabelSuggestions extends Command
 {
@@ -75,11 +80,13 @@ class EvaluateLabelSuggestions extends Command
         $limit            = max(0, (int) $this->option('limit'));
         $llmSent          = 0;
         $llmEligible      = 0;
+        /** @var array<string,int> outcome => rows, for rows actually sent to the model */
+        $outcomes         = [];
 
         $stats = [];
         $csv   = [[
             'source', 'label', 'truth_key', 'rules_top1', 'rules_top3', 'ambiguous', 'llm_top1',
-            'llm_sent', 'label_sent', 'candidate_keys', 'llm_choice', 'llm_reason',
+            'llm_sent', 'label_sent', 'candidate_keys', 'llm_choice', 'llm_reason', 'llm_outcome',
         ]];
 
         foreach ($rows as [$source, $label, $truth, $cat]) {
@@ -94,6 +101,7 @@ class EvaluateLabelSuggestions extends Command
             $labelSent  = '';
             $llmChoice  = '';
             $llmReason  = '';
+            $llmOutcome = '';
 
             if ($withLlm && $ambiguous && $res['candidates'] !== []) {
                 $llmEligible++;
@@ -104,9 +112,11 @@ class EvaluateLabelSuggestions extends Command
                     $labelSent = $this->outboundLabel($reranker, $label, $res['candidates']);
 
                     $pick      = $reranker->rerank($label, $res['candidates']);
-                    $llmChoice = $pick['choice'] ?? self::NO_USABLE_CHOICE;
-                    $llmReason = $pick['reason'] ?? '';
-                    $llmTop1   = $pick !== null ? $pick['choice'] === $truth : $top1;
+                    $llmChoice  = $pick['choice'] ?? self::NO_USABLE_CHOICE;
+                    $llmReason  = $pick['reason'] ?? '';
+                    $llmTop1    = $pick !== null ? $pick['choice'] === $truth : $top1;
+                    $llmOutcome = $reranker->lastOutcome();
+                    $outcomes[$llmOutcome] = ($outcomes[$llmOutcome] ?? 0) + 1;
                 }
             }
 
@@ -146,10 +156,11 @@ class EvaluateLabelSuggestions extends Command
                 implode('|', $keys),
                 $llmChoice,
                 $this->safe($llmReason),
+                $llmOutcome,
             ];
         }
 
-        $this->report($stats, $withLlm, $llmSent, $llmEligible, $skipped);
+        $this->report($stats, $withLlm, $llmSent, $llmEligible, $skipped, $outcomes);
 
         // A run where most requests failed says nothing about the model.
         if ($withLlm && $llmSent > 0 && $reranker->failureCount() * 2 > $llmSent) {
@@ -248,7 +259,10 @@ class EvaluateLabelSuggestions extends Command
         return preg_match('~<label>(.*?)</label>~su', $content, $m) === 1 ? $m[1] : '';
     }
 
-    private function report(array $stats, bool $withLlm, int $llmSent, int $llmEligible, int $skipped): void
+    /**
+     * @param  array<string,int>  $outcomes  outcome => rows sent to the model
+     */
+    private function report(array $stats, bool $withLlm, int $llmSent, int $llmEligible, int $skipped, array $outcomes = []): void
     {
         ksort($stats);
         $this->newLine();
@@ -278,6 +292,7 @@ class EvaluateLabelSuggestions extends Command
         $this->line("Skipped (conflicting or no remaining strings): {$skipped}");
         if ($withLlm) {
             $this->line("Rows sent to the LLM: {$llmSent} (labels and catalogue names only)");
+            $this->reportOutcomes($outcomes);
             if ($llmSent < $llmEligible) {
                 $this->warn(sprintf(
                     '%d eligible ambiguous row(s) were not sent because of --limit. They are scored as the rules result, so the lift above is understated.',
@@ -285,6 +300,42 @@ class EvaluateLabelSuggestions extends Command
                 ));
             }
             $this->line('Decision rule: keep the LLM only if the ambiguous-subset lift is >= 10 pp on real (leave-one-out) data, with no loss elsewhere.');
+        }
+    }
+
+    /**
+     * Tally of what the model/request did for each row sent. "none" is the
+     * model declining; the harness outcomes below mean the row says nothing
+     * about the model and should be fixed before any accuracy is read.
+     *
+     * @param  array<string,int>  $outcomes
+     */
+    private function reportOutcomes(array $outcomes): void
+    {
+        if ($outcomes === []) {
+            return;
+        }
+
+        ksort($outcomes);
+        $this->line('LLM outcomes: ' . implode(', ', array_map(
+            static fn (string $k, int $v) => "{$k}={$v}",
+            array_keys($outcomes),
+            $outcomes
+        )));
+
+        $harness = array_intersect_key($outcomes, array_flip([
+            LabelReranker::OUTCOME_TRUNCATED,
+            LabelReranker::OUTCOME_NO_TEXT,
+            LabelReranker::OUTCOME_MALFORMED,
+            LabelReranker::OUTCOME_API_ERROR,
+            LabelReranker::OUTCOME_TRANSPORT_ERROR,
+            LabelReranker::OUTCOME_NO_LABEL,
+        ]));
+        if ($harness !== []) {
+            $this->warn(sprintf(
+                '%d row(s) ended without a usable model answer for a technical reason (see llm_outcome in the CSV). Treat the lift above with caution.',
+                array_sum($harness)
+            ));
         }
     }
 
