@@ -21,9 +21,10 @@ beforeEach(function () {
         'features.ai_label_suggestions' => true,
         'services.anthropic.api_key'    => 'test-key',
         'services.anthropic.label_model' => 'claude-haiku-4-5-20251001',
-        // Pinned so a developer's own .env (e.g. an empty value for Sonnet 5.5)
+         // Pinned so a developer's own .env (e.g. an empty value for Sonnet 5.5)
         // cannot change what these tests assert.
         'services.anthropic.label_temperature' => 0,
+        'services.anthropic.label_max_tokens'  => 80,
     ]);
 });
 

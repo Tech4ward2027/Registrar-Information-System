@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -155,7 +156,10 @@ PROMPT;
         $text      = $this->extractText($response->json('content'));
 
         if ($text === '') {
-            return [null, $truncated ? self::OUTCOME_TRUNCATED : self::OUTCOME_NO_TEXT];
+            $outcome = $truncated ? self::OUTCOME_TRUNCATED : self::OUTCOME_NO_TEXT;
+            $this->logUnusable($outcome, $response, $text);
+
+            return [null, $outcome];
         }
 
         [$result, $outcome] = $this->parse($text, $candidates);
@@ -165,7 +169,40 @@ PROMPT;
             $outcome = self::OUTCOME_TRUNCATED;
         }
 
+        if ($outcome === self::OUTCOME_MALFORMED || $outcome === self::OUTCOME_TRUNCATED) {
+            $this->logUnusable($outcome, $response, $text);
+        }
+
         return [$result, $outcome];
+    }
+
+    /**
+     * Diagnostic for answers we could not use. Records the SHAPE of the
+     * response only (fixed vocabulary, numbers and booleans), never the model's
+     * text and never the label, so it is safe to keep in the application log.
+     */
+    private function logUnusable(string $outcome, Response $response, string $text): void
+    {
+        $blockTypes = [];
+        $content    = $response->json('content');
+        if (is_array($content)) {
+            foreach ($content as $block) {
+                $blockTypes[] = is_array($block) ? $this->safeToken($block['type'] ?? null) : 'unknown';
+            }
+        }
+
+        $outputTokens = $response->json('usage.output_tokens');
+
+        Log::info('LabelReranker: unusable answer', [
+            'outcome'           => $outcome,
+            'stop_reason'       => $this->safeToken($response->json('stop_reason')),
+            'output_tokens'     => is_int($outputTokens) ? $outputTokens : null,
+            'block_types'       => $blockTypes,
+            'text_length'       => strlen($text),
+            'starts_with_brace' => str_starts_with(ltrim($text), '{'),
+            'contains_brace'    => str_contains($text, '{'),
+            'has_code_fence'    => str_contains($text, '```'),
+        ]);
     }
 
     /**
@@ -187,9 +224,15 @@ PROMPT;
         return '';
     }
 
+    /** Lowercase identifier-like value from the API, or 'unknown'. Safe to log. */
+    private function safeToken(mixed $value): string
+    {
+        return is_string($value) && preg_match('/^[a-z_]{1,64}$/', $value) === 1 ? $value : 'unknown';
+    }
+
     private function safeErrorType(mixed $type): string
     {
-        return is_string($type) && preg_match('/^[a-z_]{1,64}$/', $type) === 1 ? $type : 'unknown';
+        return $this->safeToken($type);
     }
 
     /**
