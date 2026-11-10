@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import loading1 from "../assets/Loading 1.png";
 import loading2 from "../assets/Loading 2.png";
 import loading3 from "../assets/Loading 3.png";
+import useNetworkStatus from "../hooks/useNetworkStatus";
+import ConnectionErrorCard from "./ConnectionErrorCard";
 
 const FOLDER_IMGS = [loading1, loading2, loading3];
 const FOLDER_TRANSFORMS = [
@@ -536,6 +539,7 @@ export const PageSkeleton = ({ isDark }) => {
 };
 
 export const FolderLoadingOverlay = ({ isDark, message = "Loading...", fullScreen = true }) => {
+  const { isOnline, retry } = useNetworkStatus();
   const r0 = useRef(null);
   const r1 = useRef(null);
   const r2 = useRef(null);
@@ -588,6 +592,8 @@ export const FolderLoadingOverlay = ({ isDark, message = "Loading...", fullScree
   }, [after]);
 
   useEffect(() => {
+    if (!isOnline) return;
+
     const rs = refs.current;
     rs.forEach((r, i) => {
       if (!r.current) return;
@@ -599,35 +605,39 @@ export const FolderLoadingOverlay = ({ isDark, message = "Loading...", fullScree
 
     runCycle();
     return () => clearAll();
-  }, [runCycle, clearAll]);
+  }, [isOnline, runCycle, clearAll]);
 
-  return (
+  const overlay = (
     <div
       className={`${
-        fullScreen ? 'fixed inset-0 z-50' : 'min-h-[60vh] w-full'
+        fullScreen ? 'fixed inset-0 z-[2147483647]' : 'min-h-[60vh] w-full'
       } flex flex-col items-center justify-center px-4 transition-all duration-300 bg-transparent`}
     >
       <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 text-center max-w-[90vw]">
-        <div className="relative h-44 w-44 sm:h-52 sm:w-52">
-          {FOLDER_IMGS.map((src, i) => (
-            <img
-              key={i}
-              ref={refs.current[i]}
-              src={src}
-              alt={`Loading folder ${i + 1}`}
-              className="absolute top-0 left-0 w-32 sm:w-36 drop-shadow-[0_14px_22px_rgba(0,0,0,0.18)]"
-              style={{
-                willChange: "opacity",
-                backfaceVisibility: "hidden",
-                WebkitBackfaceVisibility: "hidden",
-                transform: FOLDER_TRANSFORMS[i],
-                zIndex: i + 1,
-              }}
-            />
-          ))}
-        </div>
+        {isOnline ? (
+          <div className="relative h-44 w-44 sm:h-52 sm:w-52">
+            {FOLDER_IMGS.map((src, i) => (
+              <img
+                key={i}
+                ref={refs.current[i]}
+                src={src}
+                alt={`Loading folder ${i + 1}`}
+                className="absolute top-0 left-0 w-32 sm:w-36 drop-shadow-[0_14px_22px_rgba(0,0,0,0.18)]"
+                style={{
+                  willChange: "opacity",
+                  backfaceVisibility: "hidden",
+                  WebkitBackfaceVisibility: "hidden",
+                  transform: FOLDER_TRANSFORMS[i],
+                  zIndex: i + 1,
+                }}
+              />
+            ))}
+          </div>
+        ) : (
+          <ConnectionErrorCard isDark={isDark} onRetry={retry} />
+        )}
 
-        <div className="flex flex-wrap justify-center gap-0.5 max-w-full">
+        {isOnline && <div className="flex max-w-full flex-wrap justify-center gap-0.5">
           {chars.map((char, i) => (
             <span
               key={i}
@@ -638,10 +648,12 @@ export const FolderLoadingOverlay = ({ isDark, message = "Loading...", fullScree
               {char === " " ? "\u00A0" : char}
             </span>
           ))}
-        </div>
+        </div>}
       </div>
     </div>
   );
+
+  return fullScreen ? createPortal(overlay, document.body) : overlay;
 };
 
 export default function LoadingSkeleton({ isDark, variant = 'chart', message = "Loading..." }) {
