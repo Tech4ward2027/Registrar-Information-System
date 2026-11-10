@@ -79,6 +79,7 @@ const RequestForm = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const { targetRef: formRef } = useScrollToTop([currentStep, isSubmitted]);
   const [errorMessage, setErrorMessage] = useState("");
+  const [submissionNetworkError, setSubmissionNetworkError] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showOrModal, setShowOrModal] = useState(false);
   const [orModalMessage, setOrModalMessage] = useState("");
@@ -255,6 +256,7 @@ const RequestForm = () => {
   const verifyOrMutation = useMutation({
     mutationFn: verifyOfficialReceipt,
     onSuccess: (response) => {
+      setSubmissionNetworkError(false);
       const suggestions = response?.data?.suggestions ?? { documents: [], certificates: [], unresolved: [] };
 
       const suggestedDocNames = [];
@@ -398,6 +400,7 @@ const RequestForm = () => {
     },
     onError: (error) => {
       console.error("Submission error:", error.response?.data || error);
+      setSubmissionNetworkError(!error.response);
       setErrorMessage(error.response?.data?.message || "Submission failed. Please check your data.");
     }
   });
@@ -447,6 +450,7 @@ const RequestForm = () => {
       certificates: certificates,
     };
 
+    setSubmissionNetworkError(false);
     mutation.mutate(payload);
   };
 
@@ -527,7 +531,12 @@ const RequestForm = () => {
   return (
     <>
       <div className="relative min-h-screen pb-20 z-20">
-        <LoadingOverlay isVisible={isLoading} message="Submitting Request..." />
+        <LoadingOverlay
+          isVisible={isLoading || submissionNetworkError}
+          connectionError={submissionNetworkError}
+          onRetry={() => setSubmissionNetworkError(false)}
+          message="Submitting Request..."
+        />
         <LoadingOverlay isVisible={isVerifyingOr} message="Verifying Official Receipt..." />
         {isSubmitted ? (
           <div className="max-w-4xl mx-auto animate-fadeIn">
