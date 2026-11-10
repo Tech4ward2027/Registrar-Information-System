@@ -16,6 +16,7 @@ import qrCode from "../assets/qrcode.png";
 import { useTheme } from "../context/ThemeContext";
 import { useAlumniRequest } from "../hooks/useAlumniRequest";
 import { useScrollToTop } from "../hooks/useScrollToTop";
+import useNetworkStatus from "../hooks/useNetworkStatus";
 import { getTodayDate, useHeaderResponsiveState } from "../utils/helpers";
 import {
   InformationCircleIcon,
@@ -27,6 +28,7 @@ import {
 
 const AlumniRequestForm = () => {
   const { isDark } = useTheme();
+  const { isOnline } = useNetworkStatus();
   const { headerHeight } = useHeaderResponsiveState();
   const navigate = useNavigate();
 
@@ -105,7 +107,10 @@ const AlumniRequestForm = () => {
 
   return (
     <div className="relative min-h-screen pb-20 z-10">
-      <LoadingOverlay isVisible={isLoading} message="Submitting Request..." />
+      <LoadingOverlay
+        isVisible={isLoading}
+        message="Submitting Request..."
+      />
       <LoadingOverlay isVisible={isVerifyingOr} message="Verifying Official Receipt..." />
       {isSubmitted ? (
         <div className="max-w-4xl mx-auto animate-fadeIn">
@@ -606,23 +611,30 @@ const AlumniRequestForm = () => {
                 </button>
               ) : <div />}
 
-              <button
-                type="button"
-                onClick={currentStep < finalStep ? nextStep : handlePreSubmit}
-                disabled={isVerifyingOr}
-                className="inline-flex items-center justify-center gap-2 font-bold text-sm py-2.5 px-7 rounded-xl bg-pup-yellow hover:bg-[#e6b01b] text-pup-maroon active:scale-95 transition-all duration-200 shadow-md shadow-yellow-500/20 disabled:opacity-60 disabled:cursor-not-allowed ml-auto cursor-pointer"
-              >
-                <span>
-                  {currentStep === orStep && isVerifyingOr
-                    ? "Verifying..."
-                    : currentStep < finalStep ? "Next" : "Submit"}
-                </span>
-                {currentStep < finalStep ? (
-                  <ArrowRightIcon className="w-4 h-4 stroke-[2.5]" />
-                ) : (
-                  <CheckIcon className="w-4 h-4 stroke-[2.5]" />
+              <div className="ml-auto flex items-center gap-4">
+                {!isOnline && (
+                  <span className={`text-sm font-medium ${isDark ? "text-[#f5c96b]" : "text-[#76501c]"}`}>
+                    Reconnect to continue
+                  </span>
                 )}
-              </button>
+                <button
+                  type="button"
+                  onClick={currentStep < finalStep ? nextStep : handlePreSubmit}
+                  disabled={isVerifyingOr || !isOnline}
+                  className="inline-flex items-center justify-center gap-2 font-bold text-sm py-2.5 px-7 rounded-xl bg-pup-yellow hover:bg-[#e6b01b] text-pup-maroon active:scale-95 transition-all duration-200 shadow-md shadow-yellow-500/20 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <span>
+                    {currentStep === orStep && isVerifyingOr
+                      ? "Verifying..."
+                      : currentStep < finalStep ? "Next" : "Submit"}
+                  </span>
+                  {currentStep < finalStep ? (
+                    <ArrowRightIcon className="w-4 h-4 stroke-[2.5]" />
+                  ) : (
+                    <CheckIcon className="w-4 h-4 stroke-[2.5]" />
+                  )}
+                </button>
+              </div>
             </div>
           </form>
         </div>

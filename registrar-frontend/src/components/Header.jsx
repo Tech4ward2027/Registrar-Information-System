@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Bars3Icon, BellIcon } from '@heroicons/react/24/outline'; 
+import { Bars3Icon, BellIcon, ArrowPathIcon, SignalSlashIcon } from '@heroicons/react/24/outline';
 import NotificationModal from "../components/NotificationModal.jsx";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 import LogoImage from "../assets/puplogoimage.png";
 import { useNotificationsContext as useNotifications } from "../context/NotificationsContext";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthProvider";
+import useNetworkStatus from "../hooks/useNetworkStatus";
 
 
 function Header({ onMenuClick }) {
@@ -13,6 +14,7 @@ function Header({ onMenuClick }) {
   const { unreadCount } = useNotifications();
   const { isDark } = useTheme();
   const { user } = useAuth();
+  const { isOnline, retry } = useNetworkStatus();
 
   const isSuperAdmin = user?.role_id === 4 || user?.role === 'superAdmin' || user?.role_name === 'super_admin' || user?.active_role === 'super_admin';
 
@@ -23,7 +25,7 @@ function Header({ onMenuClick }) {
   return (
     <header
       style={headerStyle}
-      className="dark:bg-[#242526] w-full shadow-sm dark:shadow-lg fixed top-0 left-0 right-0 z-9999 border-b-[5px] border-yellow-400 transition-all duration-200"
+      className="dark:bg-[#242526] w-full shadow-sm dark:shadow-lg fixed top-0 left-0 right-0 z-9999 transition-all duration-200"
     >
       <div className="w-full px-4 py-4 z-9999 flex justify-between items-center h-full">
         <div className="flex space-x-4 items-center">
@@ -77,6 +79,27 @@ function Header({ onMenuClick }) {
           </button>
         </div>
       </div>
+
+      <div className="h-[5px] bg-yellow-400" />
+
+      {!isOnline && (
+        <div className="border-b border-[#d6a53a] bg-[#f9dfa5] px-4 py-3 text-[#76501c] sm:px-6">
+          <div className="mx-auto flex max-w-7xl items-center gap-3">
+            <SignalSlashIcon className="h-6 w-6 shrink-0" />
+            <p className="min-w-0 flex-1 text-sm leading-5 sm:text-base">
+              You&apos;re offline. Your answers are saved on this page. Changes can&apos;t be submitted until you reconnect.
+            </p>
+            <button
+              type="button"
+              onClick={retry}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#c69b3d] px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[#f5d58e] focus:outline-none focus:ring-2 focus:ring-[#76501c] focus:ring-offset-1"
+            >
+              <ArrowPathIcon className="h-4 w-4" />
+              <span className="hidden sm:inline">Retry</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {!isSuperAdmin && (
         <NotificationModal
