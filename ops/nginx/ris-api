@@ -1,0 +1,60 @@
+server {
+    if ($host = pupt-ris-api.registrar-information-system-bsit2027.com) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    server_name pupt-ris-api.registrar-information-system-bsit2027.com;
+    return 301 https://$host$request_uri;
+
+
+}
+
+server {
+    listen 443 ssl;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    client_max_body_size 10M;
+    server_name pupt-ris-api.registrar-information-system-bsit2027.com;
+    include snippets/ris-maintenance.conf;
+    ssl_certificate /etc/letsencrypt/live/pupt-ris-api.registrar-information-system-bsit2027.com/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/pupt-ris-api.registrar-information-system-bsit2027.com/privkey.pem; # managed by Certbot
+
+# WebSocket — Reverb
+    # Real Reverb WebSocket connections only: /app/<app-key> with an Upgrade header.
+    location ~ ^/app/[A-Za-z0-9_-]+$ {
+        if ($http_upgrade !~* "^websocket$") {
+            return 404;
+        }
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600;
+        proxy_send_timeout 3600;
+        proxy_hide_header X-Powered-By;
+    }
+
+    # Reverb HTTP API (/apps/<id>/events): unchanged behavior.
+    location /apps/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_hide_header X-Powered-By;
+    }
+
+    # Anything else under /app/ (probes like /app/.env) is a 404.
+    location /app/ {
+        return 404;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+}
