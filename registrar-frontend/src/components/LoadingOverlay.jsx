@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import loading1 from "../assets/Loading 1.png";
 import loading2 from "../assets/Loading 2.png";
 import loading3 from "../assets/Loading 3.png";
 import { useTheme } from "../context/ThemeContext";
+import useNetworkStatus from "../hooks/useNetworkStatus";
+import ConnectionErrorCard from "./ConnectionErrorCard";
 
 const IMGS = [loading1, loading2, loading3];
 
@@ -12,8 +15,9 @@ const TRANSFORMS = [
   "translate(0px, 56px)",
 ];
 
-const LoadingOverlay = ({ isVisible = false, message = "Loading..." }) => {
+const LoadingOverlay = ({ isVisible = false, message = "Loading...", connectionError = false, onRetry }) => {
   const { isDark } = useTheme();
+  const { isOnline, retry } = useNetworkStatus();
   const r0 = useRef(null);
   const r1 = useRef(null);
   const r2 = useRef(null);
@@ -68,7 +72,7 @@ const LoadingOverlay = ({ isVisible = false, message = "Loading..." }) => {
   }, [after]);
 
   useEffect(() => {
-    if (!isVisible) return;
+    if (!isVisible || !isOnline) return;
 
     // Set initial state
     const rs = refs.current;
@@ -82,34 +86,40 @@ const LoadingOverlay = ({ isVisible = false, message = "Loading..." }) => {
 
     runCycle();
     return () => clearAll();
-  }, [isVisible, runCycle, clearAll]);
+  }, [isVisible, isOnline, runCycle, clearAll]);
 
   if (!isVisible) return null;
 
-  return (
-    <div className={`fixed inset-0 z-20 flex flex-col modal-overlay-container  items-center justify-center px-4 backdrop-blur-sm ${isDark ? 'bg-[#18191a]/85' : 'bg-white/80'}`}>
+  return createPortal(
+    <div className={`fixed inset-0 z-[2147483647] flex flex-col items-center justify-center px-4 ${
+      connectionError ? "" : `backdrop-blur-sm ${isDark ? 'bg-[#18191a]/85' : 'bg-white/80'}`
+    }`}>
       <div className="flex flex-col items-center gap-3 sm:gap-4 text-center max-w-[90vw]">
 
-        <div className="relative h-44 w-44 sm:h-52 sm:w-52">
-          {IMGS.map((src, i) => (
-            <img
-              key={i}
-              ref={refs.current[i]}
-              src={src}
-              alt={`Loading folder ${i + 1}`}
-              className="absolute top-0 left-0 w-32 sm:w-36 drop-shadow-[0_14px_22px_rgba(0,0,0,0.18)]"
-              style={{
-                willChange: "opacity",
-                backfaceVisibility: "hidden",
-                WebkitBackfaceVisibility: "hidden",
-                transform: TRANSFORMS[i],
-                zIndex: i + 1,
-              }}
-            />
-          ))}
-        </div>
+        {!connectionError && isOnline ? (
+          <div className="relative h-44 w-44 sm:h-52 sm:w-52">
+            {IMGS.map((src, i) => (
+              <img
+                key={i}
+                ref={refs.current[i]}
+                src={src}
+                alt={`Loading folder ${i + 1}`}
+                className="absolute top-0 left-0 w-32 sm:w-36 drop-shadow-[0_14px_22px_rgba(0,0,0,0.18)]"
+                style={{
+                  willChange: "opacity",
+                  backfaceVisibility: "hidden",
+                  WebkitBackfaceVisibility: "hidden",
+                  transform: TRANSFORMS[i],
+                  zIndex: i + 1,
+                }}
+              />
+            ))}
+          </div>
+        ) : (
+          <ConnectionErrorCard isDark={isDark} onRetry={onRetry ?? retry} compact />
+        )}
 
-        <div className="flex flex-wrap justify-center gap-0.5 max-w-full">
+        {!connectionError && isOnline && <div className="flex max-w-full flex-wrap justify-center gap-0.5">
           {chars.current.map((char, i) => (
             <span
               key={i}
@@ -118,10 +128,11 @@ const LoadingOverlay = ({ isVisible = false, message = "Loading..." }) => {
               {char === " " ? "\u00A0" : char}
             </span>
           ))}
-        </div>
+        </div>}
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

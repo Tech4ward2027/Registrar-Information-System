@@ -136,10 +136,10 @@ docker run -d --name "$CONTAINER" -e MYSQL_ROOT_PASSWORD="$ROOTPW" -e MYSQL_DATA
   -p 127.0.0.1::3306 mysql:8.4 --character-set-server=utf8mb4 --max-allowed-packet=256M >/dev/null
 PORT="$(docker port "$CONTAINER" 3306/tcp | head -n1 | sed 's/.*://')"
 for i in $(seq 1 90); do
-  docker exec "$CONTAINER" mysqladmin ping -uroot -p"$ROOTPW" --silent >/dev/null 2>&1 && break
+  docker exec "$CONTAINER" mysql -h127.0.0.1 -uroot -p"$ROOTPW" -e "SELECT 1" >/dev/null 2>&1 && break
   sleep 2; [[ $i -eq 90 ]] && { say "FAIL: MySQL did not become ready"; exit 1; }
 done
-step "4 start MySQL 8.0 (127.0.0.1:$PORT)"
+step "4 start MySQL 8.4 (127.0.0.1:$PORT)"
 
 # 5 ---- load
 SQLERR="$WORK/sql.err"

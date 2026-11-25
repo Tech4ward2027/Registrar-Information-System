@@ -53,7 +53,7 @@ test('the CSV exposes the diagnostic columns after the original ones', function 
 
     expect(Storage::disk('local')->get('eval/d1.csv'))
         ->toStartWith('source,label,truth_key,rules_top1,rules_top3,ambiguous,llm_top1,')
-        ->toContain('llm_top1,llm_sent,label_sent,candidate_keys,llm_choice,llm_reason');
+        ->toContain('llm_top1,llm_sent,label_sent,candidate_keys,llm_choice,llm_reason,llm_outcome');
 });
 
 test('without --with-llm no row is marked as sent and candidate keys are still recorded', function () {
@@ -66,7 +66,8 @@ test('without --with-llm no row is marked as sent and candidate keys are still r
         expect($row['llm_sent'])->toBe('0')
             ->and($row['label_sent'])->toBe('')
             ->and($row['llm_choice'])->toBe('')
-            ->and($row['llm_reason'])->toBe('');
+            ->and($row['llm_reason'])->toBe('')
+            ->and($row['llm_outcome'])->toBe('');
     }
     expect(collect($rows)->contains(fn (array $r) => $r['candidate_keys'] !== ''))->toBeTrue();
 });
@@ -85,6 +86,7 @@ test('with --with-llm sent rows record the scrubbed label, the choice and the re
     foreach ($sent as $row) {
         // "none" is not a usable key, so the rules result stands and is flagged as such.
         expect($row['llm_choice'])->toBe('none_or_failed')
+            ->and($row['llm_outcome'])->toBe('none')
             ->and($row['label_sent'])->not->toBe('')
             ->and($row['label_sent'])->not->toMatch('/[<>@]|https?:/')
             ->and($row['llm_top1'])->toBe($row['rules_top1']);
@@ -105,6 +107,7 @@ test('a usable choice is recorded and scored against the truth key', function ()
     expect($picked)->not->toBeEmpty();
     foreach ($picked as $row) {
         expect($row['llm_reason'])->toBe('wording match')
+            ->and($row['llm_outcome'])->toBe('choice')
             ->and($row['llm_top1'])->toBe($row['truth_key'] === $key ? '1' : '0');
     }
 });
@@ -132,4 +135,39 @@ test('spreadsheet formula triggers are neutralised in the label column', functio
     foreach ($labels as $label) {
         expect($label)->not->toMatch('/^[=+\-@\t\r]/');
     }
+});
+
+test('the outcome column and the terminal tally separate "none" from technical failures', function () {
+    config(['services.anthropic.api_key' => 'k', 'label_suggestions.low_threshold' => 1.01]);
+    Http::fake(['api.anthropic.com/*' => Http::response([
+        'content'     => [['type' => 'text', 'text' => '{"choice":"d1","reas']],
+        'stop_reason' => 'max_tokens',
+    ])]);
+
+    Artisan::call('cashier:eval-label-suggestions', ['--with-llm' => true, '--limit' => 3, '--output' => 'eval/d7.csv']);
+    $output = Artisan::output();
+    $sent   = array_values(array_filter(evd_rows('eval/d7.csv'), fn (array $r) => $r['llm_sent'] === '1'));
+
+    expect($sent)->toHaveCount(3);
+    foreach ($sent as $row) {
+        expect($row['llm_choice'])->toBe('none_or_failed')
+            ->and($row['llm_outcome'])->toBe('truncated');
+    }
+    expect($output)->toContain('LLM outcomes: truncated=3')
+        ->and($output)->toContain('technical reason');
+});
+
+test('request failures are recorded as transport_error and the run is flagged invalid', function () {
+    config(['services.anthropic.api_key' => 'k', 'label_suggestions.low_threshold' => 1.01]);
+    Http::fake(['api.anthropic.com/*' => fn () => throw new \Illuminate\Http\Client\ConnectionException('timed out')]);
+
+    Artisan::call('cashier:eval-label-suggestions', ['--with-llm' => true, '--limit' => 3, '--output' => 'eval/d8.csv']);
+    $output = Artisan::output();
+    $sent   = array_values(array_filter(evd_rows('eval/d8.csv'), fn (array $r) => $r['llm_sent'] === '1'));
+
+    foreach ($sent as $row) {
+        expect($row['llm_outcome'])->toBe('transport_error');
+    }
+    expect($output)->toContain('INVALID LLM RESULTS')
+        ->and($output)->toContain('LLM outcomes: transport_error=3');
 });

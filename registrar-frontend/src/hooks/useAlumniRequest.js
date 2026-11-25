@@ -25,6 +25,7 @@ export const useAlumniRequest = ({ showProfileStep = false }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [submissionNetworkError, setSubmissionNetworkError] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showOrModal, setShowOrModal] = useState(false);
   const [orModalMessage, setOrModalMessage] = useState("");
@@ -359,6 +360,7 @@ export const useAlumniRequest = ({ showProfileStep = false }) => {
   const mutation = useMutation({
     mutationFn: createDocumentRequest,
     onSuccess: (response) => {
+      setSubmissionNetworkError(false);
       setClaimTicket({
         uuid: response?.data?.uuid ?? null,
         claimCode: response?.data?.claim_code ?? null,
@@ -368,6 +370,7 @@ export const useAlumniRequest = ({ showProfileStep = false }) => {
     },
     onError: (error) => {
       console.error("Submission error:", error.response?.data || error);
+      setSubmissionNetworkError(!error.response);
       setErrorMessage(
         error.response?.data?.message || "Submission failed. Please check your data."
       );
@@ -418,6 +421,7 @@ export const useAlumniRequest = ({ showProfileStep = false }) => {
       certificates: certificates,
     };
 
+    setSubmissionNetworkError(false);
     mutation.mutate(payload);
   };
 
@@ -445,6 +449,7 @@ export const useAlumniRequest = ({ showProfileStep = false }) => {
     });
     setErrorMessage("");
     mutation.reset();
+    setSubmissionNetworkError(false);
     verifyOrMutation.reset();
     setUnresolvedItems([]);
     setAutoFilledNames([]);
@@ -454,6 +459,7 @@ export const useAlumniRequest = ({ showProfileStep = false }) => {
 
   const isLoading = mutation.isPending;
   const isVerifyingOr = verifyOrMutation.isPending;
+  const clearSubmissionNetworkError = () => setSubmissionNetworkError(false);
 
   const certificationOptions =
     availableCertifications.length > 0
@@ -521,6 +527,8 @@ export const useAlumniRequest = ({ showProfileStep = false }) => {
     handleSubmit,
     handleConfirm,
     isLoading,
+    submissionNetworkError,
+    clearSubmissionNetworkError,
     isVerifyingOr,
     availableDocs,
     availableCertifications,
