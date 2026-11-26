@@ -7,6 +7,18 @@ php artisan cache:clear || true
 php artisan route:clear
 php artisan view:clear
 
+# FRONTEND_URL tripwire. Links this backend e-mails to people (undergrad
+# verification, ticket access links) are built from FRONTEND_URL, which
+# silently falls back to APP_URL when unset (config/app.php). In a split
+# deployment (SPA and API on different hosts) that fallback produces links on
+# the API host that 404, and nothing else ever reports it. Warn loudly, once
+# per container boot, in the container log. Non-fatal on purpose: a
+# single-origin staging box legitimately runs without it.
+if [ "${APP_ENV:-}" = "production" ] && [ -z "${FRONTEND_URL:-}" ]; then
+	echo "WARNING: FRONTEND_URL is not set. E-mailed links will fall back to APP_URL (${APP_URL:-unset})." >&2
+	echo "WARNING: If the website and API are on different hosts, set FRONTEND_URL to the website origin." >&2
+fi
+
 # Ensure the public storage symlink exists for assets served from /storage
 if [ ! -L public/storage ] && [ ! -e public/storage ]; then
 	php artisan storage:link || true

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\UndergradVerificationLinkRedirectController;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -23,6 +24,17 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::middleware([])
                 ->prefix('api')
                 ->group(base_path('routes/health.php'));
+
+            // Legacy undergrad e-mail verification links that were sent with
+            // the API host (FRONTEND_URL was unset). Forwards them to the SPA
+            // page. Registered here, with no middleware, for the same reason
+            // as the health probe above: it is a stateless public redirect, so
+            // it must not depend on (or open) a session, and the web group's
+            // CSRF/session/cookie middleware has nothing to do for it.
+            // See UndergradVerificationLinkRedirectController.
+            Route::middleware([])
+                ->get('/undergrad-requestor/verify-email', UndergradVerificationLinkRedirectController::class)
+                ->name('undergrad-requestor.verify-email.redirect');
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
